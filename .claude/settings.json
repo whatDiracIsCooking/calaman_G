@@ -1,5 +1,8 @@
 {
-  "//": "Committed, shared settings. Personal overrides go in settings.local.json (gitignored). The allow list is deliberately read-only tools plus this repo's own scripts -- add the project's entry points as you add them.",
+  "//": "Committed, shared settings. Personal overrides go in settings.local.json (gitignored). The allow list is deliberately read-only tools plus this repo's own scripts -- add the project's entry points as you add them. attribution.sessionUrl is false because this repository is PUBLIC: the Claude-Session trailer puts a claude.ai session link into commit messages and PR bodies permanently, and removing one after the fact means rewriting published history. Co-Authored-By is kept. Set attribution.commit and attribution.pr to \"\" as well to drop that too.",
+  "attribution": {
+    "sessionUrl": false
+  },
   "permissions": {
     "allow": [
       "Read",
