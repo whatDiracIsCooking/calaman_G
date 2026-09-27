@@ -1,0 +1,258 @@
+# The BATCH path: one-shot configure/build/test runs that bring their own
+# container, tee everything to .log/, and exit. The other path is the
+# devcontainer (.devcontainer/cuda/ + devtools/devcontainer.sh), which is the
+# interactive and agent-facing one. Both run the SAME image -- ./Dockerfile.cuda
+# -- so a result here and a result in there mean the same thing.
+#
+#   # from the repo root; build.sh walks base -> cuda and tags :cuda and :latest
+#   docker/build.sh cuda
+#   export HOST_UID=$(id -u) HOST_GID=$(id -g)
+#   docker compose -f docker/compose.yaml run --rm test
+#
+# WWR_IMAGE below defaults to gpumod:latest, which is one of the two tags
+# build.sh gives the CUDA image -- so nothing here needs to know about the
+# base/cuda/hip/combined chain. Compose does not build; it only runs.
+#
+# Use these when you want a clean, logged, unattended run on THIS machine -- a
+# nightly, a sanitizer sweep, a batch build you want a transcript of. Use the
+# devcontainer when you want to stay in the container and iterate;
+# `devtools/cpp-tier.sh` is the same three phases from inside it.
+#
+# NOT WHAT CI RUNS, despite the overlap. .github/workflows/ci.yml declares a
+# `container:` and calls devtools/cpp-tier.sh directly, for two reasons neither
+# of which compose can meet: it needs a HIP service as well as a CUDA one, and
+# it mounts the workspace where the runner put it rather than at /workspace.
+# Every service here also reserves a GPU, which no hosted runner has. The
+# sanitizer services below are the part with no CI counterpart at all, and the
+# reason this file is still the right tool for an unattended local sweep.
+#
+# HOST_UID/HOST_GID are required (`:?` below) rather than defaulted, because a
+# default of 1000 on a host where you are not uid 1000 writes root-owned build
+# output into the bind mount and the failure surfaces much later. See
+# README.md in this directory.
+#
+# Every service reserves a GPU, the `build` service included: the presets use
+# CMAKE_CUDA_ARCHITECTURES=native, which asks the driver what card is present
+# at CONFIGURE time. On a build host with no GPU, use a pinned preset instead
+# (BUILD_PRESET=ci-cuda, which pins sm_86) and drop the `deploy`
+# block from that service.
+services:
+  build:
+    image: ${WWR_IMAGE:-gpumod:latest}
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
+    environment:
+      - BUILD_PRESET=${BUILD_PRESET:-default}
+      - BUILD_DIR=${BUILD_DIR:-build-compose}
+      - RECONFIGURE=${RECONFIGURE:-}
+      - CLEAN=${CLEAN:-}
+      - REBUILD=${REBUILD:-}
+      - BUILD_ONLY=${BUILD_ONLY:-}
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        preset="$$BUILD_PRESET"
+        build_dir="$$BUILD_DIR"
+        ts=$$(date +%Y%m%d-%H%M%S)
+        mkdir -p .log
+        if [ "$$BUILD_ONLY" != "1" ]; then
+          cmake --preset "$$preset" -B "$$build_dir" $${RECONFIGURE:+--fresh} $${REBUILD:+--fresh} \
+            > >(tee .log/configure.$$ts.out.txt) \
+            2> >(tee .log/configure.$$ts.err.txt >&2)
+        fi
+        cmake --build "$$build_dir" $${CLEAN:+--clean-first} $${REBUILD:+--clean-first} \
+          > >(tee .log/build.$$ts.out.txt) \
+          2> >(tee .log/build.$$ts.err.txt >&2)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  test:
+    image: ${WWR_IMAGE:-gpumod:latest}
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
+    environment:
+      - BUILD_PRESET=${BUILD_PRESET:-default}
+      - BUILD_DIR=${BUILD_DIR:-build-compose}
+      - CUDA_VISIBLE_DEVICES
+      - TIMEOUT_MULTIPLIER=${TIMEOUT_MULTIPLIER:-1}
+      - TEST_FILTER=${TEST_FILTER:-}
+      - PYTEST_ARGS=${PYTEST_ARGS:-}
+      - SKIP_GTEST=${SKIP_GTEST:-}
+      - SKIP_PYTEST=${SKIP_PYTEST:-}
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        preset="$$BUILD_PRESET"
+        build_dir="$$BUILD_DIR"
+        ts=$$(date +%Y%m%d-%H%M%S)
+        mkdir -p .log
+        cmake --preset "$$preset" -B "$$build_dir" \
+          > >(tee .log/configure.$$ts.out.txt) \
+          2> >(tee .log/configure.$$ts.err.txt >&2)
+        cmake --build "$$build_dir" \
+          > >(tee .log/build.$$ts.out.txt) \
+          2> >(tee .log/build.$$ts.err.txt >&2)
+        gtest_rc=0
+        if [ -z "$$SKIP_GTEST" ]; then
+          ctest --test-dir "$$build_dir" --output-on-failure \
+            $${TEST_FILTER:+-R "$$TEST_FILTER"} \
+            --output-junit "$$PWD/.log/ctest.$$ts.xml" \
+            > >(tee .log/ctest.$$ts.out.txt) \
+            2> >(tee .log/ctest.$$ts.err.txt >&2) \
+            || gtest_rc=$$?
+        fi
+        pytest_rc=0
+        if [ -z "$$SKIP_PYTEST" ]; then
+          python3 -m pytest -rs $$PYTEST_ARGS -v \
+            --junitxml=.log/pytest.$$ts.xml \
+            > >(tee .log/pytest.$$ts.out.txt) \
+            2> >(tee .log/pytest.$$ts.err.txt >&2) \
+            || pytest_rc=$$?
+        fi
+        exit $$(( gtest_rc > 0 || pytest_rc > 0 ? 1 : 0 ))
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  asan:
+    image: ${WWR_IMAGE:-gpumod:latest}
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
+    environment:
+      - BUILD_PRESET=${BUILD_PRESET:-asan}
+      - BUILD_DIR=${BUILD_DIR:-build-compose-asan}
+      - CUDA_VISIBLE_DEVICES
+      - ASAN_OPTIONS=protect_shadow_gap=0
+      - TIMEOUT_MULTIPLIER=${TIMEOUT_MULTIPLIER:-1}
+      - TEST_FILTER=${TEST_FILTER:-}
+      - PYTEST_ARGS=${PYTEST_ARGS:-}
+      - SKIP_GTEST=${SKIP_GTEST:-}
+      - SKIP_PYTEST=${SKIP_PYTEST:-}
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        preset="$$BUILD_PRESET"
+        build_dir="$$BUILD_DIR"
+        ts=$$(date +%Y%m%d-%H%M%S)
+        mkdir -p .log
+        cmake --preset "$$preset" -B "$$build_dir" \
+          > >(tee .log/configure.$$ts.out.txt) \
+          2> >(tee .log/configure.$$ts.err.txt >&2)
+        cmake --build "$$build_dir" \
+          > >(tee .log/build.$$ts.out.txt) \
+          2> >(tee .log/build.$$ts.err.txt >&2)
+        set +e
+        gtest_rc=0
+        pytest_rc=0
+        if [ -z "$$SKIP_GTEST" ]; then
+          ctest --test-dir "$$build_dir" --output-on-failure -LE no_sanitizer \
+            $${TEST_FILTER:+-R "$$TEST_FILTER"} \
+            --output-junit "$$PWD/.log/ctest.$$ts.xml" \
+            > >(tee .log/ctest.$$ts.out.txt) \
+            2> >(tee .log/ctest.$$ts.err.txt >&2)
+          gtest_rc=$$?
+        fi
+        if [ -z "$$SKIP_PYTEST" ]; then
+          python3 -m pytest -rs $$PYTEST_ARGS -v \
+            --junitxml=.log/pytest.$$ts.xml \
+            > >(tee .log/pytest.$$ts.out.txt) \
+            2> >(tee .log/pytest.$$ts.err.txt >&2)
+          pytest_rc=$$?
+        fi
+        exit $$(( gtest_rc || pytest_rc ))
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  compute-sanitizer:
+    image: ${WWR_IMAGE:-gpumod:latest}
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
+    environment:
+      - BUILD_PRESET=${BUILD_PRESET:-compute-sanitizer}
+      - BUILD_DIR=${BUILD_DIR:-build-compose-compute-sanitizer}
+      - COMPUTE_SANITIZER_TOOL=${COMPUTE_SANITIZER_TOOL:-memcheck}
+      - TEST_FILTER=${TEST_FILTER:-}
+      - PYTEST_ARGS=${PYTEST_ARGS:-}
+      - SKIP_GTEST=${SKIP_GTEST:-}
+      - SKIP_PYTEST=${SKIP_PYTEST:-}
+      - TIMEOUT_MULTIPLIER=10
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        preset="$$BUILD_PRESET"
+        build_dir="$$BUILD_DIR"
+        tool="$$COMPUTE_SANITIZER_TOOL"
+        ts=$$(date +%Y%m%d-%H%M%S)
+        mkdir -p .log
+        cmake --preset "$$preset" -B "$$build_dir" \
+          > >(tee .log/configure.$$ts.out.txt) \
+          2> >(tee .log/configure.$$ts.err.txt >&2)
+        cmake --build "$$build_dir" \
+          > >(tee .log/build.$$ts.out.txt) \
+          2> >(tee .log/build.$$ts.err.txt >&2)
+        gtest_rc=0
+        pytest_rc=0
+        if [ -z "$$SKIP_GTEST" ]; then
+          # --target-processes all: compute-sanitizer does not follow children
+          # by default, and ctest launches each suite as its own process, so
+          # without it the tool would instrument ctest itself and nothing else.
+          # -LE no_sanitizer: the ctest analog of pytest's -m "not no_sanitizer"
+          # below. A suite that deliberately provokes a CUDA error (e.g. a forced
+          # cudaMalloc OOM to prove the buffer stays coherent) counts as an error
+          # under memcheck, so --error-exitcode 1 would fail the whole run on a
+          # clean tree; the suite carries the no_sanitizer label to opt out here
+          # while still running in every non-sanitized ctest.
+          compute-sanitizer --tool "$$tool" --error-exitcode 1 --target-processes all \
+            ctest --test-dir "$$build_dir" --output-on-failure -LE no_sanitizer \
+            $${TEST_FILTER:+-R "$$TEST_FILTER"} \
+            --output-junit "$$PWD/.log/ctest.$$ts.xml" \
+            > >(tee .log/compute-sanitizer-gtest.$$ts.out.txt) \
+            2> >(tee .log/compute-sanitizer-gtest.$$ts.err.txt >&2)
+          gtest_rc=$$?
+        fi
+        if [ -z "$$SKIP_PYTEST" ]; then
+          compute-sanitizer --tool "$$tool" --error-exitcode 1 \
+            python3 -m pytest -m "not no_sanitizer" -rs $$PYTEST_ARGS -v \
+            --junitxml=.log/pytest.$$ts.xml \
+            > >(tee .log/compute-sanitizer-pytest.$$ts.out.txt) \
+            2> >(tee .log/compute-sanitizer-pytest.$$ts.err.txt >&2)
+          pytest_rc=$$?
+        fi
+        exit $$(( gtest_rc || pytest_rc ))
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

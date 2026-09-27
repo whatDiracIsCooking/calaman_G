@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1.7
+# ============================================================================
+# combined -- both SDKs in one image
+# ============================================================================
+# For switching backends without switching containers. It is the sum of the two
+# GPU images (~40GB); prefer `cuda` or `hip` unless you actually need both.
+#
+#   docker/build.sh combined  # builds base, then cuda, then this; tags :combined
+#
+# By hand, and BOTH ancestors must already be tagged (see Dockerfile.base, "WHY
+# THE FOUR FILES CHAIN BY TAG"):
+#
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base     -t gpumod:base .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda     -t gpumod:cuda .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.combined -t gpumod:combined .
+#
+# WHY THIS IS NOT A REAL JOIN OF cuda AND hip:
+# it is the bottom of the diamond in intent, but docker has no multiple
+# inheritance -- a single image cannot be `FROM` two parents. So this file takes
+# the CUDA image as its parent and re-runs the OTHER backend's install script on
+# top; docker/install-rocm.sh exists as a script, rather than an inline RUN in
+# Dockerfile.hip, precisely so this file can reuse it without the block being
+# written twice.
+#
+# `COPY --from=gpumod:hip /opt/rocm /opt/rocm` would be a literal two-parent
+# join, and is the wrong thing: install-rocm.sh also writes an apt keyring and
+# pin, /etc/ld.so.conf.d/rocm.conf, and the `render`/`video` groups, none of
+# which live under /opt/rocm. The copy would leave a ROCm tree that apt does not
+# know is installed, no loader path for it, and no groups for the device nodes.
+#
+# The consequence to keep in mind: ROCM_VERSION and GPU_TARGETS are declared
+# HERE as well as in Dockerfile.hip, because this file drives the same script
+# without inheriting from that image. Bump them together.
+ARG PROJECT_NAME=gpumod
+ARG PARENT_IMAGE=${PROJECT_NAME}:cuda
+FROM ${PARENT_IMAGE}
+
+ARG ROCM_VERSION=7.2.4
+USER root
+
+# Re-stamped rather than merely inherited from the parent, so that the
+# PROJECT_NAME the devcontainer passes to THIS build is consumed where it is
+# declared. See Dockerfile.base for what the label is for.
+ARG PROJECT_NAME
+LABEL devcontainer.project="${PROJECT_NAME}"
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=docker/install-rocm.sh,target=/tmp/install-rocm.sh \
+    ROCM_VERSION="${ROCM_VERSION}" bash /tmp/install-rocm.sh
+
+ARG GPU_TARGETS=gfx1200
+ENV GPU_TARGETS=${GPU_TARGETS} \
+    AMDGPU_TARGETS=${GPU_TARGETS} \
+    ROCM_PATH=/opt/rocm \
+    PATH=/opt/rocm/bin:${PATH}
+
+USER ubuntu
+RUN nvcc --version | grep release && hipconfig --version

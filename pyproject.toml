@@ -1,0 +1,92 @@
+# The Python side of a C++23/CUDA project: the test runner, the linters and the
+# CMake formatter. There is no Python package here -- `src/` is C++ -- so this
+# file declares no [build-system] and nothing is installable. `testpaths` below
+# must stay in sync with devtools/config.sh, which PREPUSH_PATHS assumes exists.
+#
+# `name` below is recorded in uv.lock too, and `uv sync --frozen` -- what both
+# docker/Dockerfile.base and CI run -- refuses a lock that disagrees with it.
+# Change it and re-run `uv lock`; devtools/doctor.sh warns when they drift.
+[project]
+name = "gpumod"
+version = "0.1.0"
+description = "GPU-first scientific computing in C++23 named modules and CUDA."
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    # Parallel test execution. devtools/config.sh's JOBS is this plugin's -n
+    # flag; drop the dependency and set JOBS= empty if the suite is small
+    # enough not to need it.
+    "pytest-xdist>=3.6",
+    "ruff>=0.16.8",
+    "pre-commit>=3.7",
+    # cmake-format / cmake-lint, for the CMakeLists.txt and cmake/*.cmake that
+    # define every target in the tree. Configured by .cmake-format.yaml. Not a
+    # pre-commit hook on purpose -- see .pre-commit-config.yaml on why there is
+    # no formatter hook in this repo.
+    # The [yaml] extra is load-bearing: cmakelang keeps pyyaml behind it, and
+    # both cmake-format and cmake-lint abort with ModuleNotFoundError the
+    # moment they try to read .cmake-format.yaml without it. It resolves today
+    # only because pre-commit happens to pull pyyaml in -- drop pre-commit and
+    # the CI lint step breaks for a reason that points nowhere near here.
+    "cmakelang[yaml]>=0.6.13",
+]
+
+# The numeric stack the Python suite typically needs to validate CUDA output
+# against a reference. Left out of `dev` because it is project-specific and
+# roughly triples the lock: add what you actually use, then `uv lock`.
+#
+#   [dependency-groups]
+#   science = ["numpy>=2.0", "scipy>=1.14", "matplotlib>=3.9"]
+
+# uv.lock is TRACKED, and it is the only place exact versions are written down:
+# pyproject says what is wanted, the lock says what satisfies it, and
+# docker/Dockerfile.base's `uv sync --frozen` installs that same lock, so the
+# container and the host cannot drift. After editing dependencies here, run `uv lock` and
+# commit the result -- never hand-install with `uv pip install`.
+
+[tool.pytest.ini_options]
+# One pytest root and two collected directories, each holding a test file that
+# sits beside the script it tests: test/shared/test_dispatch.py for the
+# build-time dispatch checker, .claude/hooks/test_protect_main.py for the
+# main-checkout guard. Both are named rather than collecting from the repo root,
+# so pytest does not walk the C++ tree or the build directories. .claude/hooks
+# is a dot-directory, which pytest's default norecursedirs (`.*`) would skip, so
+# norecursedirs below is narrowed to re-admit it. Do NOT add a pytest.ini or
+# conftest.py in either -- a stray config next to the tests wins over this file
+# for anything run from that directory, and which markers exist would then
+# depend on where pytest started.
+testpaths = ["test/shared", ".claude/hooks"]
+# Default norecursedirs excludes every dotted directory (`.*`); .claude/hooks is
+# one, so spell the list out without that glob. The rest are pytest's defaults
+# minus `.*`, plus this repo's build dirs, so nothing under the C++ tree or a
+# build output is walked.
+norecursedirs = [
+    "*.egg", ".git", ".hg", ".svn", ".tox", ".venv", "venv",
+    "_build", "dist", "node_modules", "build", "build-*",
+]
+markers = [
+    # What a test NEEDS, not what it costs. There is no fast/slow split any
+    # more: the Python suite is two sub-second files, so `-m slow` and
+    # devtools/slow-tier.sh were retired rather than kept as an empty tier that
+    # exits 5. Reintroduce a `slow` marker together with something that runs it.
+    "gpu: needs a live NVIDIA device (skipped, with a reason, when absent)",
+    # compute-sanitizer serialises and instruments every access, so a case that
+    # is merely slow under it becomes hours. docker/compose.yaml's
+    # compute-sanitizer service deselects this one.
+    "no_sanitizer: excluded from the compute-sanitizer run",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+# src/ is C++; there is nothing here for ruff to find, and pointing it at the
+# module tree only slows the walk.
+exclude = ["src", "deps", "build", "build-*"]
+
+[tool.ruff.lint]
+# Conservative on purpose: a broad ruleset on an existing tree buries real
+# findings under restyling. Widen it deliberately, not by default.
+select = ["E", "F", "I", "UP", "B"]

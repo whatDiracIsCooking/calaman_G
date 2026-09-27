@@ -1,0 +1,73 @@
+{
+  "//": "Committed, shared settings. Personal overrides go in settings.local.json (gitignored). The allow list is deliberately read-only tools plus this repo's own scripts -- add the project's entry points as you add them.",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+
+      "Bash(devtools/devcontainer.sh:*)",
+      "Bash(devtools/worktree.sh:*)",
+      "Bash(devtools/doctor.sh:*)",
+      "Bash(devtools/cpp-tier.sh:*)",
+      "Bash(devtools/install-check.sh:*)",
+
+      "Bash(cmake:*)",
+      "Bash(ctest:*)",
+      "Bash(ninja:*)",
+      "Bash(clang-format:*)",
+      "Bash(clang-tidy:*)",
+      "Bash(cmake-format:*)",
+      "Bash(cmake-lint:*)",
+      "Bash(nvidia-smi:*)",
+
+      "Bash(pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(uv:*)",
+      "Bash(ruff:*)",
+      "Bash(pre-commit:*)",
+
+      "Bash(git:*)",
+      "Bash(gh:*)",
+
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(which:*)",
+      "Bash(stat:*)",
+      "Bash(wc:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker images:*)",
+      "Bash(docker volume ls:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SCRIPT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}/.claude/hooks/session-context.sh\"; [ -f \"$SCRIPT\" ] && bash \"$SCRIPT\" || true",
+            "statusMessage": "Reporting host/container + checkout"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SCRIPT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}/.claude/hooks/protect-main.py\"; [ -f \"$SCRIPT\" ] && python3 \"$SCRIPT\" || true",
+            "statusMessage": "Checking main-checkout guard"
+          }
+        ]
+      }
+    ]
+  }
+}

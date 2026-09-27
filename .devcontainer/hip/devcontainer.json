@@ -1,0 +1,139 @@
+{
+  // The AMD/ROCm variant: ../../docker/Dockerfile.hip -- the
+  // same clang-20 + libc++ + CMake 4.2 + Ninja toolchain as the CUDA container,
+  // with ROCm instead of the CUDA toolkit and NO nvcc at all. A HIP build
+  // needs no CUDA, which is the whole point of the split; see the header of
+  // docker/Dockerfile.hip.
+  //
+  // NOT the default. devtools/config.sh points DEVCONTAINER_CONFIG at the CUDA
+  // variant; select this one per call:
+  //
+  //   DEVCONTAINER_CONFIG=.devcontainer/hip/devcontainer.json \
+  //     devtools/devcontainer.sh rebuild
+  //
+  // Identical to ../cuda/devcontainer.json in every respect except the four
+  // below -- workspace mount, volume names, postCreate and features are the
+  // same, so the three GPU variants are A/B-able.
+  "name": "gpumod-hip",                                // EDIT
+
+  // Builds the PARENT image (gpumod:base) first -- see ../cuda/ for why a
+  // devcontainer needs this hook at all.
+  "initializeCommand": "bash ${localWorkspaceFolder}/docker/build.sh base",
+
+  "build": {
+    "context": "../..",
+    "dockerfile": "../../docker/Dockerfile.hip",
+    // No "target": every backend is its own file now, each with a single stage.
+    // Outside the devcontainer, `docker/build.sh hip` walks base -> hip.
+    "args": {
+      "PROJECT_NAME": "gpumod",                        // EDIT
+      // The LLVM target for the card this image is built for. gfx1200 is RDNA4
+      // (Radeon RX 9060 XT); `rocminfo | grep gfx` on the host names yours.
+      // Widen for a mixed fleet, e.g. "gfx1100;gfx1200".
+      "GPU_TARGETS": "gfx1200"
+    }
+  },
+
+  // Hand the container the AMD GPU. There is no ROCm equivalent of `--gpus
+  // all`: the driver is exposed as two device nodes, and the container user
+  // must be in the groups that own them.
+  //
+  //   /dev/kfd          the compute node, root:render
+  //   /dev/dri          renderD* (root:render) and card* (root:video)
+  //
+  // The two --group-add values below are NUMERIC HOST gids, and have to be.
+  // --group-add resolves a NAME inside the container, where install-rocm.sh
+  // made `render` 110; the bind-mounted nodes keep their HOST ownership, so a
+  // name puts the user in a group the device does not grant. The container
+  // then starts clean and the first device call fails with hipErrorNoDevice --
+  // indistinguishable from having no AMD card. Do NOT rebuild the image to
+  // chase a mismatch.
+  //
+  // devtools/devcontainer.sh resolves them for you: on `up` and `rebuild` it
+  // runs `getent group` over ROCM_GROUPS (config.sh) and exports one
+  // WWR_<NAME>_GID per group, which is what ${localEnv:...} reads here --
+  // the same resolution cpp-tier.sh --rocm does.
+  //
+  // The value AFTER THE COLON is the fallback when that variable is not set,
+  // which is what a VS Code "Reopen in Container" or a bare `devcontainer up`
+  // gets. It is a last-known-good HOST gid (`getent group render video`), not
+  // a group name -- a name would reintroduce the silent failure above. Update
+  // it if this machine's gids are different and you open the container
+  // directly; going through devcontainer.sh needs no edit.
+  //
+  // seccomp=unconfined is ROCm's documented requirement: some HSA queue and
+  // signal paths use syscalls docker's default profile blocks, and the failure
+  // is an opaque HSA_STATUS_ERROR_OUT_OF_RESOURCES rather than EPERM.
+  "runArgs": [
+    "--device=/dev/kfd",
+    "--device=/dev/dri",
+    "--group-add", "${localEnv:WWR_RENDER_GID:109}",        // EDIT: fallback gid
+    "--group-add", "${localEnv:WWR_VIDEO_GID:44}",          // EDIT: fallback gid
+    "--security-opt", "seccomp=unconfined"
+  ],
+
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "workspaceFolder": "${localWorkspaceFolder}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached",
+
+  // Deliberately the SAME volume names as the other variants, not per-variant
+  // ones: devtools/worktree.sh reconstructs them as
+  // <PROJECT_NAME>-<suffix>-<worktree-basename> and treats anything whose tail
+  // is not a live worktree name as an orphan to delete, so a `-hip` inserted
+  // anywhere makes `worktree.sh gc` eat them. The cost is that a cuda and a
+  // hip container up on the SAME worktree at the same time share one
+  // /tmp/pytest-of-ubuntu -- one pytest numbered-dir sequence across two
+  // containers, whose keep-the-last-three cleanup is then free to delete a run
+  // the other is using. Run the suite in one variant at a time.
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/home/ubuntu/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.claude.json,target=/home/ubuntu/.claude.json.host,type=bind,readonly",
+    "source=gpumod-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
+    "source=gpumod-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
+    "source=gpumod-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
+    // Host path injected as WWR_GIT_DIR by devtools/devcontainer.sh (up /
+    // rebuild); the literal after the colon is only a fallback for opening this
+    // config directly (VS Code "Reopen in Container"), which you then edit to
+    // your own checkout's .git common dir. See ../README.md, "Per-project edits".
+    "source=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
+  ],
+
+  "remoteUser": "ubuntu",
+  "updateRemoteUserUID": false,
+
+  "containerEnv": {
+    "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    "GPU_TARGETS": "gfx1200",
+    "AMDGPU_TARGETS": "gfx1200",
+    // The load-bearing pair. devtools/config.sh reads ${CMAKE_PRESET:-default}
+    // and ${CTEST_PRESET:-default}, so pinning them here makes a bare
+    // `devtools/cpp-tier.sh` inside this container drive the `hip` preset and
+    // build-hip/ with no flag. Without them it would configure the `default`
+    // preset, whose CMAKE_CUDA_ARCHITECTURES=native queries an NVIDIA driver
+    // that is not here -- a configure failure on a machine that is perfectly
+    // able to build the HIP backend. An explicit `--preset` on the command
+    // line still wins over both.
+    "CMAKE_PRESET": "hip",
+    "CTEST_PRESET": "hip"
+  },
+
+  "postCreateCommand": "bash ${localWorkspaceFolder}/.devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-vscode.cpptools"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
+        "python.testing.pytestEnabled": true
+      }
+    }
+  }
+}

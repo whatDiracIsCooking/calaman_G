@@ -1,0 +1,205 @@
+# Build the CI container images and publish them to GHCR -- and, on a pull
+# request that touches the same paths, build them WITHOUT publishing, so a
+# Dockerfile that no longer builds fails before it merges rather than after.
+#
+# SEPARATE FROM ci.yml ON PURPOSE. These images change when docker/ changes --
+# a few times a year -- while ci.yml runs on every push. Rebuilding a ~20GB
+# ROCm install per commit would cost more than the tests it exists to run, so
+# ci.yml PULLS what this workflow PUSHES.
+#
+# ---------------------------------------------------------------------------
+# WHAT IT PUBLISHES, AND WHY THESE ARE NOT THE DEV IMAGES
+# ---------------------------------------------------------------------------
+#   ghcr.io/<owner>/gpumod:cuda-ci   the CUDA toolchain, unmodified
+#   ghcr.io/<owner>/gpumod:hip-ci    ROCm with ROCM_PRUNE=1
+#
+# Same Dockerfiles as the dev images, different build args and a different tag
+# (docker/build.sh, "variant tags and the registry"). The `-ci` suffix is what
+# stops a pruned image from overwriting `gpumod:hip`, which a developer runs
+# against a real card.
+#
+# ROCM_PRUNE=1 drops ~12.9GB of kernel objects and unused libraries that no
+# COMPILE links, taking the ROCm image from 20.5GB to 7.05GB -- see
+# docker/install-rocm.sh for the measured list. It is an OPTIMISATION: ~13GB
+# less to pull on every ci.yml run, and a 3-minute push. This comment used to
+# claim it was what made the HIP job possible at all, on an estimate of
+# "20-25GB free" that the first real run disproved -- see `reclaim disk`.
+#
+# ---------------------------------------------------------------------------
+# MOVING TAGS, AND THE ONE CASE THEY GET WRONG
+# ---------------------------------------------------------------------------
+# `:cuda-ci` and `:hip-ci` move. ci.yml names them in `container:`, which
+# GitHub resolves before any step runs and so cannot be computed from the diff.
+#
+# The consequence to know: A PR THAT EDITS docker/ IS TESTED AGAINST THE IMAGE
+# main ALREADY PUBLISHED, not against its own. Run this workflow manually on
+# that branch first (Actions -> images -> Run workflow -> pick the branch) and
+# the PR's next push tests the new image. Nothing detects the omission for you.
+name: images
+
+on:
+  push:
+    branches: [main]
+    # Everything the images are a function of. uv.lock is in the list because
+    # Dockerfile.base installs /opt/venv from it with `uv sync --frozen`.
+    paths:
+      - 'docker/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/images.yml'
+  # The same paths on a PR, where this BUILDS BUT DOES NOT PUSH.
+  #
+  # Nothing used to verify a Dockerfile edit until after it merged. ci.yml
+  # resolves `container:` before any step runs, so a PR's cpp legs test the
+  # image main already published -- meaning a Dockerfile that no longer builds
+  # was discovered by the publish on main, one merge too late, with the tags
+  # already moved or the run already red on the wrong branch.
+  #
+  # This closes that and nothing more: it proves the files still build. It does
+  # NOT make the cpp legs test the new image -- see MOVING TAGS above for the
+  # manual step that does. The path list is spelled twice because `on:` has no
+  # way to share one.
+  pull_request:
+    paths:
+      - 'docker/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/images.yml'
+  # Also weekly: these install from apt repositories that move underneath a
+  # fixed Dockerfile, so an image that has not been rebuilt in months is not
+  # the image the Dockerfile describes.
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which image to publish'
+        type: choice
+        default: both
+        options: [both, cuda, hip]
+
+concurrency:
+  # Never cancel a publish in flight: a half-pushed manifest is worse than a
+  # duplicated build, and these are rare enough that queueing costs nothing.
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+# Narrowed default for anything added later; the one job below declares its own,
+# which REPLACES this rather than extending it.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Named for what the run actually does, because a green "publish (hip)" on a
+    # pull request -- which pushes nothing -- is the kind of signal this repo
+    # goes out of its way not to produce.
+    name: ${{ github.event_name == 'pull_request' && 'build' || 'publish' }} (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    # Generous rather than tuned, and now backed by a number. MEASURED on a
+    # hosted runner, build-only: the ROCm install layer is 176.6s and the whole
+    # hip job 6m35s, base included. This comment previously claimed "~25 minutes
+    # to install ROCm" -- an estimate no run ever produced, and the second one in
+    # this file to survive until a real run contradicted it (see `reclaim disk`).
+    # The ceiling stays high because the publish path adds a ~3-minute push per
+    # image, and because what this guards against is an apt mirror having a bad
+    # day rather than the install itself.
+    timeout-minutes: 180
+    # `permissions:` accepts no expression, so a pull_request run carries the
+    # same `packages: write` and simply never uses it -- the login step below is
+    # skipped and BUILD_PUSH is empty. Splitting the job in two to drop one
+    # unused scope would duplicate the matrix, the disk reclaim and the build.
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: cuda
+            # No prune: the CUDA toolkit is 10GB, which fits.
+            build_env: ''
+          - image: hip
+            build_env: 'ROCM_PRUNE=1'
+    steps:
+      - name: skip unselected target
+        id: gate
+        env:
+          CHOICE: ${{ github.event.inputs.target || 'both' }}
+        run: |
+          if [ "$CHOICE" = both ] || [ "$CHOICE" = "${{ matrix.image }}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "target '$CHOICE' selected -- skipping ${{ matrix.image }}"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.run == 'true'
+
+      # Headroom before the build, not a third-party action. The peak is not
+      # the finished image: ROCm downloads ~8GB of debs and unpacks ~20GB
+      # before install-rocm.sh prunes anything, because the prune has to happen
+      # inside that same RUN (a delete in a later layer frees nothing). So
+      # ~30GB has to be free at once.
+      #
+      # MEASURED, and it turns out this step is not load-bearing: the runner
+      # starts with a 145GB root and 86GB free, and these four preinstalled
+      # toolchains free another 24GB on top. Kept anyway -- it costs ~80s, it
+      # is what keeps the ROCm build off a cliff if GitHub shrinks the image or
+      # the toolkit grows, and the `df` either side is what turned the original
+      # guess of "20-25GB free" into a number. Drop it only with fresh `df`
+      # output in hand.
+      - name: reclaim disk
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          df -h /
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/local/share/boost \
+            "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+          sudo docker image prune -af
+          df -h /
+
+      - name: log in to ghcr.io
+        # Not on a PR: nothing is pushed, so there is nothing to authenticate
+        # for. It would also fail for a fork, whose GITHUB_TOKEN is read-only.
+        if: steps.gate.outputs.run == 'true' && github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # build.sh walks base -> <image> (the files chain by tag, so the child
+      # cannot be built alone) and applies the suffix to every step, tags the
+      # target for the registry, and pushes only the target. The registry owner
+      # must be lowercase; github.repository_owner is not guaranteed to be.
+      - name: build and push
+        if: steps.gate.outputs.run == 'true'
+        env:
+          IMAGE_TAG_SUFFIX: '-ci'
+          # build.sh pushes only when BUILD_PUSH is non-empty, so emptying it on
+          # a PR turns the exact command that publishes on main into a
+          # build-only check. One knob, not a second code path -- which matters
+          # because the thing being verified is that this command still works.
+          #
+          # THE CONDITION IS INVERTED ON PURPOSE. `x && '' || '1'` does not work
+          # here: GitHub's `&&`/`||` return operands rather than booleans and an
+          # empty string is FALSY, so the `&&` yields '' and the `||` then hands
+          # back '1' -- a PR would push. Whichever branch must be empty has to
+          # be the `||` side.
+          BUILD_PUSH: ${{ github.event_name != 'pull_request' && '1' || '' }}
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          export IMAGE_REGISTRY="ghcr.io/$owner"
+          env ${{ matrix.build_env }} docker/build.sh ${{ matrix.image }}
+
+      - name: report size
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' \
+            | grep -- '-ci' || true
+          df -h /

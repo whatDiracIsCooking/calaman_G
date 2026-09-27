@@ -1,0 +1,58 @@
+# Configuration for cmakelang, which provides two tools with one config file:
+#
+#   cmake-lint   run by CI over every tracked CMakeLists.txt and cmake/*.cmake
+#   cmake-format NOT run by anything -- see below
+#
+# Only the lint half is live. There is deliberately no formatter hook in this
+# repo (.pre-commit-config.yaml says why), so cmake-format is a by-hand tool:
+#
+#   .venv/bin/cmake-format -i $(git ls-files 'CMakeLists.txt' '*.cmake')
+#
+# and running it today rewrites most of the tree, because the tree was never
+# formatted by it. Adopt it on a day when you want that diff, or not at all.
+#
+# There is no `parse.additional_commands` block teaching cmake-format this
+# repo's custom `wwr_add_*` macros. If cmake-format is ever adopted, add one
+# -- with `pargs: '*'` on any macro that declares flags such as IMPORT_STD, since
+# cmakelang parses a `flags:` entry as a positional group and `pargs: 0` leaves
+# those keywords nowhere to land.
+
+format:
+  line_width: 80
+  tab_size: 2
+  use_tabchars: false
+  dangle_parens: true
+  max_subgroups_hwrap: 2
+  max_pargs_hwrap: 4
+
+markup:
+  # Doxygen-ish comment banners in the cmake/ helpers are hand-written; leaving
+  # bullet/enum detection on rewraps them into unreadable prose.
+  enable_markup: false
+
+lint:
+  # A leading underscore marks a local/private name throughout this tree --
+  # `_llvm_roots` in CMakeLists.txt, `_wwr_*` for the helper functions in
+  # cmake/. cmake-lint's default argument_var_pattern rejects the prefix, so
+  # `foreach(_root ...)` trips C0103 while the identical convention on set()
+  # locals and function names does not. Widen the pattern rather than break the
+  # convention in one place.
+  argument_var_pattern: '_?[a-z][a-z0-9_]*'
+
+  # Same reasoning, two more places the default patterns are narrower than the
+  # tree's actual convention:
+  #
+  # `cmake_parse_arguments(_GST ...)` yields `_GST_TIMEOUT`, `_TEX_MAIN` and so
+  # on -- an underscore-prefixed UPPER prefix is the standard idiom for that
+  # command's output, and there is no way to name those variables otherwise.
+  local_var_pattern: '_?[a-zA-Z][a-zA-Z0-9_]*'
+  private_var_pattern: '_?[a-zA-Z][a-zA-Z0-9_]*'
+
+  # cmake-lint defaults to demanding SHOUTING macro names (`[0-9A-Z_]+`). CMake
+  # command names are case-INSENSITIVE, so the declaration's case never reaches
+  # a caller, and this tree genuinely has both: the template's helpers declare
+  # `macro(WWR_ADD_CXX_MODULE_LIBRARY ...)` while the imported ones declare
+  # `macro(wwr_add_gtest_executable ...)`. Every call site is lowercase
+  # either way. Accept both rather than churn one half to satisfy a rule about
+  # a spelling nothing observes.
+  macro_pattern: '[0-9A-Za-z_]+'

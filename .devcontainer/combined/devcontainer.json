@@ -1,0 +1,125 @@
+{
+  // Both SDKs in one container: ../../docker/Dockerfile.combined, which is the
+  // `cuda` image with ROCm installed on top. ~40GB. For switching
+  // backends without switching containers -- checking that a change compiles
+  // under both in one shell, or diffing src/cuda against src/hip behaviour
+  // side by side.
+  //
+  // NOT the default, and not what you want day to day: prefer ../cuda/ or
+  // ../hip/ unless you actually need both. Select it per call:
+  //
+  //   DEVCONTAINER_CONFIG=.devcontainer/combined/devcontainer.json \
+  //     devtools/devcontainer.sh rebuild
+  //
+  // Needs BOTH vendors' host plumbing to be useful: nvidia-container-toolkit
+  // for --gpus all, and an amdgpu kernel driver behind /dev/kfd. On a host
+  // with only one of them the container still builds and runs -- the other
+  // backend's COMPILE tests still pass, since both toolchains target an
+  // architecture rather than the card present -- and only that backend's
+  // runtime tests fail. Note they FAIL rather than skip; see CLAUDE.md.
+  "name": "gpumod-combined",                           // EDIT
+
+  // Builds BOTH ancestors first -- base, then cuda -- since this is the bottom
+  // of the diamond. See ../cuda/ for why a devcontainer needs this hook at all.
+  //
+  // CUDA_ARCH is passed HERE rather than in "args" below, and that is not a
+  // typo: it is consumed by docker/Dockerfile.cuda, which this hook builds, not
+  // by Dockerfile.combined. Putting it in "args" would earn a "build-args were
+  // not consumed" warning on every build and change nothing. GPU_TARGETS is the
+  // other way round -- Dockerfile.combined declares it, so it stays in "args".
+  "initializeCommand": "CUDA_ARCH=86 bash ${localWorkspaceFolder}/docker/build.sh cuda",
+
+  "build": {
+    "context": "../..",
+    "dockerfile": "../../docker/Dockerfile.combined",
+    // No "target": every backend is its own file now, each with a single stage,
+    // so the old warning about this one being the file's last stage is moot.
+    "args": {
+      "PROJECT_NAME": "gpumod",                        // EDIT
+      // Widen for a mixed fleet, e.g. "gfx1100;gfx1200" (and CUDA_ARCH
+      // "80;86;90" in the initializeCommand above).
+      "GPU_TARGETS": "gfx1200"
+    }
+  },
+
+  // Both vendors' device plumbing, since either backend may be the one you
+  // run. See ../cuda/ and ../hip/ for what each half is and why: --gpus all
+  // is read by the NVIDIA container runtime, and the kfd/dri devices plus the
+  // render/video gids are the AMD equivalent, which has no single flag.
+  //
+  // The two --group-add values are NUMERIC HOST gids, as in ../hip/ -- see
+  // there for why a NAME is the wrong thing to pass, and for what fills these
+  // in. devtools/devcontainer.sh exports WWR_<NAME>_GID from `getent` on
+  // `up`/`rebuild`; the value after the colon is the fallback for opening this
+  // config directly, and is host-specific like CUDA_ARCH and GPU_TARGETS
+  // above.
+  "runArgs": [
+    "--gpus", "all",
+    "--device=/dev/kfd",
+    "--device=/dev/dri",
+    "--group-add", "${localEnv:WWR_RENDER_GID:109}",        // EDIT: fallback gid
+    "--group-add", "${localEnv:WWR_VIDEO_GID:44}",          // EDIT: fallback gid
+    "--security-opt", "seccomp=unconfined"
+  ],
+
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "workspaceFolder": "${localWorkspaceFolder}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached",
+
+  // The same volume names as every other variant -- see the comment in
+  // ../hip/devcontainer.json for why they must not be made per-variant.
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/home/ubuntu/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.claude.json,target=/home/ubuntu/.claude.json.host,type=bind,readonly",
+    "source=gpumod-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
+    "source=gpumod-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
+    "source=gpumod-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
+    // Host path injected as WWR_GIT_DIR by devtools/devcontainer.sh (up /
+    // rebuild); the literal after the colon is only a fallback for opening this
+    // config directly (VS Code "Reopen in Container"), which you then edit to
+    // your own checkout's .git common dir. See ../README.md, "Per-project edits".
+    "source=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
+  ],
+
+  "remoteUser": "ubuntu",
+  "updateRemoteUserUID": false,
+
+  "containerEnv": {
+    "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    "CUDA_ARCH": "86",
+    "GPU_TARGETS": "gfx1200",
+    "AMDGPU_TARGETS": "gfx1200"
+    // Deliberately NO CMAKE_PRESET/CTEST_PRESET pin, unlike ../hip/. Both
+    // backends are available here, so which one a bare `devtools/cpp-tier.sh`
+    // should build is a choice rather than a property of the container: it
+    // falls through to config.sh's `default` (CUDA), and the other backend is
+    // one flag away.
+    //
+    //   devtools/cpp-tier.sh                 CUDA, into build/
+    //   devtools/cpp-tier.sh --preset hip    HIP,  into build-hip/
+    //
+    // Separate binaryDirs, so the two coexist and neither reconfigures the
+    // other -- which is the point of having both in one container.
+  },
+
+  "postCreateCommand": "bash ${localWorkspaceFolder}/.devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "nvidia.nsight-vscode-edition",
+        "ms-vscode.cpptools"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
+        "python.testing.pytestEnabled": true
+      }
+    }
+  }
+}

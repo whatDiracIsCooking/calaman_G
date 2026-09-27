@@ -1,0 +1,62 @@
+# The layer dropdown is the load-bearing field. This tree is four layers deep
+# on purpose -- vendor re-export, backend-neutral gpu* aliases, type-safe
+# wrappers, RAII extension -- and which one a request belongs in decides both
+# what has to be written twice (once per backend) and what verifies it.
+name: Feature request
+description: Something to add, or a shape to change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is hard today
+      description: The problem, not the solution. What are you unable to express?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What you would add or change, and roughly how it would be used.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer
+      description: See docs/architecture.md if this is not obvious.
+      options:
+        - 'src/cuda or src/hip — a vendor header exposed as a named module'
+        - 'src/*.cppm — a backend-neutral gpu* alias'
+        - 'src/wrappers — a type-safe wrapper over a vendor API'
+        - 'src/extension — RAII, buffers, kernels, handles'
+        - 'devtools/, docker/, CI'
+        - 'Docs only'
+        - 'Not sure'
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: parity
+    attributes:
+      label: Backend parity
+      description: >-
+        Anything under `src/` below the vendor re-exports has to exist for both
+        backends, and `test/shared/alias_coverage.py` enforces it for the `gpu*`
+        layer. A CUDA-only addition there fails the guard rather than merging
+        half-done.
+      options:
+        - label: This needs a CUDA and a HIP path, and the proposal covers both
+        - label: This is backend-neutral or touches neither backend
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: >-
+        Including "do nothing" — several things in this tree were deliberately
+        left out and say so in a comment (the GoogleTest `import std` patch, the
+        per-architecture presets, the formatter hooks). If one of those is what
+        you are asking for, say why the stated reason no longer holds.

@@ -1,0 +1,433 @@
+# The server-side gate. The pre-push hook (devtools/prepush-tests.sh) is the
+# same idea run locally and is bypassable with --no-verify; this is not.
+#
+# ---------------------------------------------------------------------------
+# WHAT RUNS HERE, AND WHAT STILL CANNOT
+# ---------------------------------------------------------------------------
+# Every runner is GitHub-hosted, which for a public repository is free and
+# uncapped. None of them has a GPU.
+#
+#   changes       one cheap job that diffs the push/PR and outputs `code`,
+#                 false only when EVERY changed file is docs. The two heavy
+#                 jobs gate on it; `ci-ok` accepts their skip only when it says
+#                 docs-only. So a `.md`-only PR goes green on lint+test alone.
+#   lint          ruff + cmake-lint
+#   python        the pytest tier, on 3.13
+#   cpp (cuda)    the whole tree built for CUDA -- src/, GoogleTest, every
+#                 runtime test binary -- then `ctest -LE gpu`, then an ADVISORY
+#                 clang-tidy pass over src/*.cpp that cannot fail the job
+#   cpp (hip)     the same shape for HIP: the whole tree through clang's
+#                 -x hip front end, then the same `-LE gpu`
+#   install-check install to a throwaway prefix, then build example/consumer
+#                 against it. The only tier that sees an export regression.
+#   ci-ok         an aggregate that fails unless every job above either
+#                 succeeded or, for the two gated jobs on a docs-only change,
+#                 was skipped -- the one check name stable enough to require in
+#                 a ruleset
+#
+# BE PRECISE ABOUT WHAT THE cpp JOBS PROVE, because "the whole tree built, then
+# ctest" reads like more than it is. What `-LE gpu` leaves is essentially a
+# COMPILE-AND-LINK answer with a thin runtime slice on top. Of the entries it
+# runs:
+#
+#   * two -- HalfConversion and Bfloat16Conversion -- actually compute
+#     something. They are host fp16/bf16 conversion, CPU work by design, and
+#     they are NOT backend-neutral in implementation: wwr.fp16 / wwr.bf16
+#     map onto the chosen backend's own types, so the two legs exercise
+#     different code and both are worth running.
+#   * one per device-dependent binary -- the <target>.SuiteListIsComplete
+#     guards -- prove that binary LOADS and that its gtest registry matches the
+#     hand-written CMake list. A load check, not a behaviour check.
+#   * {cuda,hip,gpu}_compile_tests link and reach main(); the static_asserts
+#     they carry were already proved by compiling.
+#
+# The four dispatch checks run at BUILD time on both legs (they are
+# add_custom_target(... ALL ...)), so the wrong-entry-point class of bug is
+# covered here even though it never appears in the ctest count.
+#
+# WHY BOTH LEGS, when neither runs a kernel: nvcc and clang's -x hip are
+# different front ends and nvcc is the more permissive one, so a whole class of
+# error compiles clean under CUDA and only fails when someone builds ROCm.
+# Compiling the test sources both ways is most of the value here -- which is
+# why the hip leg is a full build and not the compile-time tier.
+#
+# WHAT IS LEFT: seven runtime suites that genuinely need a card --
+# test/extension/{memory_buffer,runtime,rand,blas,solver,fft,sparse}. They
+# allocate device memory, launch kernels or create vendor handles, and they
+# carry the `gpu` ctest label so `-LE gpu` names them as excluded rather than
+# quietly passing over them. NOTHING HERE TESTS GPU BEHAVIOUR.
+# `devtools/cpp-tier.sh` on a box with a card is the only thing that does, and
+# it stays a human gate.
+#
+# BOTH LEGS REPORT 12, and that is worth keeping equal. Each is
+# {cuda,hip}_compile_tests + gpu_compile_tests + the two conversion suites +
+# eight SuiteListIsComplete guards, so a divergence between them is a signal
+# rather than a quirk of one backend.
+#
+# Getting there needed one thing: cuda_compile_tests links the driver stubs
+# and cannot LOAD without libcuda.so.1, where hip_compile_tests has no such
+# dependency. The ci-cuda preset sets WWR_CUDA_DRIVER_STUBS=ON, which points
+# THAT ONE TEST at the toolkit's own stubs -- build-directory symlinks and a
+# per-test ENVIRONMENT_MODIFICATION, never an image-wide LD_LIBRARY_PATH, which
+# would shadow the real driver on a machine that has one. It proves every
+# non-driver dependency resolves; it does not prove a real driver would load.
+# test/cuda/CMakeLists.txt has the full reasoning.
+#
+# ---------------------------------------------------------------------------
+# THE IMAGES COME FROM .github/workflows/images.yml
+# ---------------------------------------------------------------------------
+# Neither C++ job builds a container; both declare one. The toolchain is
+# clang-20 with libc++'s module manifest, CMake 4.2 and a vendor SDK, which is
+# far too much to install per run -- and re-deriving it in YAML is how it
+# drifts from docker/. images.yml publishes `:cuda-ci` and `:hip-ci` to GHCR
+# and this file pulls them.
+#
+# THE TAGS MOVE, and `container:` is resolved before any step runs, so it
+# cannot be computed from the diff: a PR that edits docker/ is tested against
+# the image main already published. images.yml's header says how to publish a
+# branch's image first.
+#
+# The owner is spelled in lowercase literally, twice. GHCR rejects an uppercase
+# path and ${{ github.repository_owner }} preserves the case of the account
+# name, which here has capitals -- and `container:` has no shell to lowercase
+# it in. A fork with no packages of its own pulls these, which is the intended
+# behaviour rather than an accident: forks get a working CI without publishing
+# anything.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push to a PR cancels the previous run for that PR; main is never
+  # cancelled, so every commit on it keeps a result.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# The default token scope for this workflow, narrowed to what `lint` and `test`
+# actually need: a checkout and nothing else. Without this they inherit the
+# repository default, which can be read-WRITE.
+#
+# A job-level `permissions:` block REPLACES this rather than adding to it, which
+# is why `cpp` and `install-check` each spell out `contents: read` alongside the
+# `packages: read` they need to pull from GHCR.
+permissions:
+  contents: read
+
+jobs:
+  # Docs-only detection. Its single output `code` is `false` only when EVERY
+  # file this push/PR changed is on the allowlist below; anything else -- a
+  # .cu, a .cmake, a .sh, a workflow edit, a new extension -- makes it `true`.
+  # The bias is deliberately toward `true`: a file the allowlist does not name
+  # counts as code and builds. The expensive jobs (`cpp`, `install-check`) gate
+  # on `code == 'true'`; `ci-ok` accepts their `skipped` result ONLY when `code`
+  # is `false`, so the skip a real code change must never produce is still
+  # caught. No third-party action -- a git diff is transparent and needs no pin.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The diff needs the base commit present, which a shallow clone omits.
+          fetch-depth: 0
+      - id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          # base.sha on a PR; the pushed-over commit on a branch push. Empty on
+          # workflow_dispatch, all-zero on a branch's very first push.
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          # No base to diff against (manual dispatch, or a brand-new branch):
+          # build everything rather than guess what changed.
+          if [ "$EVENT" = workflow_dispatch ] || [ -z "$BASE" ] || \
+             [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo "no diff base -- building everything"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only "$BASE" HEAD)"
+          echo "changed files:"; printf '%s\n' "$files"
+          # `code` becomes true the moment one changed file is NOT docs. Keep
+          # this allowlist tight -- when unsure, leave a pattern out and the file
+          # counts as code. `.github/workflows/**` is intentionally absent: a CI
+          # edit must run CI.
+          nondoc="$(printf '%s\n' "$files" | grep -vE \
+            '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|(^|/)LICENSE$)' || true)"
+          if [ -n "$files" ] && [ -z "$nondoc" ]; then
+            echo "docs-only -- cpp and install-check will skip"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      # --frozen: install the lock as committed, and fail rather than
+      # re-resolve. A CI that silently re-resolves is not testing what you ship.
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      # cmake-lint over the files that define every target in the tree. Comes
+      # from the `cmakelang` dev dependency, so it is already in the lock;
+      # configured by .cmake-format.yaml. Lint only -- the formatter is not run
+      # in CI for the same reason it is not a pre-commit hook.
+      - name: cmake-lint
+        run: |
+          uv run cmake-lint CMakeLists.txt \
+            $(git ls-files '*/CMakeLists.txt' 'cmake/*.cmake')
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Match `requires-python` in pyproject.toml. It floors at 3.13 with no
+        # ceiling, so 3.13 is the one version tested; add the ceiling here when a
+        # newer Python is supported. Kept a matrix so that is a one-line edit.
+        python: ["3.13"]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen
+      # -rs prints skip reasons: a suite that degrades-to-skip when a tool is
+      # missing looks green while testing nothing, and the log is the only
+      # place that shows it.
+      - name: python tier
+        run: uv run pytest -n auto -rs
+
+  cpp:
+    # An explicit name, because the default for a matrix job is built from ALL
+    # of its matrix values -- this one read `cpp (cuda, cuda-ci, ci-cuda,
+    # --tidy)` until this line existed, and every key added below silently
+    # rewrote it. See ci-ok at the bottom of this file for why that matters.
+    name: cpp (${{ matrix.backend }})
+    # After lint, so a ruff finding does not cost a 20-minute module build
+    # before it is reported. On `changes` too, so a docs-only PR skips this
+    # entirely -- `ci-ok` knows the skip is intentional. `if` is evaluated
+    # against the whole matrix, so a false skips both legs.
+    needs: [lint, changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: cuda
+            image: cuda-ci
+            preset: ci-cuda
+            # clang-tidy, on this leg only. .clang-tidy is real configuration
+            # and cpp-tier.sh has had --tidy from the start, but nothing ran it
+            # anywhere -- neither a hook nor CI -- which is the same dead-check
+            # failure mode as a preset no one exercises.
+            #
+            # It rides the build that is already happening: it lints the five
+            # src/*.cpp implementation units out of this tree's
+            # compile_commands.json, so the marginal cost is clang-tidy itself.
+            # One leg because the findings would otherwise be reported twice.
+            #
+            # IT IS ADVISORY BY CONSTRUCTION. cpp-tier.sh never lets it change
+            # the exit code (the tree is not tidy-clean yet, and clang-tidy's
+            # C++23-module support is still incomplete enough to emit the odd
+            # bogus diagnostic), so read it in the uploaded log rather than in
+            # this job's colour. Promote it to a gate only once the tree is
+            # clean AND the module diagnostics are trustworthy.
+            tidy: '--tidy'
+          - backend: hip
+            image: hip-ci
+            preset: ci-hip
+            tidy: ''
+    container:
+      image: ghcr.io/whatdiraciscooking/gpumod:${{ matrix.image }}
+      # The image's own USER is `ubuntu` (uid 1000) and the runner creates
+      # /__w owned by someone else, so the default user cannot write its own
+      # workspace. Running as root inside a throwaway container is the usual
+      # answer and costs nothing here.
+      options: --user root
+    steps:
+      - uses: actions/checkout@v7
+
+      # cpp-tier.sh puts `git rev-parse --short HEAD` in its log name, and git
+      # refuses to read a repository owned by a different uid. Without this the
+      # job dies on "detected dubious ownership", which reads like a checkout
+      # problem rather than a container one.
+      - name: trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # A C++23 named-module build is expensive enough that a cold cache
+      # dominates the job. CCACHE_DIR has to live INSIDE the workspace: the
+      # image points it at /home/ubuntu/.ccache, which is not the mounted
+      # directory, so actions/cache on the host would never see it.
+      - uses: actions/cache@v6
+        with:
+          path: .ccache
+          key: ccache-${{ matrix.backend }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.backend }}-
+
+      # BUILD_JOBS rather than Ninja's default of cores+2. A hosted runner is
+      # 4 vCPU / 16GB and a module build is memory-hungry per job (the scanner
+      # plus a BMI cache); an OOM-killed compiler surfaces as a bare
+      # `ninja: build stopped` with nothing about memory in it. Lower this
+      # first if that appears.
+      #
+      # The preset is passed explicitly, so cpp-tier.sh moves the TEST preset
+      # with it -- ci-cuda excludes the `gpu` label, ci-hip includes only
+      # `compile_time`.
+      - name: cpp tier
+        env:
+          BUILD_JOBS: '4'
+        run: |
+          export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache"
+          devtools/cpp-tier.sh --preset ${{ matrix.preset }} ${{ matrix.tidy }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cpp-tier-${{ matrix.backend }}
+          path: .slow-tier-reports/
+          # SLOW_TIER_REPORTS is a dotdir, and upload-artifact excludes hidden
+          # paths by default (since v4.4) -- without this the reports, including
+          # the cuda leg's advisory clang-tidy log, silently upload nothing.
+          include-hidden-files: true
+
+  install-check:
+    # Its own job, not a step on the cuda leg: cpp-tier.sh builds in place and
+    # never installs, so nothing in it can see an export regression -- a module
+    # whose .cppm has a PRIVATE include directory installs cleanly and breaks
+    # every consumer. A separate job keeps that a separate red mark.
+    # Gated on `changes` like `cpp`: a docs-only PR cannot regress an export.
+    needs: [lint, changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/whatdiraciscooking/gpumod:cuda-ci
+      options: --user root
+    steps:
+      - uses: actions/checkout@v7
+      - name: trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/cache@v6
+        with:
+          path: .ccache
+          key: ccache-install-check-${{ github.sha }}
+          restore-keys: |
+            ccache-install-check-
+      # --no-run stops after BUILDING example/consumer. Step 4 launches the
+      # binary, which needs a device; the script would report its exit-77 as a
+      # skip rather than a failure, but saying so here is clearer than a skip
+      # line in a log. Steps 1-3 are the ones that answer the question.
+      - name: package tier
+        env:
+          BUILD_JOBS: '4'
+        run: |
+          export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache"
+          devtools/install-check.sh --preset ci-cuda --no-run
+
+  # THE AGGREGATE GATE. One job whose only purpose is to be the single required
+  # status check in a branch ruleset.
+  #
+  # It exists because every other check name in this file is GENERATED and
+  # therefore moves. `test (3.13)` carries a Python version that will be bumped.
+  # `cpp`'s name was assembled from all of its matrix values until the `name:`
+  # line above existed -- adding the `tidy:` key rewrote it from
+  # `cpp (cuda, cuda-ci, ci-cuda)` to `cpp (cuda, cuda-ci, ci-cuda, --tidy)`
+  # without touching anything that looked like a name.
+  #
+  # A ruleset matches a required check by NAME, and a required name that nothing
+  # reports blocks the pull request FOREVER, displaying "Expected -- waiting for
+  # status to be reported". That reads like GitHub being slow rather than like a
+  # stale config, which is what makes it expensive. So pin this name and no
+  # other: it is stable by construction.
+  #
+  # THE INVARIANT IT CREATES: a job added to this file must be added to `needs:`
+  # below, or nothing gates it. There is no `needs: *`, so the list is spelled
+  # out and keeping it current is a human job -- that is the whole cost of the
+  # pattern. A job that is allowed to skip must ALSO be placed in the gated set
+  # in the script below, or its skip fails this gate.
+  ci-ok:
+    name: ci-ok
+    # Load-bearing. Without it this job is SKIPPED as soon as a need fails, and
+    # a skipped required check never reports -- so a red `cpp` leg would block
+    # the merge with no red gate explaining why. With it, the job runs and fails
+    # loudly instead.
+    if: always()
+    needs: [changes, lint, test, cpp, install-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: every required job passed
+        env:
+          # Through the environment rather than interpolated into the script
+          # body. Job results and `code` are fixed enums, so nothing can be
+          # injected today -- but pasting ${{ }} into a `run:` is the habit
+          # worth not forming.
+          DETAIL: ${{ toJSON(needs) }}
+          CODE: ${{ needs.changes.outputs.code }}
+          # Always-required set. `changes` is here too: if IT failed, `code` is
+          # empty and every gate below would misread -- so its own failure must
+          # fail the gate first.
+          ALWAYS: >-
+            changes:${{ needs.changes.result }}
+            lint:${{ needs.lint.result }}
+            test:${{ needs.test.result }}
+          # Gated set: required to succeed when code changed, but a `skipped`
+          # result is acceptable on a docs-only change (code=false). Any other
+          # result -- failure, cancelled -- still fails, on any change.
+          GATED: >-
+            cpp:${{ needs.cpp.result }}
+            install-check:${{ needs.install-check.result }}
+        run: |
+          echo "$DETAIL"
+          fail=0
+          # Always-required: nothing but success passes. Empty results (which is
+          # what emptying `needs:` above would produce) are not "success", so the
+          # gate cannot pass vacuously.
+          for pair in $ALWAYS; do
+            name=${pair%%:*}; result=${pair#*:}
+            if [ "$result" != success ]; then
+              echo "ci-ok: $name did not succeed ($result)" >&2
+              fail=1
+            fi
+          done
+          # Gated: success always passes; skipped passes ONLY on a docs-only
+          # change. A job that did not run proved nothing, so its skip is
+          # tolerated only when `changes` said there was nothing to prove.
+          for pair in $GATED; do
+            name=${pair%%:*}; result=${pair#*:}
+            if [ "$result" = success ]; then
+              continue
+            fi
+            if [ "$result" = skipped ] && [ "$CODE" = false ]; then
+              echo "ci-ok: $name skipped -- docs-only change, expected"
+              continue
+            fi
+            echo "ci-ok: $name is '$result' (code=$CODE) -- not acceptable" >&2
+            fail=1
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "ci-ok: a required job did not pass -- see the detail above" >&2
+            exit 1
+          fi
+          echo "ci-ok: all required jobs passed (code=$CODE)"

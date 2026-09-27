@@ -1,0 +1,68 @@
+# Two stages, deliberately different in cost:
+#
+#   commit: lint only, and only on the files you actually staged. pre-commit
+#           passes staged files to a hook, so a tree with pre-existing findings
+#           does not block every commit -- only files you touch are checked.
+#   push:   the fast test gate (devtools/prepush-tests.sh), and only when the
+#           push contains a .py change.
+#
+# There is deliberately no formatter hook -- not ruff-format, not clang-format,
+# not cmake-format, though all three are configured (.clang-format,
+# .cmake-format.yaml) and installed in the image. A formatter rewrites whole
+# files, so on an existing tree it buries real diffs in restyling. Add them here
+# on day one of a new project, or not at all. Until then they are run by hand;
+# CLAUDE.md has the three commands.
+#
+# There is also deliberately NO C++ BUILD ON THE PUSH GATE. A change to src/,
+# deps/ or CMakeLists.txt pushes with nothing but the lint below, because a
+# C++23 named-module build with CUDA separable compilation costs minutes even
+# warm -- and a gate that costs minutes is one people learn to bypass with
+# --no-verify, which is worse than no gate. The C++ tier is
+# devtools/cpp-tier.sh, run before you open the PR, and CI on a runner that has
+# the toolchain. This is the same reasoning that keeps `-m slow` off the gate.
+
+exclude: '^(vendor/|third_party/)'
+
+# `pre-commit install` installs BOTH hook types from this list, so one install
+# wires up the commit-time lint and the pre-push gate. The hook bakes an
+# absolute python path into .git/hooks/ and lives in the COMMON git dir --
+# shared by the main checkout and every worktree -- so installing it from
+# inside a container breaks host-side commits and vice versa. Symptom:
+# "ModuleNotFoundError: No module named 'pre_commit'". Fix with
+# `pre-commit install -f` from whichever side you commit on.
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.2
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+
+  # The fast test gate. `stages: [pre-push]` means it runs at `git push`, not
+  # on commit; `files: \.py$` is the entire "only when Python changed"
+  # condition -- push a docs-only change and it does not fire.
+  # pass_filenames: false because the script runs the curated set from
+  # devtools/config.sh, not the changed files. Bypass a one-off with
+  # `git push --no-verify`. It is a local gate, not server-enforced -- CI is.
+  - repo: local
+    hooks:
+      - id: prepush-tests
+        name: fast test gate (pre-push, only when .py changed)
+        entry: devtools/prepush-tests.sh
+        language: script
+        stages: [pre-push]
+        files: \.py$
+        pass_filenames: false
+        verbose: true

@@ -1,0 +1,73 @@
+# The image ships clang-tidy-20 (aliased to clang-tidy). Requires
+# compile_commands.json, which every preset emits into its build directory:
+#
+#   clang-tidy -p build $(git ls-files '*.cpp' '*.cppm')
+#
+# Note: clang-tidy's support for C++23 named modules is still incomplete, so
+# expect noise on .cppm files. Start with .cpp implementation units.
+---
+Checks: >
+  bugprone-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*/src/.*'
+# The vendor re-export layer is pure noise to a linter: these modules mirror the
+# vendor API verbatim -- vendor-cased names (cublasSgemm) and non-const
+# function-pointer aliases -- so they trip readability-identifier-naming and
+# cppcoreguidelines-avoid-non-const-global-variables on essentially every line,
+# and always will. HeaderFilterRegex pulls them in because a .cpp TU imports
+# them; this drops them back out. It is the SAME set devtools/config.sh excludes
+# from coverage as the compile-time re-export layer that never runs, so keep it
+# in sync with COVERAGE_IGNORE_REGEX there (YAML cannot source the shell value).
+ExcludeHeaderFilterRegex: '/src/(cuda|hip)/|/src/(blas|complex|fft|rand|solver|sparse)\.cppm$'
+FormatStyle: file
+
+CheckOptions:
+  # Match the naming already used in src/: snake_case functions and variables,
+  # trailing-underscore private members, CamelCase types.
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  # CamelCase, not lower_case. This said lower_case while the comment above it
+  # said "CamelCase types", so every struct in the tree -- GpuInfo, SysEnv --
+  # was reported as an invalid case style. class and struct are the same thing
+  # here bar the default access; splitting their conventions was never
+  # intended.
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: _
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: lower_case
+  # The neutral gpu* layer names everything gpuCamelCase to mirror the vendor
+  # entry point it fronts -- deliberately NOT the snake_case/lower_case cases
+  # above. It surfaces as two identifier kinds: real functions (gpuGraphInstantiate,
+  # gpuFloat2Half) and the constexpr aliases WWR_FUNCTION/WWR_VALUE generate
+  # (gpuMalloc, gpuHostAllocDefault). Exempt the prefix for both rather than
+  # annotate each site. Wrapper functions that mirror a non-prefixed vendor name
+  # (gemm, getrfBatched) are handled by src/wrappers/.clang-tidy instead.
+  - key: readability-identifier-naming.FunctionIgnoredRegexp
+    value: 'gpu[A-Z].*'
+  - key: readability-identifier-naming.ConstexprVariableIgnoredRegexp
+    value: 'gpu[A-Z].*'

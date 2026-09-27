@@ -1,0 +1,96 @@
+# A form rather than a markdown template, because the three things that make a
+# report actionable here are all things people omit: which BACKEND, which
+# PRESET, and whether the box has a card. A build for CUDA and a build for HIP
+# go through different front ends, so "it does not compile" is two different
+# bugs until the backend is named.
+name: Bug report
+description: Something builds, links or runs differently than it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: run `devtools/doctor.sh`. It reports what is degraded in
+        the current environment, and on a bare host the whole C++ toolchain
+        warns — that is the expected healthy state, not a fault. Its output is
+        asked for below because most "broken build" reports are an environment.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      description: >-
+        A build targets exactly one. nvcc is the more permissive front end, so a
+        CUDA-only failure and a HIP-only failure are rarely the same bug.
+      options:
+        - CUDA
+        - HIP
+        - Both
+        - Not backend-specific (devtools, CI, docs, the Python tier)
+    validations:
+      required: true
+
+  - type: input
+    id: preset
+    attributes:
+      label: Preset
+      description: >-
+        The `--preset` you used, or the full command. `default` and
+        `workstation` are the same configuration in different build
+        directories; `ci-cuda` / `ci-hip` are what CI runs.
+      placeholder: devtools/cpp-tier.sh --preset default
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Is a GPU present on the machine?
+      description: >-
+        `CMAKE_CUDA_ARCHITECTURES=native` queries a live device at *configure*
+        time, and ROCm's `GPU_TARGETS` detection fails silently to gfx906 — so
+        the answer changes what the same command does.
+      options:
+        - 'Yes: NVIDIA'
+        - 'Yes: AMD'
+        - 'No'
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The exact commands, and whether you were on the host or inside a container.
+      placeholder: |
+        devtools/devcontainer.sh shell -c devtools/cpp-tier.sh
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: devtools/doctor.sh output
+      description: >-
+        Run it on the side the failure happened — this repo has a host half and
+        a container half, and doctor is what says which one you are on.
+      render: text
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >-
+        `cpp-tier.sh` writes
+        `.slow-tier-reports/cpp-<stamp>-<rev>-<preset>.log` per run. Paste the
+        failing part of that, not `summary.log`, which carries no diagnostics.
+        For the Python tier, include the `-rs` skip lines.
+      render: text
