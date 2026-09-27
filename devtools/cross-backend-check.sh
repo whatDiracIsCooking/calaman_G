@@ -11,18 +11,17 @@
 # and the first sign of trouble is a ROCm build weeks later.
 #
 # A concrete example of the class: a functor that carries a `const` member of
-# CLASS type is non-trivially-copyable under clang, so it fails parallel_for's
-# device_functor concept -- yet nvcc accepts it. Such code compiles clean, stays
-# green across the whole CUDA tier, and only fails when someone builds ROCm. See
-# parallel_for.cuh's device_functor comment for the rule.
+# CLASS type is non-trivially-copyable under clang, so it fails the
+# device_functor concept gpumod's parallel_for requires -- yet nvcc accepts it.
+# Such code compiles clean, stays green across the whole CUDA tier, and only
+# fails when someone builds ROCm. See gpumod's docs/architecture.md for the rule.
 #
-# WHAT IT COSTS. Seconds. Measured cold with ccache disabled: 4s
-# for --device-only, 7s for the whole compile-time tier (350 steps, dispatch
-# checks included), and 7s is also the wall clock from the host with docker
-# startup in it. That is the point rather than the exact digits: this is a
-# COMPILE-ONLY check -- no GoogleTest fetch, no runtime tests, no device --
-# which is why it costs seconds where devtools/cpp-tier.sh costs minutes. Do
-# not let the cost note on cpp-tier.sh talk you out of running this one.
+# WHAT IT COSTS. This is a COMPILE-ONLY check -- no GoogleTest fetch, no runtime
+# tests, no device -- which is why it is worth running every time where
+# devtools/cpp-tier.sh costs minutes. NO TIMINGS ARE QUOTED HERE ON PURPOSE:
+# this tree compiles gpumod's module surface as well as its own, so the cost
+# tracks the dependency and a number measured today would be stale by the next
+# submodule bump. Measure it on your box if you need one.
 #
 # WHAT IT DOES NOT DO. It proves the other backend COMPILES, not that it runs:
 # no kernel is launched and no result is checked. A real ROCm box running
@@ -35,10 +34,12 @@
 #                   toolchain variable, which a plain reconfigure keeps.
 #   -j N            parallel compile jobs (default: BUILD_JOBS from
 #                   devtools/config.sh, or Ninja's own choice when empty).
-#   --device-only   build only the device .cu libraries (~4s) instead of the
-#                   whole compile-time tier (~7s). Narrower: it catches a
-#                   kernel-side divergence but not one in a module unit, and
-#                   it only knows the targets CROSS_CHECK_DEVICE_TARGETS names.
+#   --device-only   build only the device .cu libraries instead of the whole
+#                   compile-time tier. Narrower: it catches a kernel-side
+#                   divergence but not one in a module unit, and it only knows
+#                   the targets CROSS_CHECK_DEVICE_TARGETS names. That list is
+#                   EMPTY until src/ has a .cu, and this flag refuses rather
+#                   than building nothing and calling it a pass.
 #   --native        skip the container and run cmake here. Implied when this
 #                   host already has the target backend's toolchain.
 #
@@ -98,11 +99,27 @@ declare -a device_targets=()
 config_lines "$CROSS_CHECK_DEVICE_TARGETS"
 device_targets=("${CONFIG_LINES[@]}")
 
+# An empty list with --device-only would reach `cmake --build --target` with no
+# target, whose failure says nothing about the backend -- and a version of this
+# that swallowed it would report PASS for having compiled nothing. Refuse, with
+# the reason, and exit 2 (the check could not be run) rather than 1 (it failed).
+if [ "$device_only" = 1 ] && [ "${#device_targets[@]}" -eq 0 ]; then
+  cat >&2 <<EOF
+cross-backend-check: --device-only has nothing to build.
+
+  CROSS_CHECK_DEVICE_TARGETS in devtools/config.sh is empty, which is correct
+  while src/ has no .cu sources. Run without the flag to compile the whole
+  compile-time tier for $CROSS_CHECK_BACKEND, and add each device library to
+  that list as it lands.
+EOF
+  exit 2
+fi
+
 # ---------------------------------------------------------------------------
 # Phase 1: run the check, here, with cmake
 # ---------------------------------------------------------------------------
 run_here() {
-  local -a cfg=(cmake --preset "$preset" -B "$build_dir" -DWWR_COMPILE_TIME_ONLY=ON)
+  local -a cfg=(cmake --preset "$preset" -B "$build_dir" -DCALAMAN_COMPILE_TIME_ONLY=ON)
   [ "$fresh" = 1 ] && cfg+=(--fresh)
 
   echo "cross-backend-check: configuring $backend (preset=$preset) -> $build_dir"

@@ -11,6 +11,10 @@
       "Bash(devtools/doctor.sh:*)",
       "Bash(devtools/cpp-tier.sh:*)",
       "Bash(devtools/install-check.sh:*)",
+      "Bash(devtools/cross-backend-check.sh:*)",
+      "Bash(devtools/coverage.sh:*)",
+      "Bash(devtools/prepush-tests.sh:*)",
+      "Bash(docker/build.sh:*)",
 
       "Bash(cmake:*)",
       "Bash(ctest:*)",

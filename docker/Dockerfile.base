@@ -12,12 +12,13 @@
 #                                (reuses install-rocm.sh, not the hip image)
 #
 # Everything the build needs EXCEPT a GPU SDK: clang-20 with libc++, CMake 4.2,
-# Ninja, ccache, and a uv-managed venv for the Python tooling. Useful on its own
-# to check the toolchain half in isolation, and the shared parent of `cuda` and
-# `hip` so the two cannot drift apart.
+# Ninja, ccache, the CPU reference LAPACK the tests check their results against,
+# and a uv-managed venv for the Python tooling. Useful on its own to check the
+# toolchain half in isolation, and the shared parent of `cuda` and `hip` so the
+# two cannot drift apart.
 #
 #   docker/build.sh base          # the normal way: tags <PROJECT_NAME>:base
-#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t gpumod:base .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t calaman:base .
 #
 # RUN THAT FROM THE REPO ROOT. The trailing `.` is the build context and it is
 # the repo root, not this directory: this file COPYs pyproject.toml and uv.lock,
@@ -29,14 +30,14 @@
 # the same file and a single `docker build --target cuda` did everything. Split
 # apart, a child can only name an IMAGE, so it takes an ARG:
 #
-#   ARG PARENT_IMAGE=gpumod:base
+#   ARG PARENT_IMAGE=calaman:base
 #   FROM ${PARENT_IMAGE}
 #
 # which means the parent must exist and be tagged BEFORE the child builds. That
 # ordering is the whole cost of the split, and `docker/build.sh` is what pays it
 # -- it walks the chain for whichever target you name. Build a child by hand
 # with no parent tagged and docker does not fall back to building it; it tries
-# to PULL, and fails with `pull access denied for gpumod, repository does not
+# to PULL, and fails with `pull access denied for calaman, repository does not
 # exist`, which reads like a registry problem rather than a missing local build.
 #
 # The .devcontainer/*/devcontainer.json files run exactly one `docker build` and
@@ -81,6 +82,28 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# The CPU reference LAPACK is in this stage, not in a GPU child: it is host
+# code, it is what the tests compare a GPU factorisation AGAINST, and both
+# backends need the same one. Ubuntu 24.04 ships LAPACK 3.12.0.
+#
+#   liblapack-dev    reference (netlib) LAPACK + the BLAS it needs
+#   liblapacke-dev   LAPACKE, the C interface -- /usr/include/lapacke.h. The
+#                    Fortran ABI is not something to call by hand from C++23.
+#   gfortran         not needed to LINK (libgfortran5 arrives as a dependency);
+#                    here so a Fortran reference routine can be compiled when
+#                    LAPACKE does not expose one.
+#
+# REFERENCE RATHER THAN OpenBLAS, AND THAT IS THE POINT. An oracle has to be
+# deterministic, and a threaded BLAS is not bitwise reproducible across thread
+# counts -- a tolerance failure would then depend on the machine's core count.
+#
+# THE TRAP IF SOMEONE ADDS OpenBLAS LATER: on Debian/Ubuntu
+# /usr/lib/*/liblapack.so is an update-alternatives symlink, so installing
+# libopenblas-dev REPOINTS it and every test silently starts checking against a
+# threaded implementation while nothing in this file changed. Install it under
+# its own name and link it explicitly, or hold the alternative
+# (`update-alternatives --set liblapack.so-x86_64-linux-gnu ...`) in the same
+# layer.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
@@ -89,7 +112,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       bash build-essential ca-certificates ccache curl git gnupg jq less \
       lcov patch pkg-config shellcheck software-properties-common ssh tree \
       unzip valgrind vim-tiny wget zlib1g-dev \
-    && git --version && wget --version | head -1
+      gfortran liblapack-dev liblapacke-dev \
+    && git --version && wget --version | head -1 \
+    && test -f /usr/include/lapacke.h
 
 # ============================================================================
 # Stage 2: downloads -- CMake and Ninja tarballs (independent of base-system,
@@ -185,10 +210,12 @@ RUN cd /tmp && ./cmake-installer.sh --skip-license --prefix=/usr/local && rm cma
 # The published stage of this file, and what Dockerfile.{cuda,hip} take as
 # their PARENT_IMAGE.
 #
-# Note there are no prebuilt C++ dependencies here: the project fetches
-# GoogleTest from source at configure time and needs nothing else, so the /opt
-# trees the template used to bake are gone along with the demo code that used
-# them.
+# The only prebuilt C++ dependency here is the CPU reference LAPACK (stage 1),
+# which is a distro package because it is an oracle rather than a component:
+# nothing under src/ links it. The two dependencies this project BUILDS come
+# from source at configure time -- gpumod from the deps/gpumod submodule, and
+# GoogleTest fetched by deps/CMakeLists.txt -- so nothing in /opt has to be
+# kept in step with the tree.
 FROM compilers AS base
 
 ARG CMAKE_MAJOR_MINOR
@@ -199,7 +226,7 @@ ARG LLVM_VERSION
 # devtools/config.sh -- devtools/doctor.sh warns when they drift. Labels are
 # inherited, so the GPU children carry it too; each of those re-stamps it
 # anyway, to keep the build arg they are passed consumed where it is declared.
-ARG PROJECT_NAME=gpumod
+ARG PROJECT_NAME=calaman
 LABEL devcontainer.project="${PROJECT_NAME}"
 
 COPY --link --from=build-tools /usr/local/bin/cmake /usr/local/bin/cmake
@@ -251,7 +278,9 @@ WORKDIR /workspace
 RUN clang --version | head -1 && \
     cmake --version | head -1 && \
     ninja --version && \
-    test -f /usr/lib/llvm-${LLVM_VERSION}/lib/libc++.modules.json
+    test -f /usr/lib/llvm-${LLVM_VERSION}/lib/libc++.modules.json && \
+    test -f /usr/include/lapacke.h && \
+    gfortran --version | head -1
 
 USER ubuntu
 

@@ -17,13 +17,16 @@ guarantees, what constrains its use. It is not a lab notebook and not a
 tutorial. Rationale, evidence, and history are all legitimate — they just live
 somewhere else, and this skill says where.
 
-`src/`'s C++ module and header files (`.cppm`, `.cuh`, `.h`) were converted to
-this convention wholesale once (see the `docstyle` commits). Those now hold:
-every file header is within budget, and the provenance idiom appears in none of
-them. Keep it that way per file as you touch it — **do not re-run a sweep** on
-those. The `.cpp`/`.cu` sources and the CMake files (`cmake/`, `CMakeLists.txt`)
-were **not** part of that sweep and are not yet within budget — convert those as
-you touch them (see "CMake files" and "Scope" below).
+**`src/` here is empty, so this convention costs nothing to follow and
+everything to retrofit — apply it from the first file.** There is no sweep to
+run and no legacy to convert.
+
+The convention, and every worked example below, comes from **gpumod**, where it
+was applied to all 111 files of its `src/` in one pass. That tree is vendored in
+this repo at `deps/gpumod/`, so each example is a real file you can open — paths
+below are written that way. The CMake files (`cmake/`, `CMakeLists.txt`) were
+never part of that sweep in either project and are not within budget; convert
+one as you touch it (see "CMake files" and "Scope" below).
 
 ## The four homes
 
@@ -49,10 +52,10 @@ where that question is answered.
 That distinction is the whole rule — prose is budgeted, reference is not. It is
 not a licence to reformat an essay as a table.
 
-The number came from applying this to all 111 files in `src/`: 20 was too tight
-the moment a header carried a runnable example, and chasing it produced worse
-prose, not shorter. 25 still catches 36 of the 40 files that were over.
-`src/cuda` sat inside it already, at a median of ~13.
+The number came from applying this to all 111 files of gpumod's `src/`: 20 was
+too tight the moment a header carried a runnable example, and chasing it produced
+worse prose, not shorter. 25 still caught 36 of the 40 files that were over;
+`deps/gpumod/src/cuda` sat inside it already, at a median of ~13.
 
 That measurement is over C++ `/**` headers; the same 25-line budget applies to a
 CMake file's leading `#` block by the same principle — constraint is budgeted,
@@ -75,7 +78,7 @@ plus the link.
  * <Optional: constraints, one line each. Link out for the why.>
  *
  * Usage:
- *   import gpumod.<x>;
+ *   import calaman.<x>;
  *
  *   <two or three lines of real calling code>
  */
@@ -83,10 +86,10 @@ plus the link.
 
 No other sections. No `-----` rules inside the block.
 
-`src/gpu_backend.h` is the model for a file that genuinely has a contract:
-its three macros with a one-line contract each, the one non-obvious constraint
-("a function reference carries no default arguments, and cannot name an
-overload set"), and stop.
+`deps/gpumod/src/gpu_backend.h` is the model for a file that genuinely has a
+contract: its three macros with a one-line contract each, the one non-obvious
+constraint ("a function reference carries no default arguments, and cannot name
+an overload set"), and stop.
 
 ## Banned constructs
 
@@ -119,7 +122,7 @@ prevent`). State the rule; trust the reader.
 **Second-person exhortation.** `Never treat a gpurandState* and a
 gpurandStateXORWOW* as interchangeable`. Prefer the declarative: "On HIP these
 are distinct types; on CUDA they are one." Where the rule is load-bearing a
-`static_assert` outranks any amount of prose — `runtime.cuh`'s
+`static_assert` outranks any amount of prose — `deps/gpumod/src/runtime.cuh`'s
 power-of-two check on `WWR_WARP_SIZE` is the right pattern.
 
 **Prose inside a section banner.** A bare `// ===` / `// Types` / `// ===`
@@ -127,17 +130,17 @@ divider is *fine* — in a 600-line list of `WWR_FUNCTION` entries it is
 navigation. What is banned is the paragraph some of them wrapped. Title plus at
 most one line.
 
-**Hanging-indent prose tables.** `runtime.cuh`'s old `Provides:` block
+**Hanging-indent prose tables.** `deps/gpumod/src/runtime.cuh`'s old `Provides:` block
 wrapped paragraphs into a 36-column gutter: it broke on every rename and no
 tool rendered it. Use a real Markdown table, or a plain two-column list.
 
 **The same rationale in more than one place.** One canonical home; everywhere
 else, a link. The `warpSize` argument was written out in `CMakeLists.txt`,
-`runtime.cuh` *and* `README.md` — three copies to keep in sync.
+`deps/gpumod/src/runtime.cuh` *and* `README.md` — three copies to keep in sync.
 
 ## Put a load-bearing fact where someone will trip over it
 
-The single most valuable move in the whole conversion. Fourteen `src/hip`
+The single most valuable move in the whole conversion. Fourteen of gpumod's `src/hip`
 modules open with `#include <array>` (or `<algorithm>`, or `<cstdio>`) before
 the vendor header, and every one is load-bearing — remove it and the build
 fails on macro poisoning or an undeclared `printf`. **Not one had a comment at
@@ -154,7 +157,7 @@ For each paragraph in an over-budget header, ask: **is this a constraint on the
 caller, or is it the story of how we found out?** Keep the constraint, one
 line. Move the story.
 
-Before — `runtime.cuh`, ~40 lines on `WWR_WARP_SIZE` alone:
+Before — `deps/gpumod/src/runtime.cuh`, ~40 lines on `WWR_WARP_SIZE` alone:
 
 ```
  *   WWR_WARP_SIZE                     the warp/wavefront size, as an integer
@@ -197,8 +200,9 @@ it now sizes the section, not which file it lands in. A discovery is a dated
 fact; a decision additionally owes its Context and Consequences. Sections are
 numbered, appended never inserted, since code cites them by number.
 
-`architecture.md` opens with the toolchain every claim was measured on, and a
-date, so staleness is visible:
+`docs/architecture.md` opens with the toolchain every claim was measured on,
+and a date, so staleness is visible — gpumod's is the model, and this one
+starts nearly empty:
 
 ```markdown
 **Toolchain for every claim below unless a section says otherwise:** CUDA 13.0
@@ -212,7 +216,7 @@ Cite `architecture.md` by section number.
 
 Doxygen tags, not narrative. `@brief` on one line; `@param`, `@tparam`,
 `@return` only where the name does not already say it; `@pre` for a genuine
-precondition. `cooperative_groups.cuh`'s per-function blocks are the model:
+precondition. gpumod's `cooperative_groups.cuh`'s per-function blocks are the model:
 
 ```cpp
 /// @brief One bit per group member, set where that member's @p pred was true
@@ -242,13 +246,14 @@ leading `#` header held to the same 25-line prose budget:
 What breaks the budget here is identical to what broke it in the C++ headers,
 and the worst offenders show every banned construct at once:
 
-- `cmake/wwr_add_gpu_device_library.cmake` — 67% comment, opening with
+- `cmake/calaman_add_gpu_device_library.cmake` (inherited from gpumod, and still
+  67% comment here) —, opening with
   rhetorical banners (`# What this replaced`, `# What this deliberately does NOT
   take`), a staged reveal (`there is a trap in the obvious fix`), and a
   verification transcript (`verified by compiling a kernel ... under nvcc
   -arch=sm_86 ... clang -x hip --offload-arch=gfx1200 on ROCm 7.2.4`).
-- `src/CMakeLists.txt` — a 77-line per-target essay that re-derives the warp-size
-  host/device divergence, the *same* argument already in `runtime.cuh` and named
+- gpumod's `src/CMakeLists.txt` — a 77-line per-target essay that re-derives the warp-size
+  host/device divergence, the *same* argument already in `deps/gpumod/src/runtime.cuh` and named
   as the canonical duplication under "Banned constructs" above.
 
 The rewrite recipe is unchanged: keep the constraint one line at the command it
@@ -332,7 +337,7 @@ or `.claude/hooks/`, all how-to-for-people territory, so a `.sh` comment budget
 would reverse a decision this convention already made.
 
 A directory `README.md` is a *destination* for displaced explanation, so it is
-held to the duplication rule but not the line budget. `src/hip/README.md` is
+held to the duplication rule but not the line budget. `deps/gpumod/src/hip/README.md` is
 707 lines and that is fine; what is not fine is a header restating it.
 
 **Converting a file is a side effect of editing it, not a task of its own.** The

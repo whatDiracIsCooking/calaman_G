@@ -10,9 +10,9 @@
 # By hand, and BOTH ancestors must already be tagged (see Dockerfile.base, "WHY
 # THE FOUR FILES CHAIN BY TAG"):
 #
-#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base     -t gpumod:base .
-#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda     -t gpumod:cuda .
-#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.combined -t gpumod:combined .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base     -t calaman:base .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda     -t calaman:cuda .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.combined -t calaman:combined .
 #
 # WHY THIS IS NOT A REAL JOIN OF cuda AND hip:
 # it is the bottom of the diamond in intent, but docker has no multiple
@@ -22,7 +22,7 @@
 # Dockerfile.hip, precisely so this file can reuse it without the block being
 # written twice.
 #
-# `COPY --from=gpumod:hip /opt/rocm /opt/rocm` would be a literal two-parent
+# `COPY --from=calaman:hip /opt/rocm /opt/rocm` would be a literal two-parent
 # join, and is the wrong thing: install-rocm.sh also writes an apt keyring and
 # pin, /etc/ld.so.conf.d/rocm.conf, and the `render`/`video` groups, none of
 # which live under /opt/rocm. The copy would leave a ROCm tree that apt does not
@@ -31,7 +31,7 @@
 # The consequence to keep in mind: ROCM_VERSION and GPU_TARGETS are declared
 # HERE as well as in Dockerfile.hip, because this file drives the same script
 # without inheriting from that image. Bump them together.
-ARG PROJECT_NAME=gpumod
+ARG PROJECT_NAME=calaman
 ARG PARENT_IMAGE=${PROJECT_NAME}:cuda
 FROM ${PARENT_IMAGE}
 

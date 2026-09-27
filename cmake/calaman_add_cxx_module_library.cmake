@@ -1,17 +1,17 @@
-# wwr_add_cxx_module_library — create a C++23 module library (the project's
-# most-used target macro). See cmake/README.md, "WWR_ADD_CXX_MODULE_LIBRARY",
-# for the full parameter list, defaults, and an example.
+# calaman_add_cxx_module_library — create a C++23 module library (the project's
+# most-used target macro). See cmake/README.md for the full parameter list,
+# defaults, and an example.
 
 # ---------------------------------------------------------------------------
 # Internal helpers (underscore-prefixed — not part of the public API)
 # ---------------------------------------------------------------------------
 
 # Add CUDAToolkit include directories with validated visibility.
-function(_wwr_configure_cuda_toolkit target visibility)
+function(_calaman_configure_cuda_toolkit target visibility)
   if(NOT visibility)
     set(visibility "PRIVATE")
   elseif(NOT visibility STREQUAL "PUBLIC" AND NOT visibility STREQUAL "PRIVATE")
-    message(FATAL_ERROR "WWR_ADD_CXX_MODULE_LIBRARY:"
+    message(FATAL_ERROR "CALAMAN_ADD_CXX_MODULE_LIBRARY:"
                         " INCLUDE_CUDA_TOOLKIT must be PUBLIC or PRIVATE"
     )
   endif()
@@ -23,7 +23,7 @@ endfunction()
 # ---------------------------------------------------------------------------
 # Public macro
 # ---------------------------------------------------------------------------
-macro(WWR_ADD_CXX_MODULE_LIBRARY)
+macro(CALAMAN_ADD_CXX_MODULE_LIBRARY)
   set(_bool_opts "IMPORT_STD;NO_CUDA_DEVICE_LINKING")
   set(_single_opts "NAME;PRIMARY_INTERFACE;INCLUDE_CUDA_TOOLKIT")
   set(_multi_opts "PARTITIONS;IMPLEMENTATION;LINK_PUBLIC;LINK_PRIVATE"
@@ -37,8 +37,8 @@ macro(WWR_ADD_CXX_MODULE_LIBRARY)
     ${ARGN}
   )
 
-  _wwr_require_args(
-    "WWR_ADD_CXX_MODULE_LIBRARY" ARG NAME PRIMARY_INTERFACE
+  _calaman_require_args(
+    "CALAMAN_ADD_CXX_MODULE_LIBRARY" ARG NAME PRIMARY_INTERFACE
   )
 
   add_library(${ARG_NAME})
@@ -68,15 +68,15 @@ macro(WWR_ADD_CXX_MODULE_LIBRARY)
   endif()
 
   if(ARG_NO_CUDA_DEVICE_LINKING)
-    _wwr_disable_cuda_device_linking(${ARG_NAME})
+    _calaman_disable_cuda_device_linking(${ARG_NAME})
   endif()
 
   if(DEFINED ARG_INCLUDE_CUDA_TOOLKIT)
-    _wwr_configure_cuda_toolkit(${ARG_NAME} "${ARG_INCLUDE_CUDA_TOOLKIT}")
+    _calaman_configure_cuda_toolkit(${ARG_NAME} "${ARG_INCLUDE_CUDA_TOOLKIT}")
   endif()
 
   if(ARG_INCLUDE_DIRS_PUBLIC OR ARG_INCLUDE_DIRS_PRIVATE)
-    _wwr_configure_include_dirs(
+    _calaman_configure_include_dirs(
       ${ARG_NAME}
       PUBLIC
       ${ARG_INCLUDE_DIRS_PUBLIC}
@@ -86,7 +86,7 @@ macro(WWR_ADD_CXX_MODULE_LIBRARY)
   endif()
 
   if(ARG_LINK_PUBLIC OR ARG_LINK_PRIVATE)
-    _wwr_configure_link_libraries(
+    _calaman_configure_link_libraries(
       ${ARG_NAME}
       PUBLIC
       ${ARG_LINK_PUBLIC}
@@ -95,6 +95,6 @@ macro(WWR_ADD_CXX_MODULE_LIBRARY)
     )
   endif()
 
-  _wwr_create_alias(${ARG_NAME})
+  _calaman_create_alias(${ARG_NAME})
 
 endmacro()

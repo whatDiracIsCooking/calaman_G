@@ -2,23 +2,38 @@
 
 CMake modules for C++23 module libraries and testing.
 
+**These macros arrived with the scaffolding and have no call sites yet** — `src/`
+and `test/` are empty. They are known-good in gpumod, which is where they came
+from and where they are exercised (vendored at `deps/gpumod/cmake/`); read
+anything here as "the contract these macros offer", not as "what this tree
+already does". Two carry assumptions that are gpumod's and not this project's,
+flagged in place below: `calaman_install.cmake` and `calamanConfig.cmake.in`.
+
 ## Files
 
 ```
 cmake/
-├── README.md                                                  # This file
-├── wwr_add_gpu_device_library.cmake                  # Macro for creating backend-neutral device-kernel static libraries
-├── wwr_add_cxx_module_library.cmake                  # Macro for creating C++23 module libraries
-├── wwr_add_dispatch_check.cmake                      # Build-time check that wrappers call the vendor functions their TOML table names
-├── wwr_add_gtest_executable.cmake                    # Consolidates GoogleTest executable boilerplate
-├── wwr_add_gtest_suite_tests.cmake                   # Registers a GoogleTest binary with ctest, one entry per suite
-├── wwr_add_interface_library.cmake                   # Macro for creating INTERFACE libraries
-├── wwr_add_test_executable.cmake                     # Plain (non-GoogleTest) ctest-registered executables
-├── wwr_check_gtest_suites.cmake                      # Script mode: fails when a suite in the binary is missing from the CMake list
-├── wwr_install.cmake                                 # Install rules, the export set and the CMake package
-├── wwrConfig.cmake.in                                # Template for the installed wwrConfig.cmake
-└── wwr_internal_helpers.cmake                        # Internal helper functions (alias creation, include dirs, linking)
+├── README.md                                   # This file
+├── calaman_add_gpu_device_library.cmake        # Macro: backend-neutral device-kernel static libraries
+├── calaman_add_cxx_module_library.cmake        # Macro: C++23 module libraries
+├── calaman_add_gtest_executable.cmake          # Consolidates GoogleTest executable boilerplate
+├── calaman_add_gtest_suite_tests.cmake         # Registers a GoogleTest binary with ctest, one entry per suite
+├── calaman_add_interface_library.cmake         # Macro: INTERFACE libraries
+├── calaman_add_test_executable.cmake           # Plain (non-GoogleTest) ctest-registered executables
+├── calaman_check_gtest_suites.cmake            # Script mode: fails when a suite in the binary is missing from the CMake list
+├── calaman_install.cmake                       # Install rules, the export set and the CMake package
+├── calamanConfig.cmake.in                      # Template for the installed calamanConfig.cmake
+└── calaman_internal_helpers.cmake              # Internal helpers (alias creation, include dirs, linking)
 ```
+
+gpumod additionally has a `wwr_add_dispatch_check.cmake` — a build-time check
+that a wrapper's instantiations really call the vendor entry points its TOML table
+names, read back out of the compiled objects with `llvm-objdump`. **It was
+deliberately not carried over**, because it needs a checker script
+(`test/shared/dispatch.py` there) and dispatch tables that do not exist here yet.
+Copy it from `deps/gpumod/` when this project grows its own `s/d/c/z` dispatch —
+it is exactly the check that catches a `getrf` template silently calling the
+single-precision entry point for `double`.
 
 ---
 
@@ -28,16 +43,15 @@ After configuring and building, the `build/` directory has this structure:
 
 ```
 build/
-├── _deps/                  # CMake FetchContent -- GoogleTest, the only one
+├── _deps/                  # CMake FetchContent -- GoogleTest
 │   ├── googletest-build/
 │   ├── googletest-src/
 │   └── googletest-subbuild/
 ├── deps/                   # deps/CMakeLists.txt, added via add_subdirectory
+│   └── gpumod/             # the submodule's own build tree, one dir per module
 ├── lib/                    # Static libraries (gtest, gmock)
-├── src/                    # Per-module build artifacts, one dir per backend
-│   ├── cuda/               # (a CUDA build; a HIP build has src/hip instead)
-│   ├── gpu/
-│   └── wrappers/
+├── src/                    # Per-module build artifacts. ONE tree, not one per
+│                           # backend: the backend split is gpumod's job
 └── test/                   # Test executables
 ```
 
@@ -50,16 +64,16 @@ forth, a full rebuild each way.
 
 ---
 
-## `wwr_add_gpu_device_library`
+## `calaman_add_gpu_device_library`
 
-Creates the STATIC library that holds a module's device-kernel `.cu` sources, compiled for **whichever backend the build selected**. Every module that owns a kernel declares one next to its `wwr_add_cxx_module_library()` call.
+Creates the STATIC library that holds a module's device-kernel `.cu` sources, compiled for **whichever backend the build selected**. Every module that owns a kernel declares one next to its `calaman_add_cxx_module_library()` call.
 
 A `.cu` in this tree means "device pass", not "nvcc" — the same sense as the `.cuh` headers it includes. Compiling one needs a language decision and, under HIP, two driver flags; a C++23 module interface unit must get neither, being an ordinary host CXX compile. Keeping the device sources in their own library is what keeps the two sets of flags apart.
 
 ### Usage
 
 ```cmake
-wwr_add_gpu_device_library(
+calaman_add_gpu_device_library(
   NAME library_name
   SOURCES file1.cu [file2.cu ...]
   [LINK_PRIVATE lib1 lib2 ...]
@@ -82,31 +96,34 @@ wwr_add_gpu_device_library(
 
 ### What it deliberately does not take
 
-No `LINK_PUBLIC`, no `INCLUDE_DIRS_*`, no separable-compilation switch — each absence is a project invariant, not an oversight. Links are PRIVATE always (a device library's usage requirements are device-code include paths and `-x hip`; nothing linking it should inherit either), include directories arrive by linking `wwr.extension.parallel_for`, and separable compilation is OFF on every target in this tree. The macro's own header comment has the reasoning. Add a parameter when a real call site needs one.
+No `LINK_PUBLIC`, no `INCLUDE_DIRS_*`, no separable-compilation switch — each absence is a project invariant, not an oversight. Links are PRIVATE always (a device library's usage requirements are device-code include paths and `-x hip`; nothing linking it should inherit either), include directories arrive by linking the module that owns the kernel's bridge header (in gpumod that is `wwr.extension.parallel_for`), and separable compilation is OFF on every target in this tree. The macro's own header comment has the reasoning. Add a parameter when a real call site needs one.
 
 It also creates no `::` alias, unlike the two macros below — its call site had none before the macro existed.
 
 ### Example
 
 ```cmake
-wwr_add_gpu_device_library(
-  NAME wwr.extension.random_normal.device
-  SOURCES random_normal.cu
-  LINK_PRIVATE wwr.extension.parallel_for wwr.rand.device)
+calaman_add_gpu_device_library(
+  NAME calaman.getrf.device
+  SOURCES getrf_panel.cu
+  LINK_PRIVATE wwr.extension.parallel_for)
 ```
 
-> This replaced `WWR_ADD_CUDA_LIBRARY` (removed), a CUDA-only macro inherited from the template this repo grew from. It could not serve either call site — no HIP branch at all, and `CUDA_SEPARABLE_COMPILATION ON` — which is why it had no call sites while `rand` and `fill` hand-rolled 25 identical lines each.
+> Illustrative: there is no such target yet. `deps/gpumod/src/extension/random_normal/CMakeLists.txt`
+> is the real call site to copy from, and note that a device library added here
+> must also be listed in `CROSS_CHECK_DEVICE_TARGETS` (`devtools/config.sh`) for
+> `cross-backend-check.sh --device-only` to reach it.
 
 ---
 
-## `WWR_ADD_INTERFACE_LIBRARY`
+## `CALAMAN_ADD_INTERFACE_LIBRARY`
 
 Creates an INTERFACE library that exposes header files (`.h`/`.cuh`) to consumers. Automatically adds the standard project include directories and creates a `::` alias.
 
 ### Usage
 
 ```cmake
-WWR_ADD_INTERFACE_LIBRARY(
+CALAMAN_ADD_INTERFACE_LIBRARY(
   NAME library_name
 )
 ```
@@ -121,25 +138,25 @@ WWR_ADD_INTERFACE_LIBRARY(
 
 - `add_library(${NAME} INTERFACE)`
 - Include dirs: `INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>` + `$<INSTALL_INTERFACE:include>`
-- `::` alias via `_wwr_create_alias`
+- `::` alias via `_calaman_create_alias`
 
 ### Example
 
 ```cmake
-WWR_ADD_INTERFACE_LIBRARY(
-  NAME wwr.core.parallel_for)
+CALAMAN_ADD_INTERFACE_LIBRARY(
+  NAME calaman.core.parallel_for)
 ```
 
 ---
 
-## `WWR_ADD_CXX_MODULE_LIBRARY`
+## `CALAMAN_ADD_CXX_MODULE_LIBRARY`
 
 Consolidates the common boilerplate for creating a C++23 module library.
 
 ### Usage
 
 ```cmake
-WWR_ADD_CXX_MODULE_LIBRARY(
+CALAMAN_ADD_CXX_MODULE_LIBRARY(
   NAME my_library
   PRIMARY_INTERFACE my_module.cppm
   [PARTITIONS partition1.cppm partition2.cppm ...]
@@ -171,7 +188,7 @@ WWR_ADD_CXX_MODULE_LIBRARY(
 ### Example
 
 ```cmake
-WWR_ADD_CXX_MODULE_LIBRARY(
+CALAMAN_ADD_CXX_MODULE_LIBRARY(
   NAME my_module.math.set_val
   PRIMARY_INTERFACE set_val.cppm
   IMPLEMENTATION set_val.cpp
@@ -185,11 +202,20 @@ WWR_ADD_CXX_MODULE_LIBRARY(
 
 ## Install and the CMake package
 
-`wwr_install.cmake` emits every install rule and generates the package that
-`find_package(wwr)` finds. The top-level `CMakeLists.txt` calls
-`wwr_install_package()` once, last, when `WWR_INSTALL` is on — which it is
-for a top-level build and is not when gpumod is embedded via `add_subdirectory`
-or `FetchContent`.
+`calaman_install.cmake` emits every install rule and generates the package that
+`find_package(calaman)` would find. The top-level `CMakeLists.txt` calls
+`calaman_install_package()` once, last, when `CALAMAN_INSTALL` is on.
+
+> **The tier is dormant, and one thing in this file is deliberately unfinished.**
+> The layout assumptions inherited from gpumod are gone — the target sweep and the
+> header install now treat `src/` as the single neutral tree it is, and the
+> `cusolverMg` special case in `calamanConfig.cmake.in` went with them. What is
+> *not* written is the line that makes a consumer able to resolve gpumod:
+> `CALAMAN_INSTALL` defaults **OFF** because a calaman target's interface names
+> gpumod targets that no installed package exports, and the fix depends on which
+> of the two arrangements in `docs/architecture.md` section 2 is chosen. Expect
+> the first real `CALAMAN_INSTALL=ON` to fail at generate time naming a `wwr.*`
+> target; that failure is the accurate report, not a regression.
 
 **Nothing has to be registered.** The function reads the buildsystem back and
 installs every library target defined under `src/`, so a module added there is
@@ -200,23 +226,24 @@ shipped:
 
 1. Every compile requirement of a `.cppm` must reach the consumer. A `PRIVATE`
    include directory or define is not exported, which makes it a broken install
-   rather than a private detail. `src`, `src/extension/init_state` and
-   `src/extension/random_normal` grant theirs under `$<INSTALL_INTERFACE:>`,
-   leaving the in-tree build unchanged.
-2. Module sources need per-target install destinations — six modules under
-   `src/wrappers` are each rooted at a file named `interface.cppm`.
-3. A header a module unit `#include`s (`dispatch_macros.h`) is installed next to
-   the installed sources, because that is where the relative include looks.
+   rather than a private detail — grant it under `$<INSTALL_INTERFACE:>`, which
+   leaves the in-tree build unchanged.
+2. Module sources need per-target install destinations, because several modules
+   are each rooted at a file with the same name (`interface.cppm`) and one shared
+   destination would collide.
+3. A header a module unit `#include`s is installed next to the installed sources,
+   because that is where the relative include looks.
 
 **`devtools/install-check.sh` is what verifies all of this**, by installing to a
-throwaway prefix and building `example/consumer` against it. `cpp-tier.sh`
-cannot: it never installs, so an export regression passes it cleanly. Every
-defect in the list above was found that way rather than reasoned about.
+throwaway prefix and building `example/consumer` against it. `cpp-tier.sh` cannot:
+it never installs, so an export regression passes it cleanly. Every defect in the
+list above was found that way in gpumod rather than reasoned about — which is the
+argument for standing the tier back up here early rather than late.
 
 ### Forcing a device archive into an exported target
 
-A module whose kernel lives in a separate `.device` library (`init_state`,
-`random_normal`) must force that archive's members in, or the linker drops the
+A module whose kernel lives in a separate `.device` library must force that
+archive's members in, or the linker drops the
 explicitly-instantiated device objects and consumers fail to link. Two things
 make the force survive `install(EXPORT)`:
 
@@ -225,7 +252,7 @@ make the force survive `install(EXPORT)`:
   hand-written form is copied into the export file unevaluated, and
   `$<TARGET_FILE:>` of a target the consumer does not have resolves to nothing.
 - Spell the target **both** ways — `$<BUILD_INTERFACE:…tgt>` and
-  `$<INSTALL_INTERFACE:…wwr::tgt>`. CMake does not namespace the name inside
+  `$<INSTALL_INTERFACE:…calaman::tgt>`. CMake does not namespace the name inside
   `LINK_LIBRARY` when it writes the export (it does for ordinary link entries), so
   the bare name matches nothing in the consumer and degrades to a plain `-ltgt`
   the linker cannot find.
@@ -240,19 +267,19 @@ what catches a regression here.
 
 Three macros, and which you want depends on whether the test *runs*.
 
-`wwr_add_test_executable` builds a plain ctest-registered executable — used
+`calaman_add_test_executable` builds a plain ctest-registered executable — used
 by the compile-time tiers (`test/cuda`, `test/hip`, `test/gpu`), where the proof
 is that the translation unit compiled and linked at all.
 
-`wwr_add_gtest_executable` builds a GoogleTest binary, consolidating the
+`calaman_add_gtest_executable` builds a GoogleTest binary, consolidating the
 module properties, the shared `main.cpp` link list and libstdc++.
 
-`wwr_add_gtest_suite_tests` registers that binary with ctest as **one entry
+`calaman_add_gtest_suite_tests` registers that binary with ctest as **one entry
 per suite**, plus a `SuiteListIsComplete` guard test that fails when a suite
 exists in the binary but is missing from the CMake list. The list is
 hand-maintained; the guard is what keeps it honest, so when it fails, add the
 suite rather than deleting the guard. It runs
-`wwr_check_gtest_suites.cmake`, whose path is resolved from
+`calaman_check_gtest_suites.cmake`, whose path is resolved from
 `${CMAKE_SOURCE_DIR}/cmake/`.
 
 **Why per suite, not per binary or per case.** Measured on the math suite (276
@@ -277,7 +304,7 @@ Nothing invokes a test binary by path any more — `docker/compose.yaml` drives
 
 ### `REQUIRES_GPU`, and the `gpu` label
 
-`wwr_add_gtest_suite_tests(... REQUIRES_GPU)` puts the `gpu` ctest label on
+`calaman_add_gtest_suite_tests(... REQUIRES_GPU)` puts the `gpu` ctest label on
 every entry it registers. Pass it when the binary needs a live device — it
 allocates device memory, launches a kernel, or creates a vendor-library handle.
 Seven targets do (`test/extension/{memory_buffer,runtime,rand,blas,solver,fft,
@@ -317,7 +344,7 @@ Two things to get right when adding one:
 `cuda_compile_tests` is the one entry whose label depends on a cache variable,
 for a reason unrelated to devices — it links the CUDA driver stubs and cannot
 *load* without `libcuda.so.1`. It carries `gpu` by default, and with
-`WWR_CUDA_DRIVER_STUBS=ON` (the `ci-cuda` preset) it instead gets the
+`CALAMAN_CUDA_DRIVER_STUBS=ON` (the `ci-cuda` preset) it instead gets the
 toolkit's stubs on `LD_LIBRARY_PATH` for that one test and runs. Its own
 CMakeLists has the why, including why the stubs go in the build directory and
 why `ENVIRONMENT_MODIFICATION` rather than `ENVIRONMENT`.

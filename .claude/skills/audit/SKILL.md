@@ -49,6 +49,18 @@ For each `<name>/SKILL.md`:
   skill's "Sweep worktrees already merged into main" section must name a
   section that actually exists under that heading.
 
+### The two claims this repo's docs get wrong most easily
+
+- **Claims about gpumod.** `deps/gpumod` is a submodule, so a doc sentence about a
+  `wwr*` name, a layer or a file path there is true *of one commit* and can go
+  stale on a bump with nothing in this repo changing. Verify those against
+  `deps/gpumod/` as it is checked out now, and say which gpumod commit you checked
+  (`git submodule status`).
+- **Claims about tiers that do not exist yet.** `src/` and `test/` are empty, and
+  the install tier is dormant. A doc that describes what a tier *will* prove reads
+  exactly like one describing what it *does* prove. Flag any sentence that would
+  let a reader think a suite ran.
+
 ## Auditing READMEs
 
 Hardest-hitting first: any README keeping a **ledger** — a table of "landed" /

@@ -15,12 +15,12 @@
   // Identical to ../hip/ and ../combined/ apart from the SDK and the four
   // EDIT sites below -- workspace mount, volume names and postCreate are the
   // same, so the three GPU variants are A/B-able.
-  "name": "gpumod-cuda",                               // EDIT
+  "name": "calaman-cuda",                               // EDIT
 
   // Builds the PARENT image first. docker/Dockerfile.cuda opens with
-  // `FROM ${PARENT_IMAGE}` (gpumod:base), and a devcontainer build is a single
+  // `FROM ${PARENT_IMAGE}` (calaman:base), and a devcontainer build is a single
   // `docker build` with no way to produce that parent itself -- without this
-  // hook it fails on the first line with `pull access denied for gpumod`, which
+  // hook it fails on the first line with `pull access denied for calaman`, which
   // reads like a registry problem rather than a missing local build.
   // initializeCommand runs on the HOST before the image is built, which is
   // exactly the slot needed, and a fully cached parent build costs a second or
@@ -34,7 +34,7 @@
     // so there is no last-stage-by-accident to guard against. Outside the
     // devcontainer, `docker/build.sh cuda` walks base -> cuda.
     "args": {
-      "PROJECT_NAME": "gpumod",                        // EDIT
+      "PROJECT_NAME": "calaman",                        // EDIT
       // Widen for a mixed fleet, e.g. "80;86;90".
       "CUDA_ARCH": "86"
     }
@@ -58,14 +58,14 @@
   "mounts": [
     "source=${localEnv:HOME}/.claude,target=/home/ubuntu/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.claude.json,target=/home/ubuntu/.claude.json.host,type=bind,readonly",
-    "source=gpumod-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
-    "source=gpumod-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
-    "source=gpumod-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
-    // Host path injected as WWR_GIT_DIR by devtools/devcontainer.sh (up /
+    "source=calaman-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
+    "source=calaman-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
+    "source=calaman-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
+    // Host path injected as CALAMAN_GIT_DIR by devtools/devcontainer.sh (up /
     // rebuild); the literal after the colon is only a fallback for opening this
     // config directly (VS Code "Reopen in Container"), which you then edit to
     // your own checkout's .git common dir. See ../README.md, "Per-project edits".
-    "source=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
+    "source=${localEnv:CALAMAN_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:CALAMAN_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
   ],
 
   "remoteUser": "ubuntu",

@@ -10,12 +10,12 @@
 # ---------------------------------------------------------------------------
 # WHAT IT PUBLISHES, AND WHY THESE ARE NOT THE DEV IMAGES
 # ---------------------------------------------------------------------------
-#   ghcr.io/<owner>/gpumod:cuda-ci   the CUDA toolchain, unmodified
-#   ghcr.io/<owner>/gpumod:hip-ci    ROCm with ROCM_PRUNE=1
+#   ghcr.io/<owner>/calaman:cuda-ci   the CUDA toolchain, unmodified
+#   ghcr.io/<owner>/calaman:hip-ci    ROCm with ROCM_PRUNE=1
 #
 # Same Dockerfiles as the dev images, different build args and a different tag
 # (docker/build.sh, "variant tags and the registry"). The `-ci` suffix is what
-# stops a pruned image from overwriting `gpumod:hip`, which a developer runs
+# stops a pruned image from overwriting `calaman:hip`, which a developer runs
 # against a real card.
 #
 # ROCM_PRUNE=1 drops ~12.9GB of kernel objects and unused libraries that no

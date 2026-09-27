@@ -34,10 +34,12 @@ devtools/devcontainer.sh shell -c devtools/doctor.sh  # the CUDA container
 
 On a bare host, **around a dozen warnings is the expected, healthy state**.
 What is genuinely container-only is the clang/GPU toolchain -- `cmake`,
-`ninja`, `clang++`, `clang-scan-deps`, `clang-format`, `llvm-objdump`,
-`llvm-cxxfilt`, `nvcc`, `compute-sanitizer`, `nsys`, `ccache` -- and
-`hipconfig`, which is present only in the images built from
-`docker/Dockerfile.hip` and `docker/Dockerfile.combined`, not the `cuda` one.
+`ninja`, `clang++`, `clang-scan-deps`, `clang-format`, `nvcc`,
+`compute-sanitizer`, `nsys`, `ccache` -- plus `hipconfig`, which is present only
+in the images built from `docker/Dockerfile.hip` and
+`docker/Dockerfile.combined`, not the `cuda` one, and
+`/usr/include/lapacke.h`, the CPU reference oracle, which
+`docker/Dockerfile.base` installs and a bare host has no reason to.
 
 Note what is NOT on that list any more: `cmake-format` and `cmake-lint` come
 from the `cmakelang[yaml]` dev dependency, and doctor resolves tools through
@@ -56,7 +58,7 @@ which side you ran on, and what the other side would cover.
 means a container without the `.git` bind mount: a worktree's `.git` is a file
 pointing outside the workspace folder, so `.devcontainer/<variant>/devcontainer.json`
 mounts the main checkout's `.git` common dir inside. `devtools/devcontainer.sh`
-injects that host path as `WWR_GIT_DIR` on `up`/`rebuild`, so the usual cause
+injects that host path as `CALAMAN_GIT_DIR` on `up`/`rebuild`, so the usual cause
 is a container brought up another way (a direct `devcontainer up`, or VS Code
 "Reopen in Container" with the fallback path unedited). Bring it up with
 `devtools/devcontainer.sh rebuild`; `up` will not apply the mount change.
@@ -71,9 +73,9 @@ one out agree with `PROJECT_NAME` in `devtools/config.sh`.
 
 **`[warn] cannot resolve this repo's git dir for the container .git mount`** —
 `doctor` ran somewhere `git rev-parse --path-format=absolute --git-common-dir`
-returns nothing, so the path `devcontainer.sh` would inject as `WWR_GIT_DIR`
+returns nothing, so the path `devcontainer.sh` would inject as `CALAMAN_GIT_DIR`
 is empty and the container's `.git` mount would fail. Run doctor from inside the
-gpumod checkout.
+calaman_G checkout.
 
 **`[FAIL] DEVCONTAINER_CONFIG does not exist`** — `devtools/config.sh` points at
 a `devcontainer.json` that is not there, and *every* `devcontainer.sh` command
@@ -124,16 +126,25 @@ Export a fine-grained PAT (Contents + Pull requests: read/write) on the **host**
 and `rebuild`: the container takes `GH_TOKEN` from the host env at create time,
 so an `export` after the container is up does not reach it.
 
-**`[warn] <path> absent`** — a `DOCTOR_REQUIRED_PATHS` entry. A *relative* one
-is typically a submodule (`git submodule update --init --recursive`, which
-doctor suggests).
+**`[warn] <path> absent`** — a `DOCTOR_REQUIRED_PATHS` entry. There are two,
+and they fail very differently:
 
-`DOCTOR_REQUIRED_PATHS` is currently **empty**, so this warning should not
-appear at all. That is deliberate: the C++ tree's only dependency is GoogleTest,
-which `deps/CMakeLists.txt` fetches and builds from source at configure time, so
-no preset reads anything prebuilt in the image. If this warning does appear,
-someone added a path — check that a build actually reads it before installing
-anything.
+- **`deps/gpumod/CMakeLists.txt`** — the submodule is not initialised, and
+  *nothing under `src/` can compile*: every module here imports gpumod. Fix with
+  `git submodule update --init --recursive`, which doctor suggests. Worth
+  recognising by its downstream symptom too: the configure error names
+  `deps/CMakeLists.txt` (`add_subdirectory given source "gpumod" which is not an
+  existing directory`), which points at the wiring rather than at the missing
+  checkout.
+- **`/usr/include/lapacke.h`** — the CPU reference LAPACK. On the **host** this is
+  expected and costs nothing. **Inside a container it is a real finding**: CMake
+  degrades to a configure-time `WARNING`, `calaman::lapack_reference` is not
+  defined, and every test that compares a GPU factorisation against a reference
+  result is simply not built. That is a missing tier that a ctest summary will not
+  mention, so never report a numerical claim from a build whose configure log
+  carries that warning. It means the image was built without
+  `liblapack-dev`/`liblapacke-dev` — rebuild it (`docker/build.sh cuda`), do not
+  `apt-get install` inside a running container.
 
 **`[warn] pre-commit hook unusable` / `no pre-commit hook installed`** — the
 one footgun worth memorising. The hook bakes an absolute `INSTALL_PYTHON` and
@@ -180,11 +191,16 @@ Five failures that look like something else entirely:
    keeps the old value.
 
 5. **A device-behaviour change with no gate behind it.** The push hook only
-   fires on `.py`. CI now builds both backends and runs `ctest -LE gpu`, so
-   compile, link and the non-device tests *are* checked server-side — but the
-   `gpu`-labelled device suites (`test/extension/*`) are excluded, so a change
-   that only a card would catch stays ungated until `devtools/cpp-tier.sh` runs
-   locally. Doctor reports tools, not that absence.
+   fires on `.py`. CI builds both backends and runs `ctest -LE gpu`, so compile,
+   link and any CPU-only test *are* checked server-side — but every
+   `gpu`-labelled suite is excluded, which in this project means every numerical
+   claim it makes. A change that only a card would catch stays ungated until
+   `devtools/cpp-tier.sh` runs locally. Doctor reports tools, not that absence.
+
+6. **A dependency that is present but stale.** `deps/gpumod` existing satisfies
+   `DOCTOR_REQUIRED_PATHS`; it says nothing about which commit is checked out.
+   `git submodule status` (a leading `+` means the checkout differs from the
+   gitlink this branch records) is the check doctor does not make.
 
 ## Reporting
 

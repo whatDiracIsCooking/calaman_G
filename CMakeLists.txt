@@ -105,59 +105,64 @@ message(
 # ========================================================================
 # GPU backend
 # ========================================================================
-# End users build against exactly one GPU backend: CUDA or HIP. Decided before
-# project() because it decides whether the CUDA language is enabled at all.
+# A build targets exactly one GPU backend: CUDA or HIP. Decided before
+# project() because it decides whether the CUDA language is enabled at all --
+# a HIP build needs no CUDA toolkit, and a CUDA build needs no ROCm.
 #
-#   CUDA -> src/cuda, test/cuda, and the CUDA toolkit
-#   HIP  -> src/hip, test/hip, and ROCm
-#
-# Either way the gpu* layer maps the gpu* names onto the chosen backend, and
-# src/wrappers + test/wrappers are built on top of it, unchanged. A HIP build
-# needs no CUDA toolkit, and a CUDA build needs no ROCm.
-set(WWR_GPU_BACKEND
+# THIS PROJECT HAS NO PER-BACKEND SOURCE TREE. The backend split lives in the
+# dependency: gpumod (Warp Wraps) maps its backend-neutral `wwr*` names onto
+# whichever vendor was selected, and everything under src/ here is written once
+# against those names. So this variable's only jobs are to pick the languages
+# to enable, to pick which vendor packages to find, and to be forwarded to
+# gpumod as WWR_GPU_BACKEND below.
+set(CALAMAN_GPU_BACKEND
     "CUDA"
     CACHE STRING "GPU backend to build against: CUDA or HIP"
 )
-set_property(CACHE WWR_GPU_BACKEND PROPERTY STRINGS CUDA HIP)
-if(NOT WWR_GPU_BACKEND MATCHES "^(CUDA|HIP)$")
+set_property(CACHE CALAMAN_GPU_BACKEND PROPERTY STRINGS CUDA HIP)
+if(NOT CALAMAN_GPU_BACKEND MATCHES "^(CUDA|HIP)$")
   message(
     FATAL_ERROR
-      "WWR_GPU_BACKEND must be CUDA or HIP, got '${WWR_GPU_BACKEND}'"
+      "CALAMAN_GPU_BACKEND must be CUDA or HIP, got '${CALAMAN_GPU_BACKEND}'"
   )
 endif()
 
-if(WWR_GPU_BACKEND STREQUAL "CUDA")
-  set(_wwr_languages CXX CUDA)
+if(CALAMAN_GPU_BACKEND STREQUAL "CUDA")
+  set(_calaman_languages CXX CUDA)
 else()
-  set(_wwr_languages CXX)
+  set(_calaman_languages CXX)
 endif()
 
 project(
-  wwr
+  calaman
   VERSION 0.1.0
-  LANGUAGES ${_wwr_languages}
-  DESCRIPTION "C++23 module wrappers for the CUDA and HIP GPU APIs"
+  LANGUAGES ${_calaman_languages}
+  DESCRIPTION
+    "GPU-accelerated dense linear algebra and solvers in C++23 named modules"
 )
-message(STATUS "GPU backend: ${WWR_GPU_BACKEND}")
+message(STATUS "GPU backend: ${CALAMAN_GPU_BACKEND}")
 
 # ========================================================================
 # Warp / wavefront size
 # ========================================================================
-# WWR_WARP_SIZE (src/runtime.cuh) is a configure-time constant because
-# neither backend offers a compile-time spelling that is correct in every pass.
-# 32 is right for every NVIDIA arch and for RDNA (gfx10xx-gfx12xx);
+# A configure-time constant because neither backend offers a compile-time
+# spelling that is correct in every pass; gpumod's runtime.cuh has the full
+# account. 32 is right for every NVIDIA arch and for RDNA (gfx10xx-gfx12xx);
 # set 64 for CDNA (gfx90a, gfx942). Nothing validates it against a real device.
-set(WWR_WARP_SIZE
+#
+# Forwarded to gpumod as WWR_WARP_SIZE below, so there is ONE knob rather than
+# two that can disagree.
+set(CALAMAN_WARP_SIZE
     "32"
     CACHE STRING "Warp/wavefront size: 32 for NVIDIA and RDNA, 64 for CDNA"
 )
-set_property(CACHE WWR_WARP_SIZE PROPERTY STRINGS 32 64)
-if(NOT WWR_WARP_SIZE MATCHES "^[1-9][0-9]*$")
-  message(FATAL_ERROR "WWR_WARP_SIZE must be a positive integer, got "
-                      "'${WWR_WARP_SIZE}'"
+set_property(CACHE CALAMAN_WARP_SIZE PROPERTY STRINGS 32 64)
+if(NOT CALAMAN_WARP_SIZE MATCHES "^[1-9][0-9]*$")
+  message(FATAL_ERROR "CALAMAN_WARP_SIZE must be a positive integer, got "
+                      "'${CALAMAN_WARP_SIZE}'"
   )
 endif()
-message(STATUS "GPU warp size: ${WWR_WARP_SIZE}")
+message(STATUS "GPU warp size: ${CALAMAN_WARP_SIZE}")
 
 # ========================================================================
 # C++ Standard and Compiler Requirements
@@ -182,7 +187,19 @@ add_link_options($<$<COMPILE_LANGUAGE:CXX>:-lc++abi>)
 # ========================================================================
 # Find the backend's packages
 # ========================================================================
-if(WWR_GPU_BACKEND STREQUAL "CUDA")
+# These are the same calls gpumod's own top-level CMakeLists.txt makes, and
+# repeating them here is deliberate rather than redundant: an IMPORTED target
+# created by find_package is visible only in the directory that found it and
+# its subdirectories. gpumod is added as a SUBDIRECTORY below, so targets it
+# finds (hip::device, roc::hipsolver, ...) are not visible in src/ or test/
+# here -- and a target this project links transitively through a gpumod module
+# has to be resolvable in the directory doing the linking. Finding them at the
+# top level puts them in scope for the whole tree, gpumod included, and the
+# second find_package call inside gpumod is then a cached no-op.
+#
+# Keep this list in step with deps/gpumod/CMakeLists.txt; a divergence
+# surfaces as a "target not found" at generate time, naming a vendor target.
+if(CALAMAN_GPU_BACKEND STREQUAL "CUDA")
   find_package(CUDAToolkit REQUIRED)
 else()
   # Seed GPU_TARGETS from the environment before find_package(hip).
@@ -191,7 +208,7 @@ else()
   # export an env var of the same name (default gfx1200), but an env var is not
   # a CMake variable, so it must be copied in. Left unset, hip-config runs
   # `amdgpu-arch` and on a box with no AMD GPU silently falls back to gfx906 --
-  # wave64, which also disagrees with WWR_WARP_SIZE's default 32.
+  # wave64, which also disagrees with CALAMAN_WARP_SIZE's default 32.
   # Precedence: an explicit -DGPU_TARGETS (already cached) beats
   # $ENV{GPU_TARGETS} beats ROCm's own detection. AMDGPU_TARGETS is left unset
   # -- hip-config warns it is deprecated and copies it into GPU_TARGETS anyway.
@@ -204,26 +221,71 @@ else()
   endif()
 
   find_package(hip CONFIG REQUIRED)
-  # rocm_smi and amd_smi are their own separate CMake packages (not part of the
-  # `hip` package) -- see src/hip/rocm_smi.cppm and src/hip/amd_smi.cppm for why
-  # nvml's HIP counterpart is two modules, not one.
   find_package(rocm_smi CONFIG REQUIRED)
   find_package(amd_smi CONFIG REQUIRED)
-  # hiprtc (HIP Runtime Compilation) ships as its own ROCm CMake package,
-  # separate from `hip` above -- wwr.hip.hiprtc needs the hiprtc::hiprtc
-  # imported target it provides. See src/hip/CMakeLists.txt.
   find_package(hiprtc CONFIG REQUIRED)
-  # Library-linked module batch -- each of these is its own ROCm CMake package,
-  # separate from `hip` above. See src/hip/CMakeLists.txt for which imported
-  # target each provides and links.
   find_package(hipblas CONFIG REQUIRED)
   find_package(hipblaslt CONFIG REQUIRED)
   find_package(hipsolver CONFIG REQUIRED)
   find_package(hipsparse CONFIG REQUIRED)
-  # hipfft also covers hipfftXt.h -- same package, same imported target;
-  # wwr.hip.hipfftXt does not add a second find_package call.
   find_package(hipfft CONFIG REQUIRED)
   find_package(hiprand CONFIG REQUIRED)
+endif()
+
+# ========================================================================
+# The CPU reference LAPACK
+# ========================================================================
+# Netlib reference LAPACK plus its C interface, LAPACKE, used as the ORACLE the
+# tests compare a GPU factorisation against. Reference rather than OpenBLAS on
+# purpose: an oracle has to be deterministic, and a threaded BLAS is not
+# bitwise reproducible across thread counts. docker/Dockerfile.base installs
+# liblapack-dev + liblapacke-dev, so it is present in every image.
+#
+# Tests only -- nothing under src/ may link it. A GPU library that quietly
+# falls back to a CPU LAPACK is a different library, and the tests could then
+# no longer tell the two apart.
+option(CALAMAN_LAPACK_REFERENCE
+       "Find CPU LAPACK/LAPACKE and expose calaman::lapack_reference for tests"
+       ON
+)
+if(CALAMAN_LAPACK_REFERENCE)
+  find_package(LAPACK)
+  find_path(CALAMAN_LAPACKE_INCLUDE_DIR NAMES lapacke.h)
+  find_library(CALAMAN_LAPACKE_LIBRARY NAMES lapacke)
+
+  if(LAPACK_FOUND
+     AND CALAMAN_LAPACKE_INCLUDE_DIR
+     AND CALAMAN_LAPACKE_LIBRARY
+  )
+    # An INTERFACE target rather than bare variables, so a test links one name
+    # and the include directory travels with it.
+    add_library(calaman_lapack_reference INTERFACE)
+    add_library(calaman::lapack_reference ALIAS calaman_lapack_reference)
+    target_include_directories(
+      calaman_lapack_reference SYSTEM
+      INTERFACE "${CALAMAN_LAPACKE_INCLUDE_DIR}"
+    )
+    target_link_libraries(
+      calaman_lapack_reference INTERFACE "${CALAMAN_LAPACKE_LIBRARY}"
+                                         LAPACK::LAPACK
+    )
+    message(
+      STATUS "CPU reference LAPACK: ${CALAMAN_LAPACKE_LIBRARY} (LAPACKE) + "
+             "${LAPACK_LIBRARIES}"
+    )
+  else()
+    # A WARNING, not an error: the library builds without an oracle, only the
+    # tests that need one cannot. Those tests must check for the target rather
+    # than assume it, so that this stays a missing TIER and never a silent pass.
+    message(
+      WARNING
+        "CPU reference LAPACK not found (LAPACK_FOUND=${LAPACK_FOUND}, "
+        "lapacke.h=${CALAMAN_LAPACKE_INCLUDE_DIR}, "
+        "lapacke=${CALAMAN_LAPACKE_LIBRARY}). Tests that compare against a CPU "
+        "reference will not be built. Install liblapack-dev and liblapacke-dev,"
+        " or configure with -DCALAMAN_LAPACK_REFERENCE=OFF to say so."
+    )
+  endif()
 endif()
 
 # nvcc (and hipcc) link against libstdc++ internally. When the host linker is
@@ -246,43 +308,32 @@ endif()
 # ========================================================================
 # Module Configuration
 # ========================================================================
-include(cmake/wwr_internal_helpers.cmake)
-include(cmake/wwr_add_cxx_module_library.cmake)
-include(cmake/wwr_add_gpu_device_library.cmake)
-include(cmake/wwr_add_interface_library.cmake)
+include(cmake/calaman_internal_helpers.cmake)
+include(cmake/calaman_add_cxx_module_library.cmake)
+include(cmake/calaman_add_gpu_device_library.cmake)
+include(cmake/calaman_add_interface_library.cmake)
 
 # Creating ctest-registered plain (non-GoogleTest) test executables
-include(cmake/wwr_add_test_executable.cmake)
+include(cmake/calaman_add_test_executable.cmake)
 
 # Registers GoogleTest binaries with ctest one entry per suite
-include(cmake/wwr_add_gtest_suite_tests.cmake)
+include(cmake/calaman_add_gtest_suite_tests.cmake)
 
 # Consolidates GoogleTest executable boilerplate (module properties, the shared
 # GPU Environment's main.cpp/link list, libstdc++)
-include(cmake/wwr_add_gtest_executable.cmake)
-
-# Build-time check that an extension module's wrappers dispatch to the vendor
-# functions its TOML table names, read out of the compiled objects
-include(cmake/wwr_add_dispatch_check.cmake)
+include(cmake/calaman_add_gtest_executable.cmake)
 
 # Install rules, the export set and the CMake package. Included HERE rather than
-# next to wwr_install_package()'s call at the bottom of this file, because it
-# defines the WWR_INSTALL_*DIR variables that src, src/wrappers and the
-# library macros reference in their $<INSTALL_INTERFACE:> include directories --
-# those have to be set before the add_subdirectory calls that read them.
-include(cmake/wwr_install.cmake)
-
-# Common module compilation flags. Empty on purpose, and NOT removable:
-# src/cuda/CMakeLists.txt links it from three targets, so deleting it fails the
-# link with `cannot find -lwwr_module_flags`. Do not add -fmodules /
-# -fimplicit-module-maps / -fbuiltin-module-map here: with clang 20+ they
-# collide with std module-map resolution when a CUDA header (e.g. cublas_v2.h)
-# pulls a standard header into its global module fragment.
-add_library(wwr_module_flags INTERFACE)
+# next to calaman_install_package()'s call at the bottom of this file, because
+# it defines the CALAMAN_INSTALL_*DIR variables that src/ and the library macros
+# reference in their $<INSTALL_INTERFACE:> include directories -- those have to
+# be set before the add_subdirectory calls that read them.
+include(cmake/calaman_install.cmake)
 
 # ========================================================================
 # AddressSanitizer (host code only)
 # ========================================================================
+# Set at the top level, so it reaches gpumod's targets too.
 option(ENABLE_ASAN
        "Enable AddressSanitizer instrumentation for host (CXX) code" OFF
 )
@@ -299,16 +350,15 @@ endif()
 # Coverage (clang source-based, host code only)
 # ========================================================================
 # Instruments CXX -- and only CXX, like ASAN above -- so nvcc's .cu units are
-# left alone: the runtime tier that actually executes is CPU-only host code
-# (test/gpu/conversions), which is what coverage can measure. The .profraw the
-# instrumented binaries drop is merged by llvm-profdata and read by llvm-cov,
-# both of which must match the clang version; devtools/coverage.sh drives that
-# post-processing and the 'coverage' preset turns this on in build-coverage/.
-option(WWR_COVERAGE
-       "Enable clang source-based coverage instrumentation for host (CXX) code"
-       OFF
+# left alone. The .profraw the instrumented binaries drop is merged by
+# llvm-profdata and read by llvm-cov, both of which must match the clang
+# version; devtools/coverage.sh drives that post-processing and the 'coverage'
+# preset turns this on in build-coverage/.
+option(
+  CALAMAN_COVERAGE
+  "Enable clang source-based coverage instrumentation for host (CXX) code" OFF
 )
-if(WWR_COVERAGE)
+if(CALAMAN_COVERAGE)
   message(
     STATUS "Coverage instrumentation enabled (clang source-based, host CXX)"
   )
@@ -323,54 +373,53 @@ endif()
 # Options
 # ========================================================================
 # Whether to generate install rules and the CMake package (see
-# cmake/wwr_install.cmake). Defaults to ON for a top-level build and OFF when
-# this project is pulled into another one with add_subdirectory or FetchContent:
-# a consumer embedding gpumod that way links its targets directly and has no use
-# for gpumod's install rules, while `make install` in the OUTER project would
-# otherwise drag gpumod's headers and module sources into that project's install
-# tree uninvited.
-option(WWR_INSTALL "Generate install rules and the CMake package"
-       ${PROJECT_IS_TOP_LEVEL}
-)
+# cmake/calaman_install.cmake).
+#
+# OFF BY DEFAULT, WHICH IS NOT WHERE THIS SHOULD END UP. gpumod is consumed
+# with add_subdirectory (see deps/CMakeLists.txt), so a calaman library target
+# carries gpumod targets in its INTERFACE_LINK_LIBRARIES -- and install(EXPORT)
+# refuses an export set whose interface names a target that is not exported
+# anywhere. Making this work needs a decision that cannot be made before the
+# first module exists:
+#
+#   * install gpumod alongside (forward WWR_INSTALL=ON, and have
+#     calamanConfig.cmake find_dependency(wwr)) -- two packages, one prefix;
+#     needs gpumod to offer `wwr::` ALIAS targets in-tree, since that is the
+#     spelling an installed consumer resolves; or
+#   * consume an already-installed gpumod through find_package instead of
+#     add_subdirectory, for install builds only.
+#
+# Until then `devtools/install-check.sh` and CI's install-check job have
+# nothing to prove. Turning this ON today will fail at generate time, and that
+# failure is the accurate report.
+option(CALAMAN_INSTALL "Generate install rules and the CMake package" OFF)
 
 # Some tests are proved by building: static_asserts on type traits, constexpr
-# values and enumerator values, checked as the test TU compiles. Those live in
-# test/cuda, test/hip and test/gpu (the wrappers) and test/extension/build_time
-# (the extension modules), and nothing about them needs GoogleTest or a GPU.
+# values and enumerator values, checked as the test TU compiles.
 #
-#   cmake --build build --target compile_time_tests   # build only those
-#   ctest --test-dir build -L compile_time            # run the linked binary
+#   cmake --build build --target calaman_compile_time_tests
+#   ctest --test-dir build -L compile_time
 #
-# With WWR_COMPILE_TIME_ONLY the configure step also skips everything that
+# With CALAMAN_COMPILE_TIME_ONLY the configure step also skips everything that
 # exists only for the runtime tests -- the GoogleTest fetch (deps/) and the
 # runtime test directories -- so it needs no network and generates no runtime
 # test targets. The 'compile-time' preset turns it on in its own build
 # directory.
 option(
-  WWR_COMPILE_TIME_ONLY
+  CALAMAN_COMPILE_TIME_ONLY
   "Configure only the compile-time tests; skip GoogleTest and the runtime tests"
   OFF
 )
 
-# cuda_compile_tests links the driver-API stubs, so the binary needs
-# libcuda.so.1 and libnvidia-ml.so.1 at LOAD time even though it never calls
-# the driver. With this ON, test/cuda/CMakeLists.txt points that ONE ctest
-# entry at the toolkit's own stubs and drops its `gpu` label, so a machine with
-# no driver runs it instead of excluding it -- which is what makes the two CI
-# legs report the same count. OFF everywhere but the ci-cuda preset.
+# Umbrella target for the compile-time tier. Each compile-time test directory
+# add_dependencies()'s its own targets onto it, so it is defined before those
+# directories are added.
 #
-# It is deliberately not a property of the IMAGE: putting stubs on a
-# container-wide LD_LIBRARY_PATH would beat the loader cache and shadow the
-# real driver the NVIDIA runtime injects. See test/cuda/CMakeLists.txt.
-option(
-  WWR_CUDA_DRIVER_STUBS
-  "Run cuda_compile_tests against the CUDA driver stubs (no driver needed)"
-  OFF
+# NAMED calaman_compile_time_tests, not compile_time_tests: gpumod defines a
+# target of that second name, and two targets cannot share one name in a build.
+add_custom_target(
+  calaman_compile_time_tests COMMENT "Building the compile-time tests"
 )
-
-# Umbrella target. Each compile-time test directory add_dependencies()'s its own
-# targets onto it, so it is defined before those directories are added.
-add_custom_target(compile_time_tests COMMENT "Building the compile-time tests")
 
 # ========================================================================
 # Enable testing
@@ -380,50 +429,32 @@ enable_testing()
 # ========================================================================
 # Subdirectories
 # ========================================================================
-# src/ owns its own internal order: the raw 1:1 header modules for the chosen
-# backend, then the gpu* layer over them (which lives directly in src/), then
-# the wrappers -- which are backend-neutral in full: src/wrappers is written
-# once against the gpu* names and builds for either backend. There is no
-# per-backend wrapper tree -- neither src/hip/extension nor src/cuda/extension
-# exists. wwr.wrappers.* adapts what both vendors offer, and a vendor-only
-# call goes through the
-# low-level module (wwr.cuda.cublas_v2, wwr.cuda.cusolverDn) directly.
+# gpumod (the GPU API layer this project is written against) and GoogleTest.
+# First, because everything below links what it defines.
+add_subdirectory(deps)
+
+# src/ and test/ ARE EMPTY, and these lines stay commented until the first
+# module lands. A directory with no CMakeLists.txt is a configure error, so
+# uncomment each one in the commit that adds it.
+#
+# The layout to add them in, which is NOT gpumod's: there is no per-backend
+# subtree here. src/ is one backend-neutral tree written against gpumod's
+# `wwr*` names, so a module is added once and builds for either backend.
 #add_subdirectory(src)
 
-# The in-tree examples, written against the gpu* and extension layers the same
-# way a consumer would write them. Added after src/ so the targets they link
-# exist, and unconditionally -- WWR_COMPILE_TIME_ONLY included -- so
-# devtools/cross-backend-check.sh compiles them for the other backend. See
-# example/README.md; example/consumer is NOT part of this build.
+# The in-tree examples, written the way a consumer would write them.
 #add_subdirectory(example)
 
-# GoogleTest, which the runtime tests are written in. Added before the test
-# directories so the GTest::* targets exist when they are linked. Not needed by
-# the compile-time tests, so WWR_COMPILE_TIME_ONLY skips it.
-if(NOT WWR_COMPILE_TIME_ONLY)
-  add_subdirectory(deps)
-endif()
-
-#if(WWR_GPU_BACKEND STREQUAL "CUDA")
-#  add_subdirectory(test/cuda)
-#else()
-#  add_subdirectory(test/hip)
-#endif()
-## the gpu* layer's compile-time tests: every gpu* name is the backend's own.
-#add_subdirectory(test/gpu)
-#add_subdirectory(test/wrappers)
-## the extension layer's tests: build-time static_asserts plus GoogleTest runtime
-## suites (runtime/memory_buffer/rand need a device).
-#add_subdirectory(test/extension)
+#add_subdirectory(test)
 
 # ========================================================================
 # Install rules and the CMake package
 # ========================================================================
-# Last in the file on purpose: wwr_install_package() decides what to install
-# by reading the buildsystem back (every library target defined under src/),
-# rather than from a hand-maintained list that a new module could fall out of
-# silently. A target that has not been defined yet cannot be found, so this has
-# to run after every add_subdirectory that defines one.
-if(WWR_INSTALL)
-  wwr_install_package()
+# Last in the file on purpose: calaman_install_package() decides what to
+# install by reading the buildsystem back (every library target defined under
+# src/), rather than from a hand-maintained list that a new module could fall
+# out of silently. A target that has not been defined yet cannot be found, so
+# this has to run after every add_subdirectory that defines one.
+if(CALAMAN_INSTALL)
+  calaman_install_package()
 endif()

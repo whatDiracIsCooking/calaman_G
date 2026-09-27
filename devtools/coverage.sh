@@ -7,22 +7,24 @@
 #
 # This is the coverage counterpart to devtools/cpp-tier.sh: it configures and
 # builds the tree with instrumentation (the `coverage` preset sets
-# WWR_COVERAGE=ON, which adds -fprofile-instr-generate -fcoverage-mapping to
+# CALAMAN_COVERAGE=ON, which adds -fprofile-instr-generate -fcoverage-mapping to
 # CXX only -- nvcc's .cu units are untouched, exactly as ASAN is), runs ctest so
 # the instrumented binaries drop .profraw files, then merges them with
 # llvm-profdata and reports with llvm-cov.
 #
-# WHAT THIS ACTUALLY MEASURES. A large part of src/ is C++23 modules whose
-# correctness is proved at COMPILE time (static_asserts, the dispatch checks),
-# and those lines never execute -- so counting them would only drag the number
-# down with lines already tested a different way. The two purely compile-time
-# groups (the vendor re-exports src/cuda|src/hip, and the dispatch-checked
-# neutral wrappers src/{blas,complex,fft,rand,solver,sparse}.cppm) are therefore
-# dropped from the summary via COVERAGE_IGNORE_REGEX in config.sh. What remains
-# is code the runtime suites are meant to reach. Read the number as "which of the
-# runtime-relevant src/ lines the executing tests touch" -- still a floor, not a
-# grade, since a header template line only shows covered once some suite
-# instantiates and runs it.
+# WHAT THIS ACTUALLY MEASURES. Only what the RUNTIME suites execute, which for a
+# GPU library means: only what ran on a card. A device-less box collects the
+# coverage of the tests it could run, which is not the same number and is not
+# comparable with one from a machine that has a GPU -- say which it was.
+#
+# COVERAGE_IGNORE_REGEX in config.sh drops /deps/ (gpumod and GoogleTest): the
+# dependency is an order of magnitude larger than src/, is covered by its own
+# repository's suites, and leaving it in makes the number say nothing about this
+# project. Read what remains as a floor rather than a grade -- a template line
+# only shows covered once some suite instantiates and runs it.
+#
+# WITH src/ EMPTY THERE IS NOTHING TO MEASURE, and a percentage printed today is
+# noise. This tier becomes meaningful with the first module.
 #
 # THE TOOLCHAIN IS NOT ON YOUR HOST, same as cpp-tier.sh: clang-20 with libc++
 # and the matching llvm-cov/llvm-profdata live in the container, so the normal
@@ -37,7 +39,7 @@
 # Flags:
 #   --preset NAME   configure/build/test preset (default: COVERAGE_PRESET from
 #                   devtools/config.sh -- `coverage`). Any preset works, but it
-#                   must have WWR_COVERAGE=ON or there is nothing to collect.
+#                   must have CALAMAN_COVERAGE=ON or there is nothing to collect.
 #   --fresh         wipe the CMake cache first (`--fresh`).
 #   --html          also write a browsable HTML report under the build dir
 #                   (build-coverage/coverage/html/index.html).
@@ -144,7 +146,7 @@ raws=("$raw_dir"/*.profraw)
 shopt -u nullglob
 [ "${#raws[@]}" -gt 0 ] || {
   echo "coverage: no .profraw produced -- did any instrumented binary run?" >&2
-  echo "  (a preset without WWR_COVERAGE=ON collects nothing.)" >&2
+  echo "  (a preset without CALAMAN_COVERAGE=ON collects nothing.)" >&2
   exit 1
 }
 echo "coverage: ${#raws[@]} .profraw file(s)"
@@ -156,8 +158,9 @@ echo "coverage: ${#raws[@]} .profraw file(s)"
 # llvm-cov needs the binaries by hand; ask ctest which ones it ran rather than
 # hardcoding a list that goes stale (the repo's standing complaint about
 # hand-maintained lists). Keep only argv[0]s that live UNDER the build dir and
-# are executable -- that drops the dispatch checks' llvm-objdump/python and the
-# suite-guard's cmake, which are real tests but not instrumented objects.
+# are executable -- that drops build-time checks registered as tests (a cmake
+# script, an llvm-objdump invocation), which are real tests but not instrumented
+# objects.
 mapfile -t objects < <(
   ctest --test-dir "$build_dir" --show-only=json-v1 2>/dev/null |
     python3 -c '
@@ -192,10 +195,9 @@ for o in "${objects[@]:1}"; do obj_args+=(-object "$o"); done
 
 # --- report ---------------------------------------------------------------
 # Restrict to src/ (the trailing path filter) -- the report is about the
-# project's own code, not GoogleTest or the test files themselves. Then drop the
-# compile-time-only files (COVERAGE_IGNORE_REGEX from config.sh: the vendor
-# re-exports and the dispatch-checked neutral wrappers) so the number reflects
-# what the runtime suites actually reach -- see that variable's comment.
+# project's own code, not GoogleTest, gpumod or the test files themselves. Then
+# drop COVERAGE_IGNORE_REGEX (from config.sh: /deps/) so a dependency built in
+# this tree cannot dominate the number -- see that variable's comment.
 declare -a ignore_args=()
 [ -n "${COVERAGE_IGNORE_REGEX:-}" ] && ignore_args=(-ignore-filename-regex="$COVERAGE_IGNORE_REGEX")
 

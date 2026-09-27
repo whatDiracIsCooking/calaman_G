@@ -14,7 +14,24 @@
 # dependabot cannot read. LLVM_VERSION, CMAKE_VERSION, NINJA_VERSION and
 # UBUNTU_TAG are build ARGs in docker/Dockerfile.base; ROCM_VERSION and
 # GPU_TARGETS are declared in BOTH Dockerfile.hip and Dockerfile.combined (bump
-# them together); GoogleTest is WWR_GOOGLETEST_TAG in deps/CMakeLists.txt.
+# them together); GoogleTest is CALAMAN_GOOGLETEST_TAG in deps/CMakeLists.txt.
+#
+# THE gpumod SUBMODULE IS NOT AUTOMATED EITHER, and that one is a choice rather
+# than a limitation -- dependabot's `gitsubmodule` ecosystem would do it. It is
+# left off because gpumod is the API this project is written against, not a
+# transitive dependency: a bump can change a `wwr*` spelling, and the right
+# response is a reading of its diff plus a run of the C++ tier on a box with a
+# card, which no unattended PR can supply. Bump it deliberately:
+#
+#   git -C deps/gpumod fetch && git -C deps/gpumod checkout <sha>
+#   git add deps/gpumod && devtools/cpp-tier.sh
+#
+# Turn it on (weekly PRs that at least prove it still COMPILES on both backends)
+# by adding:
+#
+#   - package-ecosystem: gitsubmodule
+#     directory: /
+#     schedule: { interval: weekly }
 #
 # The `docker` ecosystem is deliberately absent rather than merely unused: the
 # three child Dockerfiles are `FROM ${PARENT_IMAGE}` and the base is

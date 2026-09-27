@@ -1,4 +1,4 @@
-# Guard for wwr_add_gtest_suite_tests(): fail if the SUITES/TYPED_SUITES
+# Guard for calaman_add_gtest_suite_tests(): fail if the SUITES/TYPED_SUITES
 # a CMakeLists names have drifted from the suites the binary actually registers.
 #
 # Registering ctest entries per suite means the suite names live in CMake, by
@@ -10,7 +10,7 @@
 #
 # Run via:
 #   cmake -DEXE=<test binary> -DEXPECTED=<a;b;c> \
-#     -P wwr_check_gtest_suites.cmake
+#     -P calaman_check_gtest_suites.cmake
 
 if(NOT EXE)
   message(FATAL_ERROR "EXE not set")

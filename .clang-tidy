@@ -60,14 +60,20 @@ CheckOptions:
     value: _
   - key: readability-identifier-naming.ConstexprVariableCase
     value: lower_case
-  # The neutral gpu* layer names everything gpuCamelCase to mirror the vendor
-  # entry point it fronts -- deliberately NOT the snake_case/lower_case cases
-  # above. It surfaces as two identifier kinds: real functions (gpuGraphInstantiate,
-  # gpuFloat2Half) and the constexpr aliases WWR_FUNCTION/WWR_VALUE generate
-  # (gpuMalloc, gpuHostAllocDefault). Exempt the prefix for both rather than
-  # annotate each site. Wrapper functions that mirror a non-prefixed vendor name
-  # (gemm, getrfBatched) are handled by src/wrappers/.clang-tidy instead.
+  # Two naming systems this project does not own, exempted rather than annotated
+  # at each site:
+  #
+  #   wwr[A-Z]*  gpumod's backend-neutral layer mirrors the vendor entry point it
+  #              fronts (wwrsolverDnXgetrf, wwrMalloc), so it is camelCase by
+  #              design. It surfaces both as real functions and as the constexpr
+  #              aliases WWR_FUNCTION/WWR_VALUE generate. Only names this tree
+  #              REDECLARES would be linted, but the regexp is cheaper than
+  #              finding out which.
+  #   LAPACK     a routine named after the LAPACK one it computes keeps LAPACK's
+  #              own spelling -- getrf, potrf, gesvd, and the s/d/c/z prefixed
+  #              forms. Renaming those to match a C++ style guide would break the
+  #              one mapping every reader of this library already knows.
   - key: readability-identifier-naming.FunctionIgnoredRegexp
-    value: 'gpu[A-Z].*'
+    value: '(wwr[a-zA-Z]*[A-Z].*|[sdcz]?(ge|sy|he|po|tr|or|un|gb|sb|hb|tb|pb|gt|pt|st)[a-z0-9]{2,3}[0-9_]*)'
   - key: readability-identifier-naming.ConstexprVariableIgnoredRegexp
-    value: 'gpu[A-Z].*'
+    value: 'wwr[a-zA-Z]*[A-Z].*'

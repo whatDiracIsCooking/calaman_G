@@ -213,7 +213,7 @@ apply_cpu_limits() {
 }
 
 # The .git bind mount in devcontainer.json reads its host path from
-# ${localEnv:WWR_GIT_DIR}, which this resolves and exports before the CLI
+# ${localEnv:CALAMAN_GIT_DIR}, which this resolves and exports before the CLI
 # runs -- so no machine-specific path is ever written into the tracked json.
 # (The literal after the colon there is only a fallback for a direct
 # `devcontainer up` / VS Code "Reopen in Container", which does not run this.)
@@ -233,13 +233,13 @@ require_git_dir() {
         --git-common-dir 2>/dev/null || true)
   if [ -z "$d" ] || [ ! -d "$d" ]; then
     echo "error: cannot resolve this repo's git dir for the container mount." >&2
-    echo "       run devtools/devcontainer.sh from inside the gpumod checkout." >&2
+    echo "       run devtools/devcontainer.sh from inside the calaman_G checkout." >&2
     exit 1
   fi
-  export WWR_GIT_DIR="$d"
+  export CALAMAN_GIT_DIR="$d"
 }
 
-# Resolve ROCM_GROUPS to numeric HOST gids and export one WWR_<NAME>_GID
+# Resolve ROCM_GROUPS to numeric HOST gids and export one CALAMAN_<NAME>_GID
 # per group, which is what the `${localEnv:...}` references in the hip and
 # combined runArgs read.
 #
@@ -253,7 +253,7 @@ require_git_dir() {
 # resolution for the interactive path, off the same config.sh list.
 #
 # NON-FATAL, unlike cpp-tier.sh's, because each reference carries a baked-in
-# default after the colon (`${localEnv:WWR_RENDER_GID:109}`). An
+# default after the colon (`${localEnv:CALAMAN_RENDER_GID:109}`). An
 # unresolvable group leaves that value standing instead of passing an empty
 # --group-add, and that default is also what a VS Code "Reopen in Container"
 # gets -- nothing exports these for it. So the default is a last-known-good
@@ -270,10 +270,10 @@ export_host_gids() {
   [ -z "$cfg" ] || cfg=$(basename "$(dirname "$cfg")")/$(basename "$cfg")
   while IFS= read -r grp; do
     [ -n "$grp" ] || continue
-    var=WWR_${grp//-/_}_GID
+    var=CALAMAN_${grp//-/_}_GID
     var=${var^^}
     # A group name that does not survive into an identifier is skipped rather
-    # than exported: `export 'WWR_A B_GID=1'` fails, and under `set -e` that
+    # than exported: `export 'CALAMAN_A B_GID=1'` fails, and under `set -e` that
     # would take down an `up` over a config typo.
     case "$var" in
       *[!A-Za-z0-9_]*) continue ;;

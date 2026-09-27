@@ -95,17 +95,17 @@ if [ -n "${DCACTIVE:-}" ]; then
   fi
 fi
 
-# The .git bind mount reads its host path from ${localEnv:WWR_GIT_DIR}, which
+# The .git bind mount reads its host path from ${localEnv:CALAMAN_GIT_DIR}, which
 # devtools/devcontainer.sh injects on up/rebuild (the literal in the json is only
 # a fallback for a direct VS Code "Reopen in Container"). So the thing worth
 # checking is that the path it will inject actually resolves -- an unresolved
 # mount makes the CLI print the failing `docker run` line, GH_TOKEN and all.
 gitdir=$(git -C "$TOP" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
 if [ -n "$gitdir" ] && [ -d "$gitdir" ]; then
-  ok "container .git mount resolves via WWR_GIT_DIR ($gitdir)"
+  ok "container .git mount resolves via CALAMAN_GIT_DIR ($gitdir)"
 else
   warn "cannot resolve this repo's git dir for the container .git mount"
-  note "run doctor from inside the gpumod checkout"
+  note "run doctor from inside the calaman_G checkout"
 fi
 
 # --- worktrees ------------------------------------------------------------

@@ -14,9 +14,9 @@
   // Identical to ../cuda/devcontainer.json in every respect except the four
   // below -- workspace mount, volume names, postCreate and features are the
   // same, so the three GPU variants are A/B-able.
-  "name": "gpumod-hip",                                // EDIT
+  "name": "calaman-hip",                                // EDIT
 
-  // Builds the PARENT image (gpumod:base) first -- see ../cuda/ for why a
+  // Builds the PARENT image (calaman:base) first -- see ../cuda/ for why a
   // devcontainer needs this hook at all.
   "initializeCommand": "bash ${localWorkspaceFolder}/docker/build.sh base",
 
@@ -26,7 +26,7 @@
     // No "target": every backend is its own file now, each with a single stage.
     // Outside the devcontainer, `docker/build.sh hip` walks base -> hip.
     "args": {
-      "PROJECT_NAME": "gpumod",                        // EDIT
+      "PROJECT_NAME": "calaman",                        // EDIT
       // The LLVM target for the card this image is built for. gfx1200 is RDNA4
       // (Radeon RX 9060 XT); `rocminfo | grep gfx` on the host names yours.
       // Widen for a mixed fleet, e.g. "gfx1100;gfx1200".
@@ -51,7 +51,7 @@
   //
   // devtools/devcontainer.sh resolves them for you: on `up` and `rebuild` it
   // runs `getent group` over ROCM_GROUPS (config.sh) and exports one
-  // WWR_<NAME>_GID per group, which is what ${localEnv:...} reads here --
+  // CALAMAN_<NAME>_GID per group, which is what ${localEnv:...} reads here --
   // the same resolution cpp-tier.sh --rocm does.
   //
   // The value AFTER THE COLON is the fallback when that variable is not set,
@@ -67,8 +67,8 @@
   "runArgs": [
     "--device=/dev/kfd",
     "--device=/dev/dri",
-    "--group-add", "${localEnv:WWR_RENDER_GID:109}",        // EDIT: fallback gid
-    "--group-add", "${localEnv:WWR_VIDEO_GID:44}",          // EDIT: fallback gid
+    "--group-add", "${localEnv:CALAMAN_RENDER_GID:109}",        // EDIT: fallback gid
+    "--group-add", "${localEnv:CALAMAN_VIDEO_GID:44}",          // EDIT: fallback gid
     "--security-opt", "seccomp=unconfined"
   ],
 
@@ -92,14 +92,14 @@
   "mounts": [
     "source=${localEnv:HOME}/.claude,target=/home/ubuntu/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.claude.json,target=/home/ubuntu/.claude.json.host,type=bind,readonly",
-    "source=gpumod-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
-    "source=gpumod-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
-    "source=gpumod-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
-    // Host path injected as WWR_GIT_DIR by devtools/devcontainer.sh (up /
+    "source=calaman-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
+    "source=calaman-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
+    "source=calaman-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
+    // Host path injected as CALAMAN_GIT_DIR by devtools/devcontainer.sh (up /
     // rebuild); the literal after the colon is only a fallback for opening this
     // config directly (VS Code "Reopen in Container"), which you then edit to
     // your own checkout's .git common dir. See ../README.md, "Per-project edits".
-    "source=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
+    "source=${localEnv:CALAMAN_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:CALAMAN_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
   ],
 
   "remoteUser": "ubuntu",

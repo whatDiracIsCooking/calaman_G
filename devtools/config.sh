@@ -26,8 +26,9 @@
 
 # Prefix for this project's docker volumes and per-worktree build images, and
 # the name of the devcontainer. Must match devcontainer.json (see above).
-# It ends up in docker resource names, so keep it lowercase.
-PROJECT_NAME=${PROJECT_NAME:-gpumod}
+# It ends up in docker resource names, so keep it lowercase: the repo and the
+# C++ namespace are calaman_G and `calaman`, and this is the docker spelling.
+PROJECT_NAME=${PROJECT_NAME:-calaman}
 
 # Which devcontainer.json devcontainer.sh drives. Relative paths resolve
 # against the repo root, so this works from any cwd and from any worktree.
@@ -35,7 +36,8 @@ PROJECT_NAME=${PROJECT_NAME:-gpumod}
 #
 #   .devcontainer/cuda/devcontainer.json     THE development container:
 #                                            clang-20 + libc++, CMake 4.2,
-#                                            CUDA 13. Needs an NVIDIA GPU and
+#                                            CUDA 13, reference LAPACK. Needs an
+#                                            NVIDIA GPU and
 #                                            nvidia-container-toolkit.
 #   .devcontainer/hip/devcontainer.json      the same toolchain with ROCm and
 #                                            no CUDA at all. Needs an AMD card
@@ -73,7 +75,8 @@ DEVCONTAINER_CONFIG=${DEVCONTAINER_CONFIG:-.devcontainer/cuda/devcontainer.json}
 #   default     Release, clang, CUDA_ARCHITECTURES=native, into build/
 #   workstation the SAME configuration into build-workstation/, so a host build
 #               and a container build can coexist without reconfiguring each
-#               other. Nothing is prebuilt for either; GoogleTest is fetched.
+#               other. Nothing is prebuilt for either; GoogleTest is fetched
+#               and gpumod is built from the submodule.
 #   debug / asan / compute-sanitizer
 #   hip         the ROCm backend (build-hip/)
 #   compile-time  builds the static_assert tier only: no GPU, no GoogleTest
@@ -85,13 +88,11 @@ DEVCONTAINER_CONFIG=${DEVCONTAINER_CONFIG:-.devcontainer/cuda/devcontainer.json}
 #   ci-hip      the HIP half, deliberately the SAME SHAPE: the whole tree
 #               through clang's -x hip front end, runtime binaries included,
 #               then the same -LE gpu. Compiling the test sources is the
-#               point -- clang is the stricter front end. No device either.
+#               point -- clang is the stricter front end.  No device either.
 #
-# Read either one as compile-and-link plus a thin runtime slice, NOT as a test
-# of GPU behaviour: `-LE gpu` leaves two CPU-only conversion suites that
-# actually compute, one load check per device binary, and the link checks.
-# The four dispatch checks run at build time on both, so they are covered
-# without appearing in the ctest count.
+# Read either one as compile-and-link plus whatever CPU-only tests exist, NOT
+# as a test of GPU behaviour: a factorisation checked against the CPU reference
+# still has to run on a card, and `-LE gpu` is what holds those back.
 #
 # ci-cuda pins CMAKE_CUDA_ARCHITECTURES to 86 rather than widening it, so that
 # CI compiles exactly what `native` compiles on the reference box and a red run
@@ -100,9 +101,7 @@ DEVCONTAINER_CONFIG=${DEVCONTAINER_CONFIG:-.devcontainer/cuda/devcontainer.json}
 # THERE ARE NO PER-ARCHITECTURE PRESETS. `base` uses native and ci-cuda pins
 # 86; between them that is every case this project has, and sm_86 is what the
 # reference box, docker/Dockerfile.cuda's CUDA_ARCH and ci-cuda all already
-# say. volta (70), ampere (80), hopper (90) and portable (70;80;90) were
-# removed rather than corrected -- nothing exercised them and two could not
-# configure at all. Target something else with a -D and a build dir of its own:
+# say. Target something else with a -D and a build dir of its own:
 #
 #   cmake --preset default -B build-h100 -DCMAKE_CUDA_ARCHITECTURES="90"
 #
@@ -113,10 +112,8 @@ DEVCONTAINER_CONFIG=${DEVCONTAINER_CONFIG:-.devcontainer/cuda/devcontainer.json}
 # NOTHING MAY GO BELOW sm_75. CUDA 13's nvcc floor is compute_75, so
 # CMAKE_CUDA_ARCHITECTURES=70 dies at CONFIGURE time with `nvcc fatal :
 # Unsupported gpu architecture 'compute_70'` -- reported as CMake's "Check for
-# working CUDA compiler - broken", which is why volta and portable sat broken
-# through the whole CUDA 13 bump without anyone noticing. A pre-Turing card
-# needs a 12.x CUDA_VERSION in docker/Dockerfile.cuda, whose header has the
-# rest of it.
+# working CUDA compiler - broken". A pre-Turing card needs a 12.x CUDA_VERSION
+# in docker/Dockerfile.cuda, whose header has the rest of it.
 #
 # Override for one run rather than editing:
 #   CMAKE_PRESET=asan CTEST_PRESET=asan devtools/cpp-tier.sh
@@ -130,29 +127,23 @@ CTEST_PRESET=${CTEST_PRESET:-default}
 
 # Which preset devtools/coverage.sh configures, builds and runs ctest under to
 # collect clang source-based coverage. Its own build directory (build-coverage/)
-# and WWR_COVERAGE=ON live in CMakePresets.json; only the CHOICE lives here.
+# and CALAMAN_COVERAGE=ON live in CMakePresets.json; only the CHOICE lives here.
 # The report and merged .profdata are written under that build dir, so they are
 # covered by the /build*/ line in .gitignore and need no cleanup of their own.
 COVERAGE_PRESET=${COVERAGE_PRESET:-coverage}
 
 # Source files devtools/coverage.sh drops from its llvm-cov summary, as an
-# -ignore-filename-regex over the full path. Coverage here measures what the
-# RUNTIME ctest suites reach, but two kinds of src/ file are verified at COMPILE
-# time instead and never execute, so counting them only drags the number down
-# with lines that are already tested a different way:
+# -ignore-filename-regex over the full path.
 #
-#   * src/cuda/*, src/hip/*  -- the vendor raw-module re-exports, which validate
-#     and re-declare the SDK headers at import time; there is no runtime surface.
-#   * src/{blas,complex,fft,rand,solver,sparse}.cppm -- the backend-neutral gpu*
-#     wrapper layer, whose one-line token-paste forwards are proved by the
-#     dispatch checks (test/shared/dispatch.py) and static_asserts, and were
-#     deliberately never given runtime suites (see CLAUDE.md, "Two kinds of C++
-#     test"). fp16/bf16/runtime_api.cppm are NOT here: they carry host-side logic
-#     the runtime suites do execute, so they stay in the denominator.
+# deps/ is everything this project did not write: gpumod's src/ (built from the
+# submodule, and covered by ITS repository's own suites) and GoogleTest. Without
+# this the report is dominated by a dependency an order of magnitude larger than
+# src/, and the number stops meaning anything about this project.
 #
-# Set empty to report over all of src/. Keep this in sync with the wrapper set
-# under src/ if a neutral module is added or removed.
-COVERAGE_IGNORE_REGEX=${COVERAGE_IGNORE_REGEX:-'/src/(cuda|hip)/|/src/(blas|complex|fft|rand|solver|sparse)\.cppm$'}
+# Set empty to report over everything the build compiled. Add a src/ pattern
+# here only for code that is verified at COMPILE time and cannot execute --
+# and say which check covers it instead.
+COVERAGE_IGNORE_REGEX=${COVERAGE_IGNORE_REGEX:-'/deps/'}
 
 # --- cross-backend check --------------------------------------------------
 
@@ -161,12 +152,12 @@ COVERAGE_IGNORE_REGEX=${COVERAGE_IGNORE_REGEX:-'/src/(cuda|hip)/|/src/(blas|comp
 # FRONT ENDS -- a .cu is nvcc's problem under CUDA and clang's under HIP -- and
 # nvcc is the more permissive of the two, so a whole class of error is invisible
 # until someone builds the other side -- a functor with a `const` member of
-# class type, say, which clang rejects for parallel_for's device_functor concept
-# while nvcc waves it through.
+# class type, say, which clang rejects for a device_functor concept while nvcc
+# waves it through.
 #
 # A build targets exactly one backend and CMAKE_PRESET above picks it, so these
-# describe the OTHER one. Flip all five together if the project's default
-# backend ever becomes HIP.
+# describe the OTHER one. Flip them together if the project's default backend
+# ever becomes HIP.
 
 # Which backend to check, its preset, and the tool whose presence means this
 # machine can do it without a container. CROSS_CHECK_PRESET must name a preset
@@ -190,19 +181,17 @@ CROSS_CHECK_IMAGE=${CROSS_CHECK_IMAGE:-${PROJECT_NAME}:hip}
 CROSS_CHECK_BUILD_DIR=${CROSS_CHECK_BUILD_DIR:-build-cross-check}
 
 # The device-kernel libraries, one per line -- what --device-only builds when
-# you want the 3s check instead of the 11s one. These are the targets holding
-# .cu sources, i.e. every wwr_add_gpu_device_library() call site. A module
-# added with a .cu and left out of this list is still covered by the default
-# (whole-tier) run; it only loses the narrow mode. An entry naming a target that
-# does NOT exist, on the other hand, fails the whole --device-only run with
-# ninja's `unknown target`. Keep this list matched to test/gpu/CMakeLists.txt;
-# nothing checks it automatically.
-CROSS_CHECK_DEVICE_TARGETS=${CROSS_CHECK_DEVICE_TARGETS:-"wwr.test.gpu.cooperative_groups.device
-wwr.test.gpu.wmma.device
-wwr.test.gpu.complex.device
-wwr.test.gpu.fp16.device
-wwr.test.gpu.bf16.device
-wwr.test.gpu.atomics.device"}
+# you want the narrow check instead of the whole compile-time tier. These are
+# the targets holding .cu sources, i.e. every calaman_add_gpu_device_library()
+# call site.
+#
+# EMPTY, because src/ has no .cu yet. --device-only refuses with a message
+# saying so rather than building nothing and reporting PASS; the default
+# (whole-tier) run is unaffected and is the one to use meanwhile. Add each
+# device library here as it lands -- an entry naming a target that does NOT
+# exist fails the whole --device-only run with ninja's `unknown target`, and
+# nothing checks this list automatically.
+CROSS_CHECK_DEVICE_TARGETS=${CROSS_CHECK_DEVICE_TARGETS:-""}
 
 # --- the ROCm runtime tier -------------------------------------------------
 #
@@ -237,7 +226,7 @@ ROCM_DEVICES=${ROCM_DEVICES:-"/dev/kfd
 #
 # cpp-tier.sh --rocm builds its own --group-add args from this list, and fails
 # loudly when a name does not resolve. devcontainer.sh instead exports one
-# WWR_<NAME>_GID per entry (render -> WWR_RENDER_GID) for the
+# CALAMAN_<NAME>_GID per entry (render -> CALAMAN_RENDER_GID) for the
 # ${localEnv:...} references in the hip/combined runArgs, and only warns: the
 # json carries a fallback gid so that opening it WITHOUT this script still
 # passes something. Adding a name here reaches the first automatically; the
@@ -250,7 +239,8 @@ video"}
 # the pytest worker count: a C++23 module build is memory-hungry per job (the
 # scanner plus a BMI cache), so the right number is usually LOWER than the core
 # count, and lower still than what you would give pytest. Empty lets Ninja pick
-# (cores + 2), which is what OOM-kills a 16-core box on a module-heavy tree.
+# (cores + 2), which is what OOM-kills a 16-core box on a module-heavy tree --
+# and this tree builds gpumod's module surface as well as its own.
 BUILD_JOBS=${BUILD_JOBS:-}
 
 # --- tests ----------------------------------------------------------------
@@ -284,7 +274,8 @@ JOBS=${JOBS:-8}
 #
 # Left empty here by default because the right values are machine-specific --
 # set them per invocation (CPUSET=0-11 devtools/devcontainer.sh up), or write
-# them in here once the box this project builds on is settled.
+# them in here once the box this project builds on is settled. A LAPACK
+# benchmark is exactly the measurement that is worthless without them.
 CPUSET=${CPUSET:-}
 CPUS=${CPUS:-}
 
@@ -334,13 +325,11 @@ cmake:configuring and building the C++ tree at all
 ninja:the generator every preset uses
 clang++:the C++23 module build (must be clang -- CMakeLists.txt refuses gcc)
 clang-scan-deps:module dependency scanning; a FATAL_ERROR at configure without it
-nvcc:compiling .cu translation units and the whole CUDA backend (src/cuda)
-hipconfig:the HIP backend (src/hip); present only in the \`hip\`/\`combined\` image
-llvm-objdump:test/extension/build_time's blas dispatch check
-llvm-cxxfilt:test/extension/build_time's blas dispatch check
+nvcc:compiling .cu translation units and the whole CUDA backend
+hipconfig:the HIP backend; present only in the \`hip\`/\`combined\` image
 compute-sanitizer:the GPU memcheck/racecheck run (docker compose run --rm compute-sanitizer)
 nsys:Nsight Systems profiling from inside the container
-ccache:warm rebuilds; without it every configure recompiles from scratch
+ccache:warm rebuilds; without it every configure recompiles gpumod from scratch
 clang-tidy:the advisory lint pass (cpp-tier.sh --tidy, and CI's cuda leg)
 clang-format:the C++ formatting pass (see CLAUDE.md -- it is not a git hook)
 cmake-format:the CMake formatting pass; run by hand, not by any hook
@@ -353,18 +342,26 @@ cmake-lint:the CMake lint pass CI runs on every PR"}
 # both matter. nvcc present with no card still cannot configure the `default`
 # preset, because CMAKE_CUDA_ARCHITECTURES=native asks the driver what is
 # installed at CONFIGURE time; and a card present with no toolchain is the
-# normal host state. Nothing in test/ calls GTEST_SKIP, so a device-less box
-# FAILS the runtime tests rather than skipping them, which is the single
-# easiest red run to misread as a broken change (see CLAUDE.md). Both vendors
-# are listed because this box can have both and a build targets exactly one.
+# normal host state. A device-less box cannot run a factorisation, so every
+# suite that checks numerical output against the CPU reference is lost there.
+# Both vendors are listed because this box can have both and a build targets
+# exactly one.
 DOCTOR_GPU_VENDORS=${DOCTOR_GPU_VENDORS:-"nvidia amd"}
 
 # Paths that must exist for some slice of the suite to run, one
 # `path:what skips without it` per line -- typically submodules or fixture
-# trees.
+# trees. A RELATIVE path is resolved against the repo root, and doctor.sh
+# suggests `git submodule update --init --recursive` for one that is missing.
 #
-# Deliberately empty. The project's only C++ dependency is GoogleTest, which
-# deps/CMakeLists.txt fetches and builds from source at configure time, so no
-# preset depends on anything being prebuilt in the image. Do not add a path here
-# unless a build actually reads it.
-DOCTOR_REQUIRED_PATHS=${DOCTOR_REQUIRED_PATHS:-""}
+#   deps/gpumod   the GPU API layer every module here imports. Absent in a
+#                 fresh clone until the submodule is initialised, and the
+#                 configure error it causes names deps/CMakeLists.txt rather
+#                 than the missing checkout.
+#   lapacke.h     the CPU reference oracle (liblapack-dev + liblapacke-dev,
+#                 installed by docker/Dockerfile.base). Absent on a bare host,
+#                 where it costs nothing; absent INSIDE a container means the
+#                 tests that compare a GPU factorisation against a reference
+#                 result are not built, and CMake says so at configure time
+#                 with a WARNING that is easy to scroll past.
+DOCTOR_REQUIRED_PATHS=${DOCTOR_REQUIRED_PATHS:-"deps/gpumod/CMakeLists.txt:the gpumod submodule -- nothing under src/ can compile without it
+/usr/include/lapacke.h:the CPU reference LAPACK oracle; tests that check numerical output against it are not built"}

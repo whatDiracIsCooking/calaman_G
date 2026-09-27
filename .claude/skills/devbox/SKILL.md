@@ -27,7 +27,7 @@ from worktree `foo` brings up `foo`'s container, never main's.
 devtools/devcontainer.sh up        # reuse if it exists, else create
 devtools/devcontainer.sh rebuild   # recreate from scratch
 devtools/devcontainer.sh shell     # bash inside
-devtools/devcontainer.sh test      # the fast tier inside (see the `test` skill)
+devtools/devcontainer.sh test      # the Python tier inside (see the `test` skill)
 devtools/devcontainer.sh down      # stop and remove the container
 ```
 
@@ -56,6 +56,18 @@ works from any cwd and any worktree. Each drives its own Dockerfile under
 | `.devcontainer/cuda/` | `Dockerfile.cuda` | clang-20 + libc++, CMake 4.2, Ninja, CUDA 13, ccache. Needs an NVIDIA GPU + the container toolkit. **The default.** |
 | `.devcontainer/hip/` | `Dockerfile.hip` | the same toolchain with ROCm and no CUDA. Needs an AMD card. |
 | `.devcontainer/combined/` | `Dockerfile.combined` | both SDKs, ~40GB. |
+
+All three inherit the **CPU reference LAPACK** from `Dockerfile.base`
+(`liblapack-dev` + `liblapacke-dev`), because the oracle the tests compare against
+is host code and both backends need the same one. If a container is missing
+`/usr/include/lapacke.h`, it was built before that layer existed — `rebuild`, do
+not `apt-get install` inside it, or the next rebuild loses the fix and nothing
+says so.
+
+Neither variant has anything prebuilt for the C++ side: the gpumod submodule and
+GoogleTest are both built from source inside the container, so **the first build
+in a fresh container is long and the `ccache` volume is what makes the second one
+short.**
 
 Each config carries an **`initializeCommand` that builds its parent image**
 (`docker/build.sh base`, or `cuda` for the combined variant) before the
@@ -213,7 +225,7 @@ compose runs will contend. `docker/README.md` has the full variable list.
 
 The image is built by `docker/build.sh`, which walks the tag chain
 (`Dockerfile.base`, then `Dockerfile.cuda`) and tags the result both
-`<project>:cuda` and `<project>:latest` — the second being what `WWR_IMAGE`
+`<project>:cuda` and `<project>:latest` — the second being what `CALAMAN_IMAGE`
 defaults to:
 
 ```bash

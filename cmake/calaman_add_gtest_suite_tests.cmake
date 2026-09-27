@@ -1,7 +1,7 @@
-# wwr_add_gtest_suite_tests — register one ctest entry per GoogleTest suite,
+# calaman_add_gtest_suite_tests — register one ctest entry per GoogleTest suite,
 # instead of one per binary or one per case, plus a drift guard.
 #
-#   wwr_add_gtest_suite_tests(
+#   calaman_add_gtest_suite_tests(
 #       TARGET       extension_math_tests
 #       SUITES       PlainSuiteA PlainSuiteB      # TEST() / TEST_F() suites
 #       TYPED_SUITES FooTests BarTests            # TYPED_TEST_SUITE() suites
@@ -29,15 +29,15 @@
 # GitHub-hosted runner has no GPU.
 
 # Internal: registers the drift guard once per target, after every
-# wwr_add_gtest_suite_tests() call in the directory has contributed its
+# calaman_add_gtest_suite_tests() call in the directory has contributed its
 # suite names. Not meant to be called directly.
-function(_wwr_register_gtest_suite_guard target)
-  get_property(_suites GLOBAL PROPERTY _wwr_gtest_suites_${target})
+function(_calaman_register_gtest_suite_guard target)
+  get_property(_suites GLOBAL PROPERTY _calaman_gtest_suites_${target})
   add_test(
     NAME ${target}.SuiteListIsComplete
     COMMAND
       ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${target}> "-DEXPECTED=${_suites}"
-      -P ${CMAKE_SOURCE_DIR}/cmake/wwr_check_gtest_suites.cmake
+      -P ${CMAKE_SOURCE_DIR}/cmake/calaman_check_gtest_suites.cmake
   )
   set_tests_properties(${target}.SuiteListIsComplete PROPERTIES TIMEOUT 60)
 
@@ -54,7 +54,7 @@ endfunction()
 # Register a GoogleTest binary with ctest as one entry per suite, plus the
 # <target>.SuiteListIsComplete drift guard. TYPED_SUITES x TYPES expands to one
 # entry per instantiation. See cmake/README.md, "Tests", for the why.
-function(wwr_add_gtest_suite_tests)
+function(calaman_add_gtest_suite_tests)
   cmake_parse_arguments(
     _GST
     "REQUIRES_GPU"
@@ -63,14 +63,14 @@ function(wwr_add_gtest_suite_tests)
     ${ARGN}
   )
 
-  _wwr_require_args("wwr_add_gtest_suite_tests" _GST TARGET)
+  _calaman_require_args("calaman_add_gtest_suite_tests" _GST TARGET)
   if(NOT _GST_TIMEOUT)
     set(_GST_TIMEOUT 120)
   endif()
   if(_GST_TYPED_SUITES AND NOT _GST_TYPES)
     message(
       FATAL_ERROR
-        "wwr_add_gtest_suite_tests: TYPED_SUITES given without TYPES"
+        "calaman_add_gtest_suite_tests: TYPED_SUITES given without TYPES"
     )
   endif()
 
@@ -115,21 +115,21 @@ function(wwr_add_gtest_suite_tests)
   # deferred to end-of-directory-scope, so a target split across several calls
   # is checked against the union (cmake/README.md, "Tests").
   set_property(
-    GLOBAL APPEND PROPERTY _wwr_gtest_suites_${_GST_TARGET} ${_GST_SUITES}
+    GLOBAL APPEND PROPERTY _calaman_gtest_suites_${_GST_TARGET} ${_GST_SUITES}
                            ${_GST_TYPED_SUITES}
   )
 
   get_property(
-    _guard_scheduled GLOBAL PROPERTY _wwr_gtest_guard_${_GST_TARGET}
+    _guard_scheduled GLOBAL PROPERTY _calaman_gtest_guard_${_GST_TARGET}
   )
   if(NOT _guard_scheduled)
-    set_property(GLOBAL PROPERTY _wwr_gtest_guard_${_GST_TARGET} TRUE)
+    set_property(GLOBAL PROPERTY _calaman_gtest_guard_${_GST_TARGET} TRUE)
     # EVAL CODE bakes the target name into the deferred call as a literal.
     # A plain `DEFER CALL f("${_GST_TARGET}")` does not work: deferred
     # arguments are re-evaluated when the call finally runs, by which point
     # this function's scope is gone and the argument expands to nothing --
     # which surfaces as `$<TARGET_FILE:>` failing to parse.
-    set(_guard_fn _wwr_register_gtest_suite_guard)
+    set(_guard_fn _calaman_register_gtest_suite_guard)
     cmake_language(
       EVAL CODE "cmake_language(DEFER CALL ${_guard_fn} \"${_GST_TARGET}\")"
     )

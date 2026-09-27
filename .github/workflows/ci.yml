@@ -8,42 +8,46 @@
 # uncapped. None of them has a GPU.
 #
 #   changes       one cheap job that diffs the push/PR and outputs `code`,
-#                 false only when EVERY changed file is docs. The two heavy
-#                 jobs gate on it; `ci-ok` accepts their skip only when it says
+#                 false only when EVERY changed file is docs. The heavy job
+#                 gates on it; `ci-ok` accepts its skip only when it says
 #                 docs-only. So a `.md`-only PR goes green on lint+test alone.
 #   lint          ruff + cmake-lint
 #   python        the pytest tier, on 3.13
-#   cpp (cuda)    the whole tree built for CUDA -- src/, GoogleTest, every
-#                 runtime test binary -- then `ctest -LE gpu`, then an ADVISORY
-#                 clang-tidy pass over src/*.cpp that cannot fail the job
+#   cpp (cuda)    the whole tree built for CUDA -- this project, the gpumod
+#                 submodule, GoogleTest and every test binary -- then
+#                 `ctest -LE gpu`, then an ADVISORY clang-tidy pass over
+#                 src/*.cpp that cannot fail the job
 #   cpp (hip)     the same shape for HIP: the whole tree through clang's
 #                 -x hip front end, then the same `-LE gpu`
-#   install-check install to a throwaway prefix, then build example/consumer
-#                 against it. The only tier that sees an export regression.
+#   (no install-check job: the package tier is dormant, see the bottom of this
+#    file)
 #   ci-ok         an aggregate that fails unless every job above either
-#                 succeeded or, for the two gated jobs on a docs-only change,
-#                 was skipped -- the one check name stable enough to require in
-#                 a ruleset
+#                 succeeded or, for the gated job on a docs-only change, was
+#                 skipped -- the one check name stable enough to require in a
+#                 ruleset
 #
 # BE PRECISE ABOUT WHAT THE cpp JOBS PROVE, because "the whole tree built, then
-# ctest" reads like more than it is. What `-LE gpu` leaves is essentially a
-# COMPILE-AND-LINK answer with a thin runtime slice on top. Of the entries it
-# runs:
+# ctest" reads like more than it is. `test/` IS EMPTY TODAY, so what the two cpp
+# legs currently prove is:
 #
-#   * two -- HalfConversion and Bfloat16Conversion -- actually compute
-#     something. They are host fp16/bf16 conversion, CPU work by design, and
-#     they are NOT backend-neutral in implementation: wwr.fp16 / wwr.bf16
-#     map onto the chosen backend's own types, so the two legs exercise
-#     different code and both are worth running.
-#   * one per device-dependent binary -- the <target>.SuiteListIsComplete
-#     guards -- prove that binary LOADS and that its gtest registry matches the
-#     hand-written CMake list. A load check, not a behaviour check.
-#   * {cuda,hip,gpu}_compile_tests link and reach main(); the static_asserts
-#     they carry were already proved by compiling.
+#   * the toolchain, the presets and the CMake wiring configure and build;
+#   * the gpumod submodule compiles for both backends at this pin, its own
+#     compile-time static_assert tier included (it is built as a subdirectory --
+#     deps/CMakeLists.txt says why);
+#   * nothing at all about this project's numerics, because there is none yet.
 #
-# The four dispatch checks run at BUILD time on both legs (they are
-# add_custom_target(... ALL ...)), so the wrong-entry-point class of bug is
-# covered here even though it never appears in the ctest count.
+# As test/ fills, `-LE gpu` is what keeps these legs honest: every suite that
+# touches a device carries that label and is EXCLUDED BY NAME here, because a
+# hosted runner has no card. What is left after the exclusion is compile-and-link
+# plus whatever runs on a CPU. NOTHING HERE TESTS GPU BEHAVIOUR, and in this
+# project that means nothing here checks a single number it computes --
+# `devtools/cpp-tier.sh` on a box with a card is the only thing that does, and it
+# stays a human gate.
+#
+# The CPU reference LAPACK is in the image (docker/Dockerfile.base), so the
+# oracle-based suites do compile here even though they cannot run. A configure
+# log carrying "CPU reference LAPACK not found" means they were not even built --
+# see devtools/config.sh, DOCTOR_REQUIRED_PATHS.
 #
 # WHY BOTH LEGS, when neither runs a kernel: nvcc and clang's -x hip are
 # different front ends and nvcc is the more permissive one, so a whole class of
@@ -51,27 +55,8 @@
 # Compiling the test sources both ways is most of the value here -- which is
 # why the hip leg is a full build and not the compile-time tier.
 #
-# WHAT IS LEFT: seven runtime suites that genuinely need a card --
-# test/extension/{memory_buffer,runtime,rand,blas,solver,fft,sparse}. They
-# allocate device memory, launch kernels or create vendor handles, and they
-# carry the `gpu` ctest label so `-LE gpu` names them as excluded rather than
-# quietly passing over them. NOTHING HERE TESTS GPU BEHAVIOUR.
-# `devtools/cpp-tier.sh` on a box with a card is the only thing that does, and
-# it stays a human gate.
-#
-# BOTH LEGS REPORT 12, and that is worth keeping equal. Each is
-# {cuda,hip}_compile_tests + gpu_compile_tests + the two conversion suites +
-# eight SuiteListIsComplete guards, so a divergence between them is a signal
-# rather than a quirk of one backend.
-#
-# Getting there needed one thing: cuda_compile_tests links the driver stubs
-# and cannot LOAD without libcuda.so.1, where hip_compile_tests has no such
-# dependency. The ci-cuda preset sets WWR_CUDA_DRIVER_STUBS=ON, which points
-# THAT ONE TEST at the toolkit's own stubs -- build-directory symlinks and a
-# per-test ENVIRONMENT_MODIFICATION, never an image-wide LD_LIBRARY_PATH, which
-# would shadow the real driver on a machine that has one. It proves every
-# non-driver dependency resolves; it does not prove a real driver would load.
-# test/cuda/CMakeLists.txt has the full reasoning.
+# A SUBMODULE BUMP IS A CODE CHANGE. Both cpp legs check out with
+# `submodules: recursive`; without that, configure fails in deps/CMakeLists.txt.
 #
 # ---------------------------------------------------------------------------
 # THE IMAGES COME FROM .github/workflows/images.yml
@@ -87,7 +72,7 @@
 # the image main already published. images.yml's header says how to publish a
 # branch's image first.
 #
-# The owner is spelled in lowercase literally, twice. GHCR rejects an uppercase
+# The owner is spelled in lowercase literally. GHCR rejects an uppercase
 # path and ${{ github.repository_owner }} preserves the case of the account
 # name, which here has capitals -- and `container:` has no shell to lowercase
 # it in. A fork with no packages of its own pulls these, which is the intended
@@ -112,8 +97,8 @@ concurrency:
 # repository default, which can be read-WRITE.
 #
 # A job-level `permissions:` block REPLACES this rather than adding to it, which
-# is why `cpp` and `install-check` each spell out `contents: read` alongside the
-# `packages: read` they need to pull from GHCR.
+# is why `cpp` spells out `contents: read` alongside the `packages: read` it
+# needs to pull from GHCR.
 permissions:
   contents: read
 
@@ -122,10 +107,12 @@ jobs:
   # file this push/PR changed is on the allowlist below; anything else -- a
   # .cu, a .cmake, a .sh, a workflow edit, a new extension -- makes it `true`.
   # The bias is deliberately toward `true`: a file the allowlist does not name
-  # counts as code and builds. The expensive jobs (`cpp`, `install-check`) gate
-  # on `code == 'true'`; `ci-ok` accepts their `skipped` result ONLY when `code`
-  # is `false`, so the skip a real code change must never produce is still
-  # caught. No third-party action -- a git diff is transparent and needs no pin.
+  # counts as code and builds. The expensive job (`cpp`) gates on
+  # `code == 'true'`; `ci-ok` accepts its `skipped` result ONLY when `code` is
+  # `false`, so the skip a real code change must never produce is still caught.
+  # A submodule bump changes deps/gpumod, which is not on the allowlist, so it
+  # counts as code -- which is right. No third-party action -- a git diff is
+  # transparent and needs no pin.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -160,7 +147,7 @@ jobs:
           nondoc="$(printf '%s\n' "$files" | grep -vE \
             '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|(^|/)LICENSE$)' || true)"
           if [ -n "$files" ] && [ -z "$nondoc" ]; then
-            echo "docs-only -- cpp and install-check will skip"
+            echo "docs-only -- the cpp legs will skip"
             echo "code=false" >> "$GITHUB_OUTPUT"
           else
             echo "code=true" >> "$GITHUB_OUTPUT"
@@ -256,7 +243,9 @@ jobs:
             preset: ci-hip
             tidy: ''
     container:
-      image: ghcr.io/whatdiraciscooking/gpumod:${{ matrix.image }}
+      # `calaman`, not `calaman_g`: the tag prefix comes from PROJECT_NAME in
+      # devtools/config.sh, which is what images.yml publishes under.
+      image: ghcr.io/whatdiraciscooking/calaman:${{ matrix.image }}
       # The image's own USER is `ubuntu` (uid 1000) and the runner creates
       # /__w owned by someone else, so the default user cannot write its own
       # workspace. Running as root inside a throwaway container is the usual
@@ -264,6 +253,11 @@ jobs:
       options: --user root
     steps:
       - uses: actions/checkout@v7
+        with:
+          # deps/gpumod is a submodule and every module here imports it; without
+          # this, configure dies in deps/CMakeLists.txt naming a missing
+          # directory rather than a missing checkout.
+          submodules: recursive
 
       # cpp-tier.sh puts `git rev-parse --short HEAD` in its log name, and git
       # refuses to read a repository owned by a different uid. Without this the
@@ -309,42 +303,20 @@ jobs:
           # the cuda leg's advisory clang-tidy log, silently upload nothing.
           include-hidden-files: true
 
-  install-check:
-    # Its own job, not a step on the cuda leg: cpp-tier.sh builds in place and
-    # never installs, so nothing in it can see an export regression -- a module
-    # whose .cppm has a PRIVATE include directory installs cleanly and breaks
-    # every consumer. A separate job keeps that a separate red mark.
-    # Gated on `changes` like `cpp`: a docs-only PR cannot regress an export.
-    needs: [lint, changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/whatdiraciscooking/gpumod:cuda-ci
-      options: --user root
-    steps:
-      - uses: actions/checkout@v7
-      - name: trust the workspace
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: actions/cache@v6
-        with:
-          path: .ccache
-          key: ccache-install-check-${{ github.sha }}
-          restore-keys: |
-            ccache-install-check-
-      # --no-run stops after BUILDING example/consumer. Step 4 launches the
-      # binary, which needs a device; the script would report its exit-77 as a
-      # skip rather than a failure, but saying so here is clearer than a skip
-      # line in a log. Steps 1-3 are the ones that answer the question.
-      - name: package tier
-        env:
-          BUILD_JOBS: '4'
-        run: |
-          export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache"
-          devtools/install-check.sh --preset ci-cuda --no-run
+  # NO install-check JOB, DELIBERATELY. The package tier is dormant:
+  # CALAMAN_INSTALL is OFF because gpumod is consumed with add_subdirectory, so
+  # this project's export set would name targets no installed package provides
+  # (docs/architecture.md section 2), and there is no example/consumer to build
+  # against a prefix (example/README.md). devtools/install-check.sh exits 2 --
+  # "could not run" -- on either, so a job here would be red for a reason that is
+  # not a regression, and making it green by tolerating exit 2 would be a check
+  # that proves nothing.
+  #
+  # RESTORE IT in the commit that flips CALAMAN_INSTALL ON: re-add the job (its
+  # shape is in gpumod's own ci.yml, which this file came from -- a container leg
+  # running `devtools/install-check.sh --preset ci-cuda --no-run`), and add
+  # `install-check` back to BOTH `needs:` and the GATED set in ci-ok below.
+  # Without that second half nothing gates it.
 
   # THE AGGREGATE GATE. One job whose only purpose is to be the single required
   # status check in a branch ruleset.
@@ -374,7 +346,7 @@ jobs:
     # the merge with no red gate explaining why. With it, the job runs and fails
     # loudly instead.
     if: always()
-    needs: [changes, lint, test, cpp, install-check]
+    needs: [changes, lint, test, cpp]
     runs-on: ubuntu-latest
     steps:
       - name: every required job passed
@@ -397,7 +369,6 @@ jobs:
           # result -- failure, cancelled -- still fails, on any change.
           GATED: >-
             cpp:${{ needs.cpp.result }}
-            install-check:${{ needs.install-check.result }}
         run: |
           echo "$DETAIL"
           fail=0

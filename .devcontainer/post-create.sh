@@ -26,6 +26,13 @@ cd "$workspace" || exit 1
 bash "$here/seed-claude-config.sh"
 
 # Trust the checkout, pull submodules, and locate the shared pre-commit hook.
+#
+# THE SUBMODULE STEP IS LOAD-BEARING HERE, not defensive boilerplate: deps/gpumod
+# is where every module under src/ gets its GPU API, so a container whose
+# submodule was never initialised cannot configure at all. It needs the `.git`
+# bind mount to work (see README.md) -- in a worktree without it, `git` fails,
+# this `&&` chain stops, and the missing submodule surfaces much later as a CMake
+# error naming deps/CMakeLists.txt.
 git config --global --add safe.directory "$workspace" &&
   git submodule update --init --recursive &&
   H=$(git rev-parse --git-common-dir)/hooks/pre-commit

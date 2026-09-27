@@ -2,29 +2,55 @@
 
 ## What this is
 
-`gpumod` — C++23 module wrappers for the CUDA and HIP GPU APIs, plus the
-type-safe abstractions built on them. The vendor headers are exposed as
-importable named modules (`import wwr.cuda.cublas_v2;`), the `gpu*` layer
-directly under `src/` maps backend-neutral `gpu*` names onto whichever backend
-was selected, and `src/wrappers` is written once against those names.
+`calaman_G` — GPU-accelerated dense linear algebra and solvers in C++23 named
+modules: LAPACK-shaped work (factorisations, linear solves, least squares,
+eigenproblems) on the device, with the netlib reference LAPACK on the CPU as the
+oracle its tests check against.
 
-**A build targets exactly one backend.** `WWR_GPU_BACKEND` is `CUDA` or
-`HIP`, and it is read *before* `project()` because it decides whether the CUDA
-language is enabled at all. A HIP build needs no CUDA toolkit; a CUDA build
-needs no ROCm.
+**It is agnostic to NVIDIA and AMD, and it owns none of that machinery.** The
+backend split lives in the dependency: [gpumod / Warp
+Wraps](https://github.com/whatDiracIsCooking/gpumod), a git submodule at
+`deps/gpumod`, exposes the vendor headers as importable modules and maps its
+backend-neutral `wwr*` names onto whichever backend was selected. So there is
+**no `src/cuda` and no `src/hip` here** — `src/` is one tree, written once
+against those names, built for either vendor.
 
-The project is being renamed to **Warp Wraps** (`wwr`). The C++ and CMake
-identity is already `wwr`: namespace `wwr`, modules `wwr.*`, macros and CMake
-options `WWR_*`, CMake helpers `wwr_*`, CMake targets `wwr.*` aliased to
-`wwr::*`, and the installed package (`find_package(wwr)`). Still `gpumod`: the
-repo, the Python project, and the docker/devcontainer naming below.
-`PROJECT_NAME` in `devtools/config.sh` is `gpumod` too — it names docker
-volumes, images and the devcontainer, and `doctor.sh` warns when it and any
+**A build targets exactly one backend.** `CALAMAN_GPU_BACKEND` is `CUDA` or
+`HIP`, read *before* `project()` because it decides whether the CUDA language is
+enabled at all, and forwarded to gpumod as `WWR_GPU_BACKEND` from
+`deps/CMakeLists.txt`. A HIP build needs no CUDA toolkit; a CUDA build needs no
+ROCm.
+
+The C++ and CMake identity is `calaman`: namespace `calaman`, modules
+`calaman.*`, macros and CMake options `CALAMAN_*`, CMake helpers `calaman_*`,
+CMake targets `calaman.*` aliased to `calaman::*`, and the installed package
+would be `find_package(calaman)`. The repo and the GitHub project are
+`calaman_G`; docker images, volumes and the devcontainer are `calaman`
+(`PROJECT_NAME` in `devtools/config.sh`), because a docker repository name
+cannot carry a capital. `doctor.sh` warns when `PROJECT_NAME` and any
 `.devcontainer/*/devcontainer.json` disagree.
+
+## The state of the tree — read this before trusting any tier
+
+`src/` and `test/` **are empty.** The scaffolding below is adapted and
+internally consistent, but almost nothing is exercised yet, and it is dishonest
+to report otherwise:
+
+| | State |
+|---|---|
+| `deps/` | **live.** gpumod submodule + GoogleTest fetch. |
+| `docker/`, `.devcontainer/`, `devtools/` | **live**, and the LAPACK layer in `docker/Dockerfile.base` is new here. |
+| `CMakeLists.txt` | **live** for the parts that run: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, gpumod. The `add_subdirectory(src)` / `test` / `example` lines are commented out, because a directory with no `CMakeLists.txt` is a configure error. |
+| `cmake/` helpers | renamed, **not yet exercised.** `calaman_install.cmake` still sweeps a `src/{cuda,hip,wrappers}` layout inherited from gpumod, which is not this project's layout — fix it in the commit that first installs something. |
+| the install tier | **dormant.** `CALAMAN_INSTALL` defaults OFF; see the option's comment for the two-package problem that has to be decided first. `devtools/install-check.sh` and CI's `install-check` job have nothing to prove until then. |
+| the C++ test tiers | **empty.** They configure and build; they assert nothing about this project. |
+
+When you run something, say which of these it touched.
 
 ## Setup
 
 ```bash
+git submodule update --init --recursive   # deps/gpumod
 uv sync                                   # creates .venv from uv.lock
 pre-commit install                        # commit-time lint + pre-push gate
 devtools/devcontainer.sh rebuild          # the C++ toolchain lives in here
@@ -32,12 +58,64 @@ devtools/devcontainer.sh rebuild          # the C++ toolchain lives in here
 
 `uv` is the only assumed host tool, and `uv.lock` is the only place Python
 dependency versions live — after editing `pyproject.toml`, `uv lock` and commit
-the result; never `uv pip install`. The C++ side's only dependency is
-GoogleTest, fetched and built by `deps/CMakeLists.txt` at configure time.
+the result; never `uv pip install`. The C++ side has two dependencies and builds
+both from source: **gpumod** from the submodule, and **GoogleTest**, fetched by
+`deps/CMakeLists.txt` at configure time. The one prebuilt dependency is the CPU
+reference LAPACK, which is a distro package in the image.
 
 Run `devtools/doctor.sh` first when anything behaves oddly — on a bare host the
 whole C++ toolchain warns, which is the expected healthy state. The **doctor**
 skill turns each finding into its fix.
+
+## The dependency: what comes from gpumod, and what is ours
+
+Everything under `src/` here imports gpumod rather than a vendor header
+directly. Its layers, outermost first — prefer the outermost one that does the
+job:
+
+| gpumod layer | What it is | Example |
+|---|---|---|
+| `wwr.extension.*` | handles, error policies, device buffers, `parallel_for`, convenience calls | `wwr.extension.solver` |
+| `wwr.wrappers.*` | type-safe templates over the neutral layer, dispatched on `s/d/c/z` | `wwr.wrappers.solver` |
+| `wwr.blas`, `wwr.solver`, … | the backend-neutral layer: one `wwr*` name per vendor name | `wwrsolverDnXgetrf` |
+| `wwr.cuda.*` / `wwr.hip.*` | the raw 1:1 vendor header modules | `wwr.cuda.cusolverDn` |
+
+**Reaching for a lower layer is a decision, not a convenience.** A call that
+lands in `wwr.cuda.*` is a call that only compiles on one backend, so it needs a
+counterpart on the other or it breaks the promise in the first paragraph of this
+file.
+
+Two consequences of consuming gpumod with `add_subdirectory`, both written up
+in `deps/CMakeLists.txt`:
+
+- **Its compile-time tier and examples build with this project** (it has no
+  `PROJECT_IS_TOP_LEVEL` guard on those). `CALAMAN_GPUMOD_TESTS=OFF` — the
+  default — is what keeps its *runtime* suites and its GoogleTest fetch out.
+  The clean fix belongs upstream.
+- **Vendor packages are found in the top-level `CMakeLists.txt`**, not left to
+  gpumod, because an IMPORTED target is visible only in the directory that found
+  it and below. Keep that list in step with `deps/gpumod/CMakeLists.txt`.
+
+Bump the submodule deliberately (`git -C deps/gpumod fetch && git -C deps/gpumod
+checkout <sha>`, then commit the gitlink), and run the C++ tier after — a
+dependency bump is exactly the change that a green Python run says nothing about.
+
+## The CPU reference LAPACK
+
+`docker/Dockerfile.base` installs `liblapack-dev` + `liblapacke-dev` +
+`gfortran`, and `CMakeLists.txt` exposes them to tests as
+`calaman::lapack_reference` (LAPACKE's C interface, `lapacke.h`).
+
+- **Reference, not OpenBLAS, on purpose.** An oracle has to be deterministic,
+  and a threaded BLAS is not bitwise reproducible across thread counts.
+  `Dockerfile.base` has the `update-alternatives` trap to read before anyone
+  adds OpenBLAS for benchmarking.
+- **Tests only.** Nothing under `src/` may link it. A GPU library that quietly
+  falls back to a CPU LAPACK is a different library, and the tests could no
+  longer tell the two apart.
+- **Missing is a WARNING, not an error**, so a test that needs the oracle must
+  check for the target rather than assume it — otherwise its absence turns into
+  a silent pass instead of a missing tier.
 
 ## Skills
 
@@ -69,7 +147,7 @@ file is the map; reach for the skill when you act.
 
 | File | What it is |
 |---|---|
-| `docker/Dockerfile.base` | The vendor-neutral toolchain: clang-20 + libc++, CMake 4.2, Ninja, ccache, uv/Python. No GPU SDK. |
+| `docker/Dockerfile.base` | The vendor-neutral toolchain: clang-20 + libc++, CMake 4.2, Ninja, ccache, uv/Python, **and the CPU reference LAPACK**. No GPU SDK. |
 | `docker/Dockerfile.cuda` | `base` + the CUDA toolkit. **The default backend**, and what the devcontainer and compose build. |
 | `docker/Dockerfile.hip` | `base` + ROCm. No CUDA at all. |
 | `docker/Dockerfile.combined` | `cuda` + ROCm (~40GB). |
@@ -103,42 +181,46 @@ it.
   change does not. **`ci-ok` is the one aggregate check name stable enough to
   require in a branch ruleset** — every other name is generated and moves.
 - Both backends are built on the server and run `ctest -LE gpu` — read that as
-  **compile-and-link plus a thin runtime slice**, not a test of GPU behaviour.
-- **What CI still cannot do: the device-dependent suites**
-  (`test/extension/{memory_buffer,runtime,rand,blas,solver,fft,sparse}`, the
-  `gpu` ctest label). Only a box with a card runs those, so
-  **`devtools/cpp-tier.sh` before opening a PR remains the gate for anything
-  touching device behaviour** — it is local and bypassable, so run it and say
-  what you ran.
+  **compile-and-link plus whatever CPU-only tests exist**, not as a test of GPU
+  behaviour. Today it is compile-and-link and nothing else.
+- **What CI cannot do: run a kernel.** Every numerical claim this project makes
+  — a factorisation that agrees with the reference LAPACK to a tolerance — needs
+  a card, which no hosted runner has. So **`devtools/cpp-tier.sh` on a box with
+  a GPU before opening a PR is the gate for anything touching device
+  behaviour** — it is local and bypassable, so run it and say what you ran.
+- **A submodule bump is a code change**, and CI treats it as one.
 
-`.github/workflows/ci.yml`'s header has the job-by-job breakdown and the
-precise reading of what each surviving ctest entry proves; the **pr** skill has
-the merge flow. The local tier is deliberately not a git hook — a module build
-costs minutes, and a gate that costs minutes gets bypassed; CI carries that
-cost instead.
+`.github/workflows/ci.yml`'s header has the job-by-job breakdown; the **pr**
+skill has the merge flow. The local tier is deliberately not a git hook — a
+module build costs minutes, and a gate that costs minutes gets bypassed; CI
+carries that cost instead.
 
 ## Conventions
 
 - C++23, named modules, clang + libc++. `CMakeLists.txt` **refuses gcc**.
 - Targets are declared through the macros in `cmake/`:
-  `wwr_add_cxx_module_library`, the `wwr_add_gtest_*` /
-  `wwr_add_test_executable` test macros, and `wwr_add_gpu_device_library`
-  for a module's device-kernel `.cu` library. `wwr_add_interface_library` is
-  wired and documented with **no call sites** — do not assume it is dead.
+  `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` /
+  `calaman_add_test_executable` test macros, and
+  `calaman_add_gpu_device_library` for a module's device-kernel `.cu` library.
+  `calaman_add_interface_library` is wired and documented with no call sites —
+  do not assume it is dead.
 - Target names use dots and are aliased to `::`.
+- **Backend-neutral by construction.** A `wwr*` name from gpumod is the portable
+  spelling; a `cu*`/`hip*` name in this tree is a bug unless it sits behind a
+  switch that gives both backends an answer.
+- **The umbrella target is `calaman_compile_time_tests`**, not
+  `compile_time_tests` — gpumod defines that second name, and two targets cannot
+  share one.
 - **`#include` style tracks header ownership.** A header this project owns uses
   quotes, spelled by the path its include root makes resolve — bare for a
-  same-directory header, root-relative otherwise (`#include
-  "wrappers/common/dispatch_sdcz.h"`), **never a `../` relative climb**. The
-  standard library and vendor headers use angle brackets. A non-module header a
-  `.cppm` includes from its global module fragment must have its include root
-  exported (PUBLIC/INTERFACE), not PRIVATE — a PRIVATE root is the export
-  regression the **test** skill's package tier exists to catch.
+  same-directory header, root-relative otherwise — **never a `../` relative
+  climb**. The standard library, the vendor SDKs and LAPACKE use angle brackets.
+  A non-module header a `.cppm` includes from its global module fragment must
+  have its include root exported (PUBLIC/INTERFACE), not PRIVATE.
 - Python ≥3.13, `from __future__ import annotations` everywhere.
 - Lint is deliberately narrow (`E,F,I,UP,B`) with **no formatter hook**. `ruff
   check .` is clean — the pre-commit hook fails on any finding in a file you
-  touch. `src/` and `deps/` are excluded (C++); `test/shared/dispatch.py` is
-  not.
+  touch. `src/` and `deps/` are excluded (C++).
 - **`protect-main.py` guards the primary (`main`) checkout** and is enabled by
   default. Set `CLAUDE_ALLOW_MAIN_EDITS=1` for a session deliberately editing
   it; the guard's own docstring has the full rationale.

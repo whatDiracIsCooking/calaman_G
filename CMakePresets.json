@@ -67,7 +67,7 @@
       "inherits": "debug",
       "binaryDir": "${sourceDir}/build-coverage",
       "cacheVariables": {
-        "WWR_COVERAGE": "ON"
+        "CALAMAN_COVERAGE": "ON"
       }
     },
     {
@@ -77,7 +77,7 @@
       "description": "Release build against the ROCm/HIP backend instead of CUDA. Needs ROCm, not the CUDA toolkit.",
       "inherits": "base",
       "cacheVariables": {
-        "WWR_GPU_BACKEND": "HIP"
+        "CALAMAN_GPU_BACKEND": "HIP"
       }
     },
     {
@@ -87,25 +87,24 @@
       "description": "Configures only the compile-time tests: no GoogleTest fetch, no runtime test targets, no GPU needed.",
       "inherits": "base",
       "cacheVariables": {
-        "WWR_COMPILE_TIME_ONLY": "ON"
+        "CALAMAN_COMPILE_TIME_ONLY": "ON"
       }
     },
     {
       "name": "ci-cuda",
       "binaryDir": "${sourceDir}/build-ci-cuda",
       "displayName": "CI, CUDA backend (no device)",
-      "description": "The CUDA half of CI: the whole tree built, GoogleTest and every runtime binary included, with the architecture PINNED so configure never queries a driver. Its test preset excludes the `gpu` label, which leaves a COMPILE-AND-LINK answer plus a thin runtime slice -- two CPU-only conversion suites and one load check per device binary. It does not test GPU behaviour; nothing without a card can.",
+      "description": "The CUDA half of CI: the whole tree built, GoogleTest and every runtime binary included, with the architecture PINNED so configure never queries a driver. Its test preset excludes the `gpu` label, which leaves a COMPILE-AND-LINK answer plus whatever CPU-only tests exist. It does not test GPU behaviour; nothing without a card can.",
       "inherits": "base",
       "cacheVariables": {
-        "CMAKE_CUDA_ARCHITECTURES": "86",
-        "WWR_CUDA_DRIVER_STUBS": "ON"
+        "CMAKE_CUDA_ARCHITECTURES": "86"
       }
     },
     {
       "name": "ci-hip",
       "binaryDir": "${sourceDir}/build-ci-hip",
       "displayName": "CI, HIP backend (no device)",
-      "description": "The HIP half of CI, deliberately the same shape as ci-cuda: the whole tree through clang's -x hip front end, runtime test binaries included, then the same `-LE gpu` selection. Compiling the test sources is the point -- clang is the stricter front end, and nvcc waves through code it rejects.",
+      "description": "The HIP half of CI, deliberately the same shape as ci-cuda: the whole tree through clang's -x hip front end, runtime test binaries included, then the same `-LE gpu` selection. Compiling the test sources is the point -- clang is the stricter front end, and nvcc waves through code it rejects. Note this also compiles gpumod for HIP, which is where a portability break in the dependency's device code would surface.",
       "inherits": "hip"
     }
   ],
@@ -150,7 +149,7 @@
       "name": "compile-time",
       "configurePreset": "compile-time",
       "targets": [
-        "compile_time_tests"
+        "calaman_compile_time_tests"
       ]
     }
   ],

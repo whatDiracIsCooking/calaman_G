@@ -11,8 +11,8 @@
 # By hand, and the parent must already be tagged (see Dockerfile.base, "WHY THE
 # FOUR FILES CHAIN BY TAG"):
 #
-#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t gpumod:base .
-#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.hip  -t gpumod:hip .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t calaman:base .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.hip  -t calaman:hip .
 #
 # Both from the REPO ROOT: the trailing `.` is the context, and this file
 # bind-mounts docker/install-rocm.sh from it.
@@ -21,7 +21,7 @@
 # --rocm` reach for (CROSS_CHECK_IMAGE / ROCM_IMAGE in devtools/config.sh), so
 # it is worth having even on a machine with no AMD card -- the cross-backend
 # check only compiles.
-ARG PROJECT_NAME=gpumod
+ARG PROJECT_NAME=calaman
 ARG PARENT_IMAGE=${PROJECT_NAME}:base
 FROM ${PARENT_IMAGE}
 

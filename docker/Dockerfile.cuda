@@ -10,8 +10,8 @@
 # By hand, and the parent must already be tagged (see Dockerfile.base, "WHY THE
 # FOUR FILES CHAIN BY TAG"):
 #
-#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t gpumod:base .
-#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda -t gpumod:latest .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t calaman:base .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda -t calaman:latest .
 #
 # Both from the REPO ROOT: the trailing `.` is the context, and this file
 # bind-mounts docker/install-cuda.sh from it.
@@ -24,7 +24,7 @@
 # CUDA 13 dropped Maxwell/Pascal/Volta -- its nvcc floor is compute_75, so a
 # pre-Turing card needs a 12.x toolkit, which also means dropping the `volta`
 # preset from CMakePresets.json.
-ARG PROJECT_NAME=gpumod
+ARG PROJECT_NAME=calaman
 ARG PARENT_IMAGE=${PROJECT_NAME}:base
 FROM ${PARENT_IMAGE}
 

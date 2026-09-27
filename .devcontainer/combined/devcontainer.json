@@ -17,7 +17,7 @@
   // backend's COMPILE tests still pass, since both toolchains target an
   // architecture rather than the card present -- and only that backend's
   // runtime tests fail. Note they FAIL rather than skip; see CLAUDE.md.
-  "name": "gpumod-combined",                           // EDIT
+  "name": "calaman-combined",                           // EDIT
 
   // Builds BOTH ancestors first -- base, then cuda -- since this is the bottom
   // of the diamond. See ../cuda/ for why a devcontainer needs this hook at all.
@@ -35,7 +35,7 @@
     // No "target": every backend is its own file now, each with a single stage,
     // so the old warning about this one being the file's last stage is moot.
     "args": {
-      "PROJECT_NAME": "gpumod",                        // EDIT
+      "PROJECT_NAME": "calaman",                        // EDIT
       // Widen for a mixed fleet, e.g. "gfx1100;gfx1200" (and CUDA_ARCH
       // "80;86;90" in the initializeCommand above).
       "GPU_TARGETS": "gfx1200"
@@ -49,7 +49,7 @@
   //
   // The two --group-add values are NUMERIC HOST gids, as in ../hip/ -- see
   // there for why a NAME is the wrong thing to pass, and for what fills these
-  // in. devtools/devcontainer.sh exports WWR_<NAME>_GID from `getent` on
+  // in. devtools/devcontainer.sh exports CALAMAN_<NAME>_GID from `getent` on
   // `up`/`rebuild`; the value after the colon is the fallback for opening this
   // config directly, and is host-specific like CUDA_ARCH and GPU_TARGETS
   // above.
@@ -57,8 +57,8 @@
     "--gpus", "all",
     "--device=/dev/kfd",
     "--device=/dev/dri",
-    "--group-add", "${localEnv:WWR_RENDER_GID:109}",        // EDIT: fallback gid
-    "--group-add", "${localEnv:WWR_VIDEO_GID:44}",          // EDIT: fallback gid
+    "--group-add", "${localEnv:CALAMAN_RENDER_GID:109}",        // EDIT: fallback gid
+    "--group-add", "${localEnv:CALAMAN_VIDEO_GID:44}",          // EDIT: fallback gid
     "--security-opt", "seccomp=unconfined"
   ],
 
@@ -75,14 +75,14 @@
   "mounts": [
     "source=${localEnv:HOME}/.claude,target=/home/ubuntu/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.claude.json,target=/home/ubuntu/.claude.json.host,type=bind,readonly",
-    "source=gpumod-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
-    "source=gpumod-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
-    "source=gpumod-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
-    // Host path injected as WWR_GIT_DIR by devtools/devcontainer.sh (up /
+    "source=calaman-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
+    "source=calaman-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
+    "source=calaman-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
+    // Host path injected as CALAMAN_GIT_DIR by devtools/devcontainer.sh (up /
     // rebuild); the literal after the colon is only a fallback for opening this
     // config directly (VS Code "Reopen in Container"), which you then edit to
     // your own checkout's .git common dir. See ../README.md, "Per-project edits".
-    "source=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:WWR_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
+    "source=${localEnv:CALAMAN_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:CALAMAN_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
   ],
 
   "remoteUser": "ubuntu",

@@ -3,9 +3,17 @@
 #
 #   devtools/install-check.sh [--preset NAME] [--prefix DIR] [--keep] [--no-run]
 #
+# DORMANT TODAY, AND IT REFUSES RATHER THAN PRETENDING. Two things it needs do
+# not exist yet: CALAMAN_INSTALL is OFF (gpumod is consumed with
+# add_subdirectory, so this project's export set would name targets no package
+# exports -- see docs/architecture.md section 2), and there is no
+# example/consumer to build (see example/README.md). The preflight below exits 2
+# on either, which is "could not run", not "passed". Do not report a run of this
+# script as a green package tier until both are true.
+#
 # Four steps, and the third is the only one that proves anything:
 #
-#   1. configure gpumod
+#   1. configure calaman_G
 #   2. cmake --install it into a throwaway prefix
 #   3. configure example/consumer against ONLY that prefix, and build it
 #   4. run the resulting binary
@@ -16,13 +24,13 @@
 # requirement that was PRIVATE and so never exported: all of those install
 # perfectly cleanly and fail only in a consumer. example/consumer is a
 # standalone project that knows nothing about this source tree and reaches
-# gpumod through find_package alone, so building it is a real answer and
+# calaman_G through find_package alone, so building it is a real answer and
 # `cmake --install` succeeding is not.
 #
 # WHY THIS EXISTS AS ITS OWN TIER. devtools/cpp-tier.sh builds and ctests the
 # tree in place; nothing in it ever installs, so nothing in it can catch an
 # export-set regression. A module added to src/ is picked up by the install
-# sweep automatically (cmake/wwr_install.cmake reads the buildsystem back),
+# sweep automatically (cmake/calaman_install.cmake reads the buildsystem back),
 # but a module added with a PRIVATE compile requirement is exactly the change
 # that passes cpp-tier.sh and breaks consumers. This is the tier that notices.
 #
@@ -39,7 +47,7 @@
 # .github/workflows/ci.yml uses, since its runner has no card at all.
 #
 # Flags:
-#   --preset NAME   gpumod configure preset (default: CMAKE_PRESET from
+#   --preset NAME   calaman_G configure preset (default: CMAKE_PRESET from
 #                   devtools/config.sh).
 #   --prefix DIR    install prefix (default: a mktemp -d, removed on exit).
 #   --keep          keep the prefix and the consumer build dir, and print
@@ -74,6 +82,37 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Preflight. Exit 2 -- "the check could not run" -- rather than letting step 1
+# fail with a CMake error that reads like a broken change, or worse, letting a
+# future version of this script report a pass for having installed nothing.
+# Delete this block in the commit that makes both true.
+if [ ! -d "$REPO_ROOT/example/consumer" ]; then
+  cat >&2 <<'EOF'
+install-check.sh: cannot run -- there is no example/consumer to build.
+
+  This tier installs the package and then consumes it from a standalone project.
+  Without that project there is nothing to consume, and a "pass" here would mean
+  only that `cmake --install` exited 0 -- which proves nothing (see this file's
+  header). example/README.md says what has to exist, and
+  deps/gpumod/example/consumer/ is the working model.
+EOF
+  exit 2
+fi
+
+if ! grep -qE '^option\(CALAMAN_INSTALL .*\bON\b' "$REPO_ROOT/CMakeLists.txt" &&
+   ! grep -qE 'CALAMAN_INSTALL.*(ON|TRUE)' "$REPO_ROOT/CMakePresets.json"; then
+  cat >&2 <<'EOF'
+install-check.sh: cannot run -- CALAMAN_INSTALL defaults to OFF.
+
+  gpumod is consumed with add_subdirectory, so this project's export set names
+  targets that no installed package provides, and install(EXPORT) refuses it.
+  docs/architecture.md section 2 has the two ways out; until one is chosen there
+  is no package to check. Forcing it with -DCALAMAN_INSTALL=ON fails at generate
+  time, and that failure is the accurate report.
+EOF
+  exit 2
+fi
+
 # A build directory of its own. Sharing one with cpp-tier.sh would mean the two
 # tiers reconfigure each other's cache back and forth -- a full rebuild each
 # way -- which is the same reason every preset in CMakePresets.json has its own
@@ -82,7 +121,7 @@ build_dir=$REPO_ROOT/build-install-check
 consumer_build=$REPO_ROOT/build-install-check-consumer
 
 if [ -z "$prefix" ]; then
-  prefix=$(mktemp -d -t gpumod-install-XXXXXX)
+  prefix=$(mktemp -d -t calaman_G-install-XXXXXX)
   created_prefix=1
 else
   mkdir -p "$prefix"
@@ -105,11 +144,11 @@ trap cleanup EXIT
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
 # ---------------------------------------------------------------------------
-step "1/4  configure gpumod (preset: $preset)"
+step "1/4  configure calaman_G (preset: $preset)"
 # ---------------------------------------------------------------------------
 # -B overrides the preset's own binaryDir so this tier keeps its cache separate
 # from cpp-tier.sh's, per the comment above.
-cmake --preset "$preset" -B "$build_dir" -DWWR_INSTALL=ON
+cmake --preset "$preset" -B "$build_dir" -DCALAMAN_INSTALL=ON
 
 # ---------------------------------------------------------------------------
 step "2/4  build and install into $prefix"
@@ -128,8 +167,8 @@ echo "  $(find "$prefix" \( -name '*.h' -o -name '*.cuh' \) | wc -l) headers"
 # The package config is what a consumer finds first; if it is missing, nothing
 # downstream can work and the error there would not say so.
 for required in \
-  "lib/cmake/wwr/wwrConfig.cmake" \
-  "lib/cmake/wwr/wwr-targets.cmake"; do
+  "lib/cmake/calaman/calamanConfig.cmake" \
+  "lib/cmake/calaman/calaman-targets.cmake"; do
   if [ ! -f "$prefix/$required" ]; then
     echo "install-check.sh: FAIL -- $required was not installed" >&2
     exit 1
@@ -139,7 +178,7 @@ done
 # ---------------------------------------------------------------------------
 step "3/4  configure and build example/consumer against the install"
 # ---------------------------------------------------------------------------
-# CMAKE_PREFIX_PATH is the ONLY thing connecting the consumer to gpumod. No
+# CMAKE_PREFIX_PATH is the ONLY thing connecting the consumer to calaman_G. No
 # source path, no build directory, nothing from this tree -- if find_package
 # cannot work from the install prefix alone, this step is where it shows.
 rm -rf "$consumer_build"

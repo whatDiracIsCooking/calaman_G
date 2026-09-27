@@ -73,14 +73,14 @@ compose cannot drift onto two different toolchains.
 `./build.sh` is what walks the chain, and is the way to build any of them:
 
 ```bash
-docker/build.sh cuda        # base, then cuda -> gpumod:cuda and gpumod:latest
-docker/build.sh hip         # base, then hip  -> gpumod:hip
-docker/build.sh combined    # base, cuda, then combined -> gpumod:combined
-docker/build.sh base        # just the toolchain -> gpumod:base
+docker/build.sh cuda        # base, then cuda -> calaman:cuda and calaman:latest
+docker/build.sh hip         # base, then hip  -> calaman:hip
+docker/build.sh combined    # base, cuda, then combined -> calaman:combined
+docker/build.sh base        # just the toolchain -> calaman:base
 ```
 
 It takes the tag prefix from `PROJECT_NAME` in `devtools/config.sh`, so
-`gpumod:latest` — what `WWR_IMAGE` below defaults to — is always one of the
+`calaman:latest` — what `CALAMAN_IMAGE` below defaults to — is always one of the
 two tags the CUDA image gets. Run it from anywhere; the context is always the
 repo root, because the files read `pyproject.toml`, `uv.lock` and
 `docker/install-{cuda,rocm}.sh` relative to it.
@@ -99,12 +99,12 @@ docker/build.sh cuda --no-cache --progress=plain   # flags reach every step
 By hand is still fine, as long as you build the parent yourself first:
 
 ```bash
-DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t gpumod:base .
-DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda -t gpumod:latest .
+DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t calaman:base .
+DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda -t calaman:latest .
 ```
 
 Skip that first line and docker does not fall back to building the parent — it
-tries to *pull* it, and fails with `pull access denied for gpumod, repository
+tries to *pull* it, and fails with `pull access denied for calaman, repository
 does not exist`, which reads like a registry problem rather than a missing local
 build. `docker/Dockerfile.base`'s header has the rest of the reasoning.
 
@@ -116,17 +116,17 @@ CI pulls:
 
 ```bash
 IMAGE_TAG_SUFFIX=-ci IMAGE_REGISTRY=ghcr.io/<owner> BUILD_PUSH=1 \
-  ROCM_PRUNE=1 docker/build.sh hip      # -> gpumod:hip-ci, pushed to GHCR
+  ROCM_PRUNE=1 docker/build.sh hip      # -> calaman:hip-ci, pushed to GHCR
 ```
 
 | knob | effect |
 |---|---|
-| `IMAGE_TAG_SUFFIX` | appended to every tag in the chain (`gpumod:hip-ci`) |
-| `IMAGE_REGISTRY` | adds `<registry>/gpumod:<tag>` as a second tag |
+| `IMAGE_TAG_SUFFIX` | appended to every tag in the chain (`calaman:hip-ci`) |
+| `IMAGE_REGISTRY` | adds `<registry>/calaman:<tag>` as a second tag |
 | `BUILD_PUSH=1` | pushes the **final target's** registry tags, not its parents' |
 
-`:latest` is dropped when a suffix is set — `gpumod:latest-ci` would be a lie,
-since `latest` is what `WWR_IMAGE` resolves to and must keep meaning the
+`:latest` is dropped when a suffix is set — `calaman:latest-ci` would be a lie,
+since `latest` is what `CALAMAN_IMAGE` resolves to and must keep meaning the
 full CUDA dev image. Parents are not pushed because a child image is
 self-contained; publishing `:base` too would upload 1.45GB nothing pulls.
 
@@ -174,7 +174,7 @@ BUILD_ONLY=1 dc build
 
 | Env Var | Effect |
 |---------|--------|
-| `WWR_IMAGE` | Docker image to use (default: `gpumod:latest`) |
+| `CALAMAN_IMAGE` | Docker image to use (default: `calaman:latest`) |
 | `BUILD_PRESET` | Select cmake preset: `default` (Release), `debug`, `asan` (default: `default`) |
 | `CLEAN=1` | Remove compiled objects before building |
 | `RECONFIGURE=1` | Wipe cmake cache and reconfigure from scratch |
@@ -185,12 +185,17 @@ BUILD_ONLY=1 dc build
 
 The `test` service configures, builds, then runs gtest followed by pytest.
 
-The pytest half runs the whole suite — two files,
-`test/shared/test_dispatch.py` and `.claude/hooks/test_protect_main.py`, the
-same thing the push gate and `devcontainer.sh test` run. There is no `-m "not slow"` filter any more: the
-fast/slow split and `devtools/slow-tier.sh` were retired when the suite shrank
-to a second. The `compute-sanitizer` service still deselects `no_sanitizer`,
-because instrumented runs turn a merely-slow case into an hours-long one.
+The pytest half runs the whole suite — today one file,
+`.claude/hooks/test_protect_main.py` — the same thing the push gate and
+`devcontainer.sh test` run. There is no fast/slow split: the Python side is
+checker scripts, not numerics. The `compute-sanitizer` service still deselects
+`no_sanitizer`, because instrumented runs turn a merely-slow case into an
+hours-long one.
+
+The gtest half builds the whole tree, **gpumod included** — it is a submodule
+built from source, so a first run in a cold container pays for the dependency's
+module surface as well as this project's. `dc build` once before `dc test` if
+you want those two costs reported separately.
 
 ```bash
 # All tests (gtest + pytest)
@@ -199,8 +204,8 @@ dc test
 # Gtest only
 SKIP_PYTEST=1 dc test
 
-# Gtest with filter
-SKIP_PYTEST=1 TEST_FILTER='MemoryBuffer' dc test
+# Gtest with filter (a ctest -R regex over gtest SUITE names)
+SKIP_PYTEST=1 TEST_FILTER='Getrf' dc test
 
 # Pytest only
 SKIP_GTEST=1 dc test
@@ -216,7 +221,7 @@ SKIP_GTEST=1 PYTEST_ARGS='-k smoke' dc test
 | `SKIP_GTEST=1` | Skip the C++ suite |
 | `SKIP_PYTEST=1` | Skip the Python suite |
 | `TIMEOUT_MULTIPLIER` | Scale test timeouts (default: `1`) |
-| `CUDA_VISIBLE_DEVICES` | Which GPU to run on (default: `1`) |
+| `CUDA_VISIBLE_DEVICES` | Which GPU to run on. Passed through from your shell with no default — unset means every visible device. |
 
 ### pytest cannot run from a `.claude/worktrees/` checkout
 
@@ -225,8 +230,8 @@ lightweight worktrees the repo's `.git` is a *file* pointing at
 `<repo-root>/main/.git/worktrees/<name>`, which is outside that mount, so
 `git rev-parse --git-common-dir` fails inside the container and
 `.claude/hooks/test_protect_main.py` raises during collection — which takes
-the whole pytest run with it, `test_dispatch.py` included. The gtest half is
-unaffected, and `dc test` exits 1.
+the whole pytest run with it, every other Python test included. The gtest half
+is unaffected, and `dc test` exits 1.
 
 Run the C++ half here and the Python half on the host, where git resolves:
 

@@ -1,4 +1,4 @@
-# wwr_install.cmake — install rules, the export set, and the package config.
+# calaman_install.cmake — install rules, the export set, and the package config.
 #
 # A C++23 module package ships module interface SOURCES (.cppm), not BMIs (a BMI
 # is not portable), and the consumer's own build recompiles them. Three rules
@@ -7,12 +7,12 @@
 #
 #   1. Every compile requirement of a .cppm must reach the consumer — a PRIVATE
 #      requirement is not exported, so it becomes a broken install.
-#   2. Module sources need per-target destinations (six modules are each rooted
-#      at a file named interface.cppm; one shared dir would collide).
+#   2. Module sources need per-target destinations (several modules end up rooted
+#      at a file of the same name, and one shared dir would collide).
 #   3. A header a module unit #includes is installed next to those sources.
 #
 # The consumer-facing half of the contract (same compiler, standard library and
-# backend) is stated and enforced in wwrConfig.cmake.in.
+# backend) is stated and enforced in calamanConfig.cmake.in.
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -21,9 +21,9 @@ include(CMakePackageConfigHelpers)
 # prefix. `modules` holds module interface SOURCES, not BMIs (see above); it is
 # under include/ because that is where a "things the consumer's compiler reads"
 # directory belongs, not because anything #includes from it.
-set(WWR_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/wwr")
-set(WWR_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/wwr")
-set(WWR_INSTALL_MODULEDIR "${WWR_INSTALL_INCLUDEDIR}/modules")
+set(CALAMAN_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/calaman")
+set(CALAMAN_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/calaman")
+set(CALAMAN_INSTALL_MODULEDIR "${CALAMAN_INSTALL_INCLUDEDIR}/modules")
 
 # ---------------------------------------------------------------------------
 # Internal helpers (underscore-prefixed -- not part of the public API)
@@ -38,10 +38,10 @@ set(WWR_INSTALL_MODULEDIR "${WWR_INSTALL_INCLUDEDIR}/modules")
 # the package, and the first report would come from a consumer. Reading the
 # buildsystem back means "installed" and "defined under src/" cannot drift.
 #
-# UTILITY targets (the compile_time_tests umbrella) and ALIAS targets (the ::
+# UTILITY targets (the calaman_compile_time_tests umbrella) and ALIAS targets (::
 # spellings, which are not in BUILDSYSTEM_TARGETS at all) fall out of the TYPE
 # filter on their own.
-function(_wwr_collect_library_targets dir out_var)
+function(_calaman_collect_library_targets dir out_var)
   cmake_parse_arguments(
     _c
     "RECURSE"
@@ -70,7 +70,7 @@ function(_wwr_collect_library_targets dir out_var)
       PROPERTY SUBDIRECTORIES
     )
     foreach(_subdir IN LISTS _subdirs)
-      _wwr_collect_library_targets("${_subdir}" _from_subdir RECURSE)
+      _calaman_collect_library_targets("${_subdir}" _from_subdir RECURSE)
       list(APPEND _found ${_from_subdir})
     endforeach()
   endif()
@@ -83,16 +83,16 @@ endfunction()
 
 # The installed module-source directory for `target`, mirroring its position
 # under src/ -- see rule 2 in this file's header comment.
-function(_wwr_module_destination target out_var)
+function(_calaman_module_destination target out_var)
   get_target_property(_source_dir ${target} SOURCE_DIR)
   file(RELATIVE_PATH _relative "${PROJECT_SOURCE_DIR}/src" "${_source_dir}")
-  # The gpu* layer lives directly in src/, so its relative path is empty and its
-  # module sources install at the MODULEDIR root; everything else mirrors to a
-  # subdirectory (cuda/, wrappers/blas, ...).
+  # A target declared directly in src/CMakeLists.txt has an empty relative path
+  # and installs its module sources at the MODULEDIR root; everything else
+  # mirrors to a subdirectory (solver/, blas/, ...).
   if(_relative STREQUAL "")
-    set(_destination "${WWR_INSTALL_MODULEDIR}")
+    set(_destination "${CALAMAN_INSTALL_MODULEDIR}")
   else()
-    set(_destination "${WWR_INSTALL_MODULEDIR}/${_relative}")
+    set(_destination "${CALAMAN_INSTALL_MODULEDIR}/${_relative}")
   endif()
   set(${out_var}
       "${_destination}"
@@ -109,7 +109,7 @@ endfunction()
 # is safe for the same reason it is usually not: the set is not an input to any
 # build rule, only to an install rule, so a stale glob costs a reconfigure and
 # never a wrong build.
-function(_wwr_install_module_adjacent_headers target destination)
+function(_calaman_install_module_adjacent_headers target destination)
   get_target_property(_source_dir ${target} SOURCE_DIR)
   file(GLOB _headers "${_source_dir}/*.h" "${_source_dir}/*.cuh")
   if(_headers)
@@ -126,46 +126,38 @@ endfunction()
 # Call this from the top-level CMakeLists.txt AFTER every add_subdirectory that
 # defines a library, because it reads the buildsystem back to decide what to
 # install and a target that does not exist yet cannot be found.
-function(wwr_install_package)
-  # The backend's own wrapper directory is the only part of src/ that is not
-  # added unconditionally, so the sweep covers whichever one this build chose.
-  if(WWR_GPU_BACKEND STREQUAL "CUDA")
-    set(_backend_dir "${PROJECT_SOURCE_DIR}/src/cuda")
-  else()
-    set(_backend_dir "${PROJECT_SOURCE_DIR}/src/hip")
-  endif()
-
-  _wwr_collect_library_targets("${_backend_dir}" _backend_targets RECURSE)
-  # The gpu* layer is defined directly in src/CMakeLists.txt, so it is collected
-  # from src/ NON-recursively; recursing would re-collect src/cuda, src/hip and
-  # src/wrappers, which are swept separately above and below.
-  _wwr_collect_library_targets("${PROJECT_SOURCE_DIR}/src" _gpu_targets)
-  _wwr_collect_library_targets(
-    "${PROJECT_SOURCE_DIR}/src/wrappers" _wrapper_targets RECURSE
-  )
-
-  # wwr_module_flags is defined in the top-level CMakeLists.txt rather than
-  # under src/, so the sweep above does not reach it -- but three src/cuda
-  # targets link it PUBLIC, which puts it in their INTERFACE_LINK_LIBRARIES and
-  # so makes install(EXPORT) refuse the whole export set until it is a member
-  # too. Collected non-recursively: recursing from the top would pull in test/
-  # and deps/ (GoogleTest), none of which belongs in this package.
-  _wwr_collect_library_targets("${PROJECT_SOURCE_DIR}" _root_targets)
-  list(
-    FILTER
-    _root_targets
-    INCLUDE
-    REGEX
-    "^wwr_module_flags$"
-  )
-
-  set(_targets ${_root_targets} ${_backend_targets} ${_gpu_targets}
-               ${_wrapper_targets}
+function(calaman_install_package)
+  # ONE recursive sweep of src/, because src/ is one tree. This is where this
+  # file differs most from the gpumod version it came from: there, src/ had a
+  # per-backend subtree plus a wrappers subtree, and each was swept
+  # separately to keep the non-recursive collection of the neutral layer
+  # from double-counting them. Here the backend split is the dependency's, so
+  # there is nothing to separate -- and `deps/` is not under src/, so the sweep
+  # cannot reach gpumod or GoogleTest.
+  _calaman_collect_library_targets(
+    "${PROJECT_SOURCE_DIR}/src" _targets RECURSE
   )
   list(REMOVE_DUPLICATES _targets)
 
+  # THE PART THAT IS NOT SOLVED YET. gpumod is consumed with
+  # add_subdirectory, so a target collected above carries gpumod targets in
+  # its INTERFACE_LINK_LIBRARIES, and install(EXPORT) refuses an export set
+  # whose interface names a target that is not exported anywhere. Expect the
+  # first real call of this function to fail with exactly that, naming a
+  # `wwr.*` target; docs/architecture.md section 2 has the two ways out.
+  # CALAMAN_INSTALL defaults OFF until one is chosen, which is why this is a
+  # comment rather than a workaround.
+  if(NOT _targets)
+    message(
+      WARNING
+        "CALAMAN_INSTALL is ON but no library targets are defined under src/, "
+        "so the package would install nothing. Leave it OFF until src/ has a "
+        "module."
+    )
+  endif()
+
   list(LENGTH _targets _count)
-  message(STATUS "Install: ${_count} targets in the wwr package")
+  message(STATUS "Install: ${_count} targets in the calaman package")
 
   # Each target is installed on its own rather than in one install(TARGETS ...)
   # call, because FILE_SET CXX_MODULES needs a per-target DESTINATION (rule 2).
@@ -177,9 +169,9 @@ function(wwr_install_package)
       # An INTERFACE library has no artifact to install; it is in the export
       # set for its usage requirements, and for the plain reason that targets
       # linking it cannot be exported without it.
-      install(TARGETS ${_target} EXPORT wwr-targets)
+      install(TARGETS ${_target} EXPORT calaman-targets)
     else()
-      _wwr_module_destination(${_target} _module_dir)
+      _calaman_module_destination(${_target} _module_dir)
       # cmake-lint: disable=E1122
       # One DESTINATION per artifact kind is how install(TARGETS) is spelled --
       # ARCHIVE, LIBRARY, RUNTIME and FILE_SET each take their own. cmake-lint
@@ -187,77 +179,58 @@ function(wwr_install_package)
       # duplicated keyword.
       install(
         TARGETS ${_target}
-        EXPORT wwr-targets
+        EXPORT calaman-targets
         ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
         LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
         RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
                 FILE_SET CXX_MODULES
                 DESTINATION "${_module_dir}"
       )
-      _wwr_install_module_adjacent_headers(${_target} "${_module_dir}")
+      _calaman_install_module_adjacent_headers(${_target} "${_module_dir}")
     endif()
   endforeach()
 
   # The .h/.cuh headers that are reached by include path rather than by sitting
-  # next to a module source. Installing src/'s shape under include/wwr/ is
+  # next to a module source. Installing src/'s shape under include/calaman/ is
   # what makes the include spellings resolve unchanged -- see the
   # INSTALL_INTERFACE include directories on the targets themselves.
   #
-  # The gpu* layer's backend-switch headers (gpu_backend.h, selected_backend.h,
-  # device_guard.h) and its device-side .cuh headers are included bare (e.g.
-  # "gpu_backend.h") and live directly in src/, so a NON-recursive glob is
-  # exactly this set and they install at the include root. install(DIRECTORY)
-  # is wrong here: it would recurse into src/cuda, src/hip and src/wrappers,
-  # whose headers are handled separately (wrappers', below; the backends have
-  # none). A configure-time glob is safe here: the set is an input only to an
-  # install rule, never to a build rule -- a stale glob costs a reconfigure, not
-  # a wrong build.
-  file(GLOB _gpu_layer_headers "${PROJECT_SOURCE_DIR}/src/*.h"
-       "${PROJECT_SOURCE_DIR}/src/*.cuh"
-  )
-  install(FILES ${_gpu_layer_headers}
-          DESTINATION "${WWR_INSTALL_INCLUDEDIR}"
-  )
-
-  # The shared dispatch header under src/wrappers, included through src/ (e.g.
-  # "wrappers/common/dispatch_sdcz.h"), mirrored to include/wwr/wrappers.
+  # src/'s whole header shape, mirrored under include/calaman/ so that every
+  # include spelling a module unit uses in-tree resolves identically against the
+  # install -- root-relative ones ("solver/panel.h") and bare
+  # same-directory ones alike. See the INSTALL_INTERFACE include directories
+  # on the targets themselves, which are what point a consumer at this root.
+  #
+  # install(DIRECTORY) rather than a glob because src/ is ONE tree here:
+  # there is no per-backend subtree to exclude, so recursion is the correct
+  # behaviour rather than a hazard. FILES_MATCHING keeps module sources
+  # (.cppm) out -- those are installed per target, with their own
+  # destinations, above.
   install(
-    DIRECTORY "${PROJECT_SOURCE_DIR}/src/wrappers/"
-    DESTINATION "${WWR_INSTALL_INCLUDEDIR}/wrappers"
+    DIRECTORY "${PROJECT_SOURCE_DIR}/src/"
+    DESTINATION "${CALAMAN_INSTALL_INCLUDEDIR}"
     FILES_MATCHING
     PATTERN "*.h"
     PATTERN "*.cuh"
   )
 
-  # The extension layer (src/extension) is built in-tree but is NOT part of the
-  # installed package -- the target sweep above collects only the backend dir,
-  # the gpu* layer and src/wrappers. Its src/extension/bridge/ headers are
-  # #included solely by extension module units (wwr.extension.init_state,
-  # wwr.extension.random_normal) and by parallel_for.cuh, so with no
-  # extension target exported nothing in the package includes them and there is
-  # nothing to install. When the layer is made installable (a
-  # WWR_BUILD_EXTENSION
-  # opt-in), the rule that installs these headers belongs there, next to the
-  # sweep that adds the targets that need them -- so install-check can actually
-  # verify it.
-
   # CXX_MODULES_DIRECTORY is what makes this an installable module package
   # rather than a broken one: without it the export names targets whose module
-  # file sets no consumer can see, and `import wwr.wrappers.blas;` fails to
+  # file sets no consumer can see, and `import calaman.wrappers.blas;` fails to
   # resolve against a package that otherwise installed cleanly.
   install(
-    EXPORT wwr-targets
-    FILE wwr-targets.cmake
-    NAMESPACE wwr::
-    DESTINATION "${WWR_INSTALL_CMAKEDIR}"
+    EXPORT calaman-targets
+    FILE calaman-targets.cmake
+    NAMESPACE calaman::
+    DESTINATION "${CALAMAN_INSTALL_CMAKEDIR}"
     CXX_MODULES_DIRECTORY cxx-modules
   )
 
   # SameMinorVersion, not SameMajorVersion: at 0.x there is no major-version
   # promise to make, and C++23 module packages have a narrower compatibility
-  # story than ordinary libraries anyway (see wwrConfig.cmake.in).
+  # story than ordinary libraries anyway (see calamanConfig.cmake.in).
   write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/wwrConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/calamanConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion
   )
@@ -265,20 +238,20 @@ function(wwr_install_package)
   # Recorded into the config so a consumer's build is checked against the
   # configuration this package was actually built with, rather than discovering
   # the mismatch as a link error or, worse, a wrong warp size at runtime.
-  set(WWR_PACKAGE_BACKEND "${WWR_GPU_BACKEND}")
-  set(WWR_PACKAGE_WARP_SIZE "${WWR_WARP_SIZE}")
-  set(WWR_PACKAGE_CXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
-  set(WWR_PACKAGE_CXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
-  set(WWR_PACKAGE_CXX_STANDARD_LIBRARY "${CMAKE_CXX_STANDARD_LIBRARY}")
+  set(CALAMAN_PACKAGE_BACKEND "${CALAMAN_GPU_BACKEND}")
+  set(CALAMAN_PACKAGE_WARP_SIZE "${CALAMAN_WARP_SIZE}")
+  set(CALAMAN_PACKAGE_CXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
+  set(CALAMAN_PACKAGE_CXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
+  set(CALAMAN_PACKAGE_CXX_STANDARD_LIBRARY "${CMAKE_CXX_STANDARD_LIBRARY}")
 
   configure_package_config_file(
-    "${PROJECT_SOURCE_DIR}/cmake/wwrConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/wwrConfig.cmake"
-    INSTALL_DESTINATION "${WWR_INSTALL_CMAKEDIR}"
+    "${PROJECT_SOURCE_DIR}/cmake/calamanConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/calamanConfig.cmake"
+    INSTALL_DESTINATION "${CALAMAN_INSTALL_CMAKEDIR}"
   )
 
-  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/wwrConfig.cmake"
-                "${CMAKE_CURRENT_BINARY_DIR}/wwrConfigVersion.cmake"
-          DESTINATION "${WWR_INSTALL_CMAKEDIR}"
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/calamanConfig.cmake"
+                "${CMAKE_CURRENT_BINARY_DIR}/calamanConfigVersion.cmake"
+          DESTINATION "${CALAMAN_INSTALL_CMAKEDIR}"
   )
 endfunction()

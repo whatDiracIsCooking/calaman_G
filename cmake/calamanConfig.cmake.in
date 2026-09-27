@@ -1,0 +1,131 @@
+@PACKAGE_INIT@
+
+# calaman_G package configuration.
+#
+# What this file has to do beyond including the target export set comes from one
+# fact about C++23 named modules: a consumer of this package COMPILES the module
+# interface sources it installs (a BMI is not portable, so none is shipped --
+# cmake/calaman_install.cmake explains the mechanism). A consumer's build is
+# therefore not merely linking against calaman_G, it is continuing it, and the
+# three things checked below are the ones where continuing it with different
+# settings produces a failure whose message points nowhere near the cause.
+
+include(CMakeFindDependencyMacro)
+
+set(CALAMAN_GPU_BACKEND "@CALAMAN_PACKAGE_BACKEND@")
+set(CALAMAN_WARP_SIZE "@CALAMAN_PACKAGE_WARP_SIZE@")
+set(CALAMAN_BUILT_WITH_CXX_COMPILER_ID "@CALAMAN_PACKAGE_CXX_COMPILER_ID@")
+set(CALAMAN_BUILT_WITH_CXX_COMPILER_VERSION
+    "@CALAMAN_PACKAGE_CXX_COMPILER_VERSION@"
+)
+set(CALAMAN_BUILT_WITH_CXX_STANDARD_LIBRARY
+    "@CALAMAN_PACKAGE_CXX_STANDARD_LIBRARY@"
+)
+
+# ---------------------------------------------------------------------------
+# 1. Backend
+# ---------------------------------------------------------------------------
+# An installation is built against exactly one backend and contains only that
+# backend's wrapper modules. Asking for the other one is not a thing that can
+# half-work, so it is refused here rather than at the point where
+# `import calaman.cuda.cublas_v2;` fails to resolve in a HIP install.
+if(DEFINED calaman_FIND_COMPONENTS)
+  foreach(_calaman_component IN LISTS calaman_FIND_COMPONENTS)
+    if(_calaman_component MATCHES "^(CUDA|HIP)$"
+       AND NOT _calaman_component STREQUAL CALAMAN_GPU_BACKEND
+    )
+      set(calaman_FOUND FALSE)
+      set(calaman_NOT_FOUND_MESSAGE
+          "This calaman installation was built for the ${CALAMAN_GPU_BACKEND} "
+          "backend; the ${_calaman_component} component was requested. A build "
+          "targets exactly one backend -- install a ${_calaman_component} build "
+          "of calaman to a separate prefix."
+      )
+      return()
+    endif()
+  endforeach()
+  unset(_calaman_component)
+endif()
+
+# ---------------------------------------------------------------------------
+# 2. Toolchain
+# ---------------------------------------------------------------------------
+# The consumer compiles this package's module interface units with the
+# consumer's own compiler. Module interface sources are not portable across
+# implementations, and this project's units are clang + libc++ specific (they
+# `import std`, which needs libc++'s module manifest). A mismatch here surfaces
+# as a wall of errors inside calaman_G's own sources, which reads as calaman_G being
+# broken rather than as the build using the wrong compiler -- hence a warning
+# that names the cause.
+#
+# A warning and not an error: matching the compiler EXACTLY is stricter than
+# necessary in practice, and a consumer who knows their toolchain is compatible
+# should not need to patch this file. Silence it with
+# -DCALAMAN_SKIP_TOOLCHAIN_CHECK=ON.
+if(NOT CALAMAN_SKIP_TOOLCHAIN_CHECK)
+  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL CALAMAN_BUILT_WITH_CXX_COMPILER_ID)
+    message(
+      WARNING
+        "calaman was built with ${CALAMAN_BUILT_WITH_CXX_COMPILER_ID}, this "
+        "project uses ${CMAKE_CXX_COMPILER_ID}. Consumers COMPILE calaman's "
+        "module interface units, and this project's units require Clang -- "
+        "expect errors inside calaman's own sources."
+    )
+  elseif(NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL
+         CALAMAN_BUILT_WITH_CXX_COMPILER_VERSION
+  )
+    message(
+      STATUS
+        "calaman was built with Clang "
+        "${CALAMAN_BUILT_WITH_CXX_COMPILER_VERSION}, this project uses "
+        "${CMAKE_CXX_COMPILER_VERSION}. Module sources are recompiled by the "
+        "consumer, so this is usually fine."
+    )
+  endif()
+
+  if(CALAMAN_BUILT_WITH_CXX_STANDARD_LIBRARY
+     AND NOT CMAKE_CXX_STANDARD_LIBRARY STREQUAL
+         CALAMAN_BUILT_WITH_CXX_STANDARD_LIBRARY
+  )
+    message(
+      WARNING
+        "calaman was built against ${CALAMAN_BUILT_WITH_CXX_STANDARD_LIBRARY}, "
+        "this project uses '${CMAKE_CXX_STANDARD_LIBRARY}'. `import std` "
+        "resolves against the standard library's own module manifest; set "
+        "CMAKE_CXX_STANDARD_LIBRARY to "
+        "${CALAMAN_BUILT_WITH_CXX_STANDARD_LIBRARY} before project()."
+    )
+  endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# 3. Backend packages
+# ---------------------------------------------------------------------------
+# The vendor imported targets (CUDA::cublas, hip::host, ...) appear in this
+# package's INTERFACE_LINK_LIBRARIES, so they have to exist before the export
+# set is included.
+# STILL MISSING FROM THIS FILE: gpumod. Every target in this package names
+# gpumod targets in its interface, so a consumer needs them to exist before the
+# export set below is included -- a `find_dependency(wwr)` here, plus gpumod
+# installed into a prefix the consumer can see. Which of the two arrangements in
+# docs/architecture.md section 2 is chosen decides what that line looks like, so
+# it is not written speculatively. CALAMAN_INSTALL is OFF until then, and no
+# consumer can reach this file.
+if(CALAMAN_GPU_BACKEND STREQUAL "CUDA")
+  find_dependency(CUDAToolkit)
+else()
+  find_dependency(hip)
+  find_dependency(rocm_smi)
+  find_dependency(amd_smi)
+  find_dependency(hiprtc)
+  find_dependency(hipblas)
+  find_dependency(hipblaslt)
+  find_dependency(hipsolver)
+  find_dependency(hipsparse)
+  find_dependency(hipfft)
+  find_dependency(hiprand)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/calaman-targets.cmake")
+
+check_required_components(calaman)

@@ -9,7 +9,7 @@
 #   export HOST_UID=$(id -u) HOST_GID=$(id -g)
 #   docker compose -f docker/compose.yaml run --rm test
 #
-# WWR_IMAGE below defaults to gpumod:latest, which is one of the two tags
+# CALAMAN_IMAGE below defaults to calaman:latest, which is one of the two tags
 # build.sh gives the CUDA image -- so nothing here needs to know about the
 # base/cuda/hip/combined chain. Compose does not build; it only runs.
 #
@@ -38,7 +38,7 @@
 # block from that service.
 services:
   build:
-    image: ${WWR_IMAGE:-gpumod:latest}
+    image: ${CALAMAN_IMAGE:-calaman:latest}
     volumes:
       - ..:/workspace
     working_dir: /workspace
@@ -76,7 +76,7 @@ services:
               capabilities: [gpu]
 
   test:
-    image: ${WWR_IMAGE:-gpumod:latest}
+    image: ${CALAMAN_IMAGE:-calaman:latest}
     volumes:
       - ..:/workspace
     working_dir: /workspace
@@ -132,7 +132,7 @@ services:
               capabilities: [gpu]
 
   asan:
-    image: ${WWR_IMAGE:-gpumod:latest}
+    image: ${CALAMAN_IMAGE:-calaman:latest}
     volumes:
       - ..:/workspace
     working_dir: /workspace
@@ -190,7 +190,7 @@ services:
               capabilities: [gpu]
 
   compute-sanitizer:
-    image: ${WWR_IMAGE:-gpumod:latest}
+    image: ${CALAMAN_IMAGE:-calaman:latest}
     volumes:
       - ..:/workspace
     working_dir: /workspace

@@ -12,14 +12,14 @@ One per GPU file of `../docker/`.
 The four Dockerfiles chain by tag (`FROM ${PARENT_IMAGE}`), and a devcontainer
 build is a single `docker build` with no way to produce that parent — so the hook
 runs `../docker/build.sh` on the host before the image is built. Without it the
-build fails on the first line with `pull access denied for gpumod`, which reads
+build fails on the first line with `pull access denied for calaman`, which reads
 like a registry problem. See `../docker/Dockerfile.base`'s header.
 
 > **`devcontainer build` does not run `initializeCommand`; only `up` does.**
 > Verified against @devcontainers/cli 0.89.0: `up` runs the hook as its very
 > first step, before it resolves the image at all, but a bare
 > `devcontainer build --workspace-folder .` skips lifecycle hooks and dies with
-> `Command failed: docker pull gpumod:base`. Nothing in `devtools/` uses
+> `Command failed: docker pull calaman:base`. Nothing in `devtools/` uses
 > `build` — `devcontainer.sh` only ever calls `up`, `exec` and `down` — so the
 > supported paths are unaffected. If you want just the image, use
 > `docker/build.sh cuda`, which is what the hook calls anyway.
@@ -49,9 +49,9 @@ The three GPU variants differ in `"build".target` and in `runArgs`, and the
   permission error.
 
 **You should not have to edit those gids.** They are written as
-`${localEnv:WWR_RENDER_GID:109}`: `devtools/devcontainer.sh up|rebuild`
+`${localEnv:CALAMAN_RENDER_GID:109}`: `devtools/devcontainer.sh up|rebuild`
 resolves `ROCM_GROUPS` (`devtools/config.sh`) with `getent` and exports one
-`WWR_<NAME>_GID` per group, so any host gets its own host's ids — the same
+`CALAMAN_<NAME>_GID` per group, so any host gets its own host's ids — the same
 resolution `cpp-tier.sh --rocm` does. The literal after the colon is only the
 fallback for opening a config **without** that script (a VS Code "Reopen in
 Container", a bare `devcontainer up`); it is a last-known-good host gid rather
@@ -152,13 +152,13 @@ what to check by hand.
 2. The `PROJECT_NAME` build arg — stamped on the image as a label, which is how
    `devtools/worktree.sh gc` recognises this project's build images and leaves
    every other repo's alone.
-3. The three `source=gpumod-…` volume names — `worktree.sh rm` and `gc`
+3. The three `source=calaman-…` volume names — `worktree.sh rm` and `gc`
    reconstruct these from `PROJECT_NAME` in `devtools/config.sh`, so the two
    must agree. `devtools/doctor.sh` checks each JSON file separately and names
    the one that drifted; while they disagree, every worktree you tear down leaks
    its whole set of volumes.
 The **`.git` bind mount** used to be a fourth. It is now injected: the mount
-source reads `${localEnv:WWR_GIT_DIR}`, and `devtools/devcontainer.sh`
+source reads `${localEnv:CALAMAN_GIT_DIR}`, and `devtools/devcontainer.sh`
 resolves your main checkout's `.git` common dir with `git rev-parse` and exports
 it on `up`/`rebuild`, so no host path is written into the tracked JSON. A
 worktree's `.git` is a *file* pointing into `.git/worktrees/<name>`, outside the
