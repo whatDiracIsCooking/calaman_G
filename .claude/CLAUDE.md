@@ -9,7 +9,7 @@ oracle its tests check against.
 
 **It is agnostic to NVIDIA and AMD, and it owns none of that machinery.** The
 backend split lives in the dependency: [gpumod / Warp
-Wraps](https://github.com/whatDiracIsCooking/gpumod), a git submodule at
+Wraps](https://github.com/whatDiracIsCooking/WarpWraps), a git submodule at
 `deps/gpumod`, exposes the vendor headers as importable modules and maps its
 backend-neutral `wwr*` names onto whichever backend was selected. So there is
 **no `src/cuda` and no `src/hip` here** — `src/` is one tree, written once
