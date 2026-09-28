@@ -433,7 +433,7 @@ enable_testing()
 # First, because everything below links what it defines.
 add_subdirectory(deps)
 
-# src/ and test/ ARE EMPTY, and these lines stay commented until the first
+# src/ is still EMPTY, so its line stays commented until the first shipped
 # module lands. A directory with no CMakeLists.txt is a configure error, so
 # uncomment each one in the commit that adds it.
 #
@@ -445,7 +445,7 @@ add_subdirectory(deps)
 # The in-tree examples, written the way a consumer would write them.
 #add_subdirectory(example)
 
-#add_subdirectory(test)
+add_subdirectory(test)
 
 # ========================================================================
 # Install rules and the CMake package
