@@ -1,0 +1,3 @@
+[submodule "deps/gpumod"]
+	path = deps/gpumod
+	url = https://github.com/whatDiracIsCooking/gpumod.git

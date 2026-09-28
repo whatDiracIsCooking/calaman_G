@@ -1,0 +1,95 @@
+{
+  // The GPU variant, and THE DEVELOPMENT CONTAINER FOR THIS REPO: clang-20
+  // with libc++, CMake 4.2, Ninja, nvcc, and a uv venv for the Python tooling.
+  // Nothing is prebuilt in /opt -- the project's only C++ dependency is
+  // GoogleTest, which deps/CMakeLists.txt fetches and builds at configure
+  // time.
+  //
+  // This is what DEVCONTAINER_CONFIG in devtools/config.sh points at, so
+  // `devtools/devcontainer.sh rebuild` gets you here with no extra ceremony.
+  // NOTE that the bare `devcontainer` CLI and an IDE's "Reopen in Container"
+  // look only for a top-level .devcontainer/devcontainer.json, which this repo
+  // does not have -- point them at this file explicitly, or they find no
+  // config to open at all.
+  //
+  // Identical to ../hip/ and ../combined/ apart from the SDK and the four
+  // EDIT sites below -- workspace mount, volume names and postCreate are the
+  // same, so the three GPU variants are A/B-able.
+  "name": "calaman-cuda",                               // EDIT
+
+  // Builds the PARENT image first. docker/Dockerfile.cuda opens with
+  // `FROM ${PARENT_IMAGE}` (calaman:base), and a devcontainer build is a single
+  // `docker build` with no way to produce that parent itself -- without this
+  // hook it fails on the first line with `pull access denied for calaman`, which
+  // reads like a registry problem rather than a missing local build.
+  // initializeCommand runs on the HOST before the image is built, which is
+  // exactly the slot needed, and a fully cached parent build costs a second or
+  // two per `up`. See docker/Dockerfile.base, "WHY THE FOUR FILES CHAIN BY TAG".
+  "initializeCommand": "bash ${localWorkspaceFolder}/docker/build.sh base",
+
+  "build": {
+    "context": "../..",
+    "dockerfile": "../../docker/Dockerfile.cuda",
+    // No "target": every backend is its own file now, each with a single stage,
+    // so there is no last-stage-by-accident to guard against. Outside the
+    // devcontainer, `docker/build.sh cuda` walks base -> cuda.
+    "args": {
+      "PROJECT_NAME": "calaman",                        // EDIT
+      // Widen for a mixed fleet, e.g. "80;86;90".
+      "CUDA_ARCH": "86"
+    }
+  },
+
+  // Hand the container the GPU. Requires nvidia-container-toolkit on the host
+  // (`docker info` lists an `nvidia` runtime when it is installed). Without it
+  // the container still builds and every CPU test still runs; only tests
+  // needing a live device are lost -- and device-COMPILE tests do not need one,
+  // since nvcc targets an arch rather than the card present.
+  "runArgs": ["--gpus", "all"],
+
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "workspaceFolder": "${localWorkspaceFolder}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached",
+
+  "mounts": [
+    "source=${localEnv:HOME}/.claude,target=/home/ubuntu/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.claude.json,target=/home/ubuntu/.claude.json.host,type=bind,readonly",
+    "source=calaman-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
+    "source=calaman-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
+    "source=calaman-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
+    // Host path injected as CALAMAN_GIT_DIR by devtools/devcontainer.sh (up /
+    // rebuild); the literal after the colon is only a fallback for opening this
+    // config directly (VS Code "Reopen in Container"), which you then edit to
+    // your own checkout's .git common dir. See ../README.md, "Per-project edits".
+    "source=${localEnv:CALAMAN_GIT_DIR:/absolute/path/to/your-root/main/.git},target=${localEnv:CALAMAN_GIT_DIR:/absolute/path/to/your-root/main/.git},type=bind"
+  ],
+
+  "remoteUser": "ubuntu",
+  "updateRemoteUserUID": false,
+
+  "containerEnv": {
+    "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    "CUDA_ARCH": "86"
+  },
+
+  "postCreateCommand": "bash ${localWorkspaceFolder}/.devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "nvidia.nsight-vscode-edition",
+        "ms-vscode.cpptools"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
+        "python.testing.pytestEnabled": true
+      }
+    }
+  }
+}

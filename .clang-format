@@ -1,0 +1,31 @@
+# Matches the formatting already present in src/. The image ships
+# clang-format-20 (aliased to clang-format).
+#
+#   clang-format -i $(git ls-files '*.cppm' '*.cpp' '*.cu' '*.cuh' '*.h')
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+ColumnLimit: 100
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+
+# `.cu` and `.cuh` are not in clang-format's default extension list; they are
+# handled because the CUDA sources here are ordinary C++ to the formatter.
+Standard: c++20
+
+AllowShortFunctionsOnASingleLine: Inline
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Attach
+PointerAlignment: Right
+ReferenceAlignment: Right
+SpaceAfterTemplateKeyword: false
+
+# Doxygen banners in these files are hand-wrapped; leave them alone.
+ReflowComments: false
+
+# Keep `module;`, `export module X;`, and the import block stable rather than
+# letting the sorter reorder module declarations.
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve

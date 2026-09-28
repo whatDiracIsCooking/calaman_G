@@ -1,0 +1,13 @@
+# Blank issues stay ENABLED, and that is a decision rather than a default.
+#
+# `blank_issues_enabled: false` only removes the "open a blank issue" escape
+# hatch from the WEB chooser. It does nothing to the REST API, so
+# `gh issue create` and the `milestone` skill — which builds a whole DAG of
+# issues, each scoped to one PR and cross-linked by dependency — would keep
+# creating unstructured issues either way. Forbidding the shape in the one place
+# it is least often used, while the primary creation path here ignores forms
+# entirely, buys nothing and costs a drive-by report.
+#
+# The forms are worth having anyway: they are the prompt for the three fields
+# people leave out (backend, preset, whether a card is present), not a gate.
+blank_issues_enabled: true

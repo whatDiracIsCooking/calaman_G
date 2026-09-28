@@ -1,0 +1,55 @@
+# --- CMake build output ----------------------------------------------------
+# One directory per preset (see CMakePresets.json); the compose front end adds
+# its own build-compose*/ dirs because a CMake cache cannot be shared between the
+# /workspace and host-path mounts. See CLAUDE.md. One pattern covers them all.
+/build*/
+/cmake-build-*/
+
+CMakeUserPresets.json
+compile_commands.json
+.cache/
+
+# --- Run artifacts ---------------------------------------------------------
+# docker/compose.yaml tees all configure/build/test output here.
+/.log/
+# devtools/cpp-tier.sh writes timestamped run logs here. The name is historical
+# -- slow-tier.sh was retired, but the directory kept its name (see config.sh).
+.slow-tier-reports/
+# .claude/hooks/protect-main.py appends one line per guard decision here, in the
+# PRIMARY checkout, so every session's edits-to-main land in one file. Purely
+# diagnostic and disposable; never tracked.
+/.logs/
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.pyc
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# --- Local environment -----------------------------------------------------
+# docker/.env holds machine-specific overrides (image tag, UID/GID).
+docker/.env
+*.local
+scratch/
+.temp/
+
+# --- Agent -----------------------------------------------------------------
+# Lightweight agent worktrees (devtools/worktree.sh gc cleans up after them).
+.claude/worktrees/
+# Personal overrides -- .claude/settings.json is tracked, this is not.
+.claude/settings.local.json
+
+# --- Editors and OS --------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# --- Profiling output ------------------------------------------------------
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+*.sqlite

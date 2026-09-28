@@ -1,0 +1,72 @@
+# Dependency updates for the two ecosystems dependabot can actually see here.
+#
+# WHAT IS COVERED
+#   github-actions  the actions used by .github/workflows/*.yml. They float on
+#                   major tags (@v4, @v5), so patches arrive on their own but a
+#                   major never does -- that is what this opens a PR for.
+#   uv              uv.lock, the only place Python versions are written down.
+#                   pyproject.toml says what is wanted, the lock says what
+#                   satisfies it, and docker/Dockerfile.base installs that same
+#                   lock with `uv sync --frozen`, so a bump here moves the host
+#                   and the image together.
+#
+# WHAT IS NOT, AND STAYS A HUMAN JOB: every toolchain pin lives somewhere
+# dependabot cannot read. LLVM_VERSION, CMAKE_VERSION, NINJA_VERSION and
+# UBUNTU_TAG are build ARGs in docker/Dockerfile.base; ROCM_VERSION and
+# GPU_TARGETS are declared in BOTH Dockerfile.hip and Dockerfile.combined (bump
+# them together); GoogleTest is CALAMAN_GOOGLETEST_TAG in deps/CMakeLists.txt.
+#
+# THE gpumod SUBMODULE IS NOT AUTOMATED EITHER, and that one is a choice rather
+# than a limitation -- dependabot's `gitsubmodule` ecosystem would do it. It is
+# left off because gpumod is the API this project is written against, not a
+# transitive dependency: a bump can change a `wwr*` spelling, and the right
+# response is a reading of its diff plus a run of the C++ tier on a box with a
+# card, which no unattended PR can supply. Bump it deliberately:
+#
+#   git -C deps/gpumod fetch && git -C deps/gpumod checkout <sha>
+#   git add deps/gpumod && devtools/cpp-tier.sh
+#
+# Turn it on (weekly PRs that at least prove it still COMPILES on both backends)
+# by adding:
+#
+#   - package-ecosystem: gitsubmodule
+#     directory: /
+#     schedule: { interval: weekly }
+#
+# The `docker` ecosystem is deliberately absent rather than merely unused: the
+# three child Dockerfiles are `FROM ${PARENT_IMAGE}` and the base is
+# `FROM ubuntu:${UBUNTU_TAG}`, none of which dependabot resolves. Enabling it
+# would find nothing while implying those pins were covered. What does catch
+# movement under them is images.yml's weekly rebuild -- these SDKs install from
+# apt repositories that shift beneath a fixed Dockerfile.
+#
+# WHY uv IS MONTHLY AND GROUPED: uv.lock is in images.yml's `paths:` filter,
+# because Dockerfile.base installs from it. So every merged lock bump
+# republishes BOTH CI images -- a ~25-minute ROCm install and a ~3-minute push.
+# One grouped PR a month costs one rebuild; five weekly PRs cost five.
+#
+# There is no `commit-message: prefix:` on either entry on purpose. This repo's
+# history is plain imperative subjects ("Add DeviceScope RAII guard to extension
+# common"), which is what dependabot's own default produces; a `ci:`/`deps:`
+# prefix would import half of Conventional Commits into a tree that uses none
+# of it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # One PR for all of them. These move together in practice and each costs a
+    # full CI run to verify.
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      python-dev:
+        patterns: ['*']

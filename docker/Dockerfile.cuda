@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1.7
+# ============================================================================
+# cuda -- base + the CUDA toolkit. THE DEFAULT BACKEND.
+# ============================================================================
+# What .devcontainer/cuda/devcontainer.json and docker/compose.yaml build, and
+# the only image the repo's normal workflow needs.
+#
+#   docker/build.sh cuda      # builds base first, then this; tags :cuda, :latest
+#
+# By hand, and the parent must already be tagged (see Dockerfile.base, "WHY THE
+# FOUR FILES CHAIN BY TAG"):
+#
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t calaman:base .
+#   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.cuda -t calaman:latest .
+#
+# Both from the REPO ROOT: the trailing `.` is the context, and this file
+# bind-mounts docker/install-cuda.sh from it.
+#
+# Pick CUDA_VERSION against the HOST DRIVER, not against the newest CUDA: a
+# driver whose ceiling is below the image's CUDA version makes the container
+# refuse to start under `--gpus all` with
+#   nvidia-container-cli: requirement error: unsatisfied condition: cuda>=X.Y
+# `nvidia-smi` reports the driver's ceiling as "CUDA Version:". Note also that
+# CUDA 13 dropped Maxwell/Pascal/Volta -- its nvcc floor is compute_75, so a
+# pre-Turing card needs a 12.x toolkit, which also means dropping the `volta`
+# preset from CMakePresets.json.
+ARG PROJECT_NAME=calaman
+ARG PARENT_IMAGE=${PROJECT_NAME}:base
+FROM ${PARENT_IMAGE}
+
+ARG CUDA_VERSION=13-0
+ARG TARGETARCH
+USER root
+
+# Re-stamped rather than merely inherited from the parent, so that the
+# PROJECT_NAME the devcontainer passes to THIS build is consumed where it is
+# declared. See Dockerfile.base for what the label is for.
+ARG PROJECT_NAME
+LABEL devcontainer.project="${PROJECT_NAME}"
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=bind,source=docker/install-cuda.sh,target=/tmp/install-cuda.sh \
+    CUDA_VERSION="${CUDA_VERSION}" TARGETARCH="${TARGETARCH}" bash /tmp/install-cuda.sh
+
+# Set by the nvidia/cuda base images, and required by the NVIDIA container
+# runtime to inject the driver under `--gpus all`. Building on plain Ubuntu
+# means setting them here instead.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Version-independent symlink, so a toolkit bump (13.0 -> 13.1) does not leave
+# these pointing at a directory that no longer exists.
+ENV CUDAToolkit_ROOT=/usr/local/cuda \
+    CUDACXX=/usr/local/cuda/bin/nvcc \
+    PATH=/usr/local/cuda/bin:${PATH} \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+
+# The target architecture, as a build arg so a cluster build can widen it:
+#   --build-arg CUDA_ARCH="80;86;90"
+# 86 is Ampere consumer (RTX 30xx). CUDAARCHS is what CMake reads when a preset
+# does not set CMAKE_CUDA_ARCHITECTURES; the `default` preset sets it to
+# `native`, which compiles only for the card in the build machine -- use the
+# ci-cuda preset, which pins 86, when the build host has no card. Keep this at
+# 75 or above: this toolkit's floor is compute_75 (see the CUDA_VERSION note at
+# the top of this file), and a lower value fails at CONFIGURE time, not at
+# build. There are no per-architecture presets; devtools/config.sh has why.
+ARG CUDA_ARCH=86
+ENV CUDA_ARCH=${CUDA_ARCH} \
+    CUDAARCHS=${CUDA_ARCH}
+
+# Nsight Systems CLI, for profiling from inside the container. Non-fatal: the
+# repository is occasionally unavailable, and nothing else depends on nsys.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    repo="https://developer.download.nvidia.com/devtools/repos/ubuntu2404/${TARGETARCH}" && \
+    ( wget -qO /etc/apt/trusted.gpg.d/nvidia-devtools.asc "${repo}/nvidia.pub" && \
+      echo "deb ${repo}/ /" > /etc/apt/sources.list.d/nvidia-devtools.list && \
+      apt-get update && apt-get install -y --no-install-recommends nsight-systems-cli ) \
+    || echo "WARN: nsight-systems-cli unavailable; nsys will be missing (doctor.sh reports it)"
+
+USER ubuntu
+RUN nvcc --version | grep release

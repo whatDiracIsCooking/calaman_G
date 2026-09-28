@@ -1,0 +1,241 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 30,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "description": "Settings shared by every preset. Not selectable directly.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CUDA_ARCHITECTURES": "native",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "default",
+      "displayName": "Default Config (container)",
+      "description": "Release build inside the project Docker image. GoogleTest is fetched and built from source; nothing is taken from /opt.",
+      "inherits": "base"
+    },
+    {
+      "name": "workstation",
+      "displayName": "Workstation Config (no container)",
+      "description": "Release build outside the image. Same dependencies as `default` -- only the build directory differs, so the two can coexist.",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-workstation"
+    },
+    {
+      "name": "debug",
+      "binaryDir": "${sourceDir}/build-debug",
+      "displayName": "Debug Config",
+      "description": "Debug build using Ninja and Clang",
+      "inherits": "default",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "ASAN Config",
+      "description": "AddressSanitizer build for host code memory error detection (Debug + ASAN, separate build-asan/ dir)",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-asan",
+      "cacheVariables": {
+        "ENABLE_ASAN": "ON"
+      }
+    },
+    {
+      "name": "compute-sanitizer",
+      "displayName": "Compute Sanitizer Config",
+      "description": "Debug build for NVIDIA compute-sanitizer GPU memory/race checking",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-compute-sanitizer"
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage Config",
+      "description": "Debug build with clang source-based coverage for host (CXX) code. Drive it through devtools/coverage.sh, which runs ctest and post-processes with llvm-profdata/llvm-cov.",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-coverage",
+      "cacheVariables": {
+        "CALAMAN_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "hip",
+      "binaryDir": "${sourceDir}/build-hip",
+      "displayName": "HIP backend",
+      "description": "Release build against the ROCm/HIP backend instead of CUDA. Needs ROCm, not the CUDA toolkit.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CALAMAN_GPU_BACKEND": "HIP"
+      }
+    },
+    {
+      "name": "compile-time",
+      "binaryDir": "${sourceDir}/build-compile-time",
+      "displayName": "Compile-time tests only",
+      "description": "Configures only the compile-time tests: no GoogleTest fetch, no runtime test targets, no GPU needed.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CALAMAN_COMPILE_TIME_ONLY": "ON"
+      }
+    },
+    {
+      "name": "ci-cuda",
+      "binaryDir": "${sourceDir}/build-ci-cuda",
+      "displayName": "CI, CUDA backend (no device)",
+      "description": "The CUDA half of CI: the whole tree built, GoogleTest and every runtime binary included, with the architecture PINNED so configure never queries a driver. Its test preset excludes the `gpu` label, which leaves a COMPILE-AND-LINK answer plus whatever CPU-only tests exist. It does not test GPU behaviour; nothing without a card can.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CUDA_ARCHITECTURES": "86"
+      }
+    },
+    {
+      "name": "ci-hip",
+      "binaryDir": "${sourceDir}/build-ci-hip",
+      "displayName": "CI, HIP backend (no device)",
+      "description": "The HIP half of CI, deliberately the same shape as ci-cuda: the whole tree through clang's -x hip front end, runtime test binaries included, then the same `-LE gpu` selection. Compiling the test sources is the point -- clang is the stricter front end, and nvcc waves through code it rejects. Note this also compiles gpumod for HIP, which is where a portability break in the dependency's device code would surface.",
+      "inherits": "hip"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    },
+    {
+      "name": "workstation",
+      "configurePreset": "workstation"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "compute-sanitizer",
+      "configurePreset": "compute-sanitizer"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    },
+    {
+      "name": "hip",
+      "configurePreset": "hip"
+    },
+    {
+      "name": "ci-cuda",
+      "configurePreset": "ci-cuda"
+    },
+    {
+      "name": "ci-hip",
+      "configurePreset": "ci-hip"
+    },
+    {
+      "name": "compile-time",
+      "configurePreset": "compile-time",
+      "targets": [
+        "calaman_compile_time_tests"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "workstation",
+      "configurePreset": "workstation",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "no_sanitizer"
+        }
+      }
+    },
+    {
+      "name": "hip",
+      "configurePreset": "hip",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-cuda",
+      "configurePreset": "ci-cuda",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "ci-hip",
+      "configurePreset": "ci-hip",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "compile-time",
+      "configurePreset": "compile-time",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "compile_time"
+        }
+      }
+    }
+  ]
+}
