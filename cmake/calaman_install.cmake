@@ -7,8 +7,8 @@
 #
 #   1. Every compile requirement of a .cppm must reach the consumer — a PRIVATE
 #      requirement is not exported, so it becomes a broken install.
-#   2. Module sources need per-target destinations (several modules end up rooted
-#      at a file of the same name, and one shared dir would collide).
+#   2. Module sources need per-target destinations (several modules end up
+#      rooted at a file of the same name, and one shared dir would collide).
 #   3. A header a module unit #includes is installed next to those sources.
 #
 # The consumer-facing half of the contract (same compiler, standard library and
@@ -38,9 +38,9 @@ set(CALAMAN_INSTALL_MODULEDIR "${CALAMAN_INSTALL_INCLUDEDIR}/modules")
 # the package, and the first report would come from a consumer. Reading the
 # buildsystem back means "installed" and "defined under src/" cannot drift.
 #
-# UTILITY targets (the calaman_compile_time_tests umbrella) and ALIAS targets (::
-# spellings, which are not in BUILDSYSTEM_TARGETS at all) fall out of the TYPE
-# filter on their own.
+# UTILITY targets (the calaman_compile_time_tests umbrella) and ALIAS targets
+# (:: spellings, which are not in BUILDSYSTEM_TARGETS at all) fall out of the
+# TYPE filter on their own.
 function(_calaman_collect_library_targets dir out_var)
   cmake_parse_arguments(
     _c
