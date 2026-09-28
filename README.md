@@ -5,7 +5,7 @@ LAPACK-shaped work (factorisations, linear solves, least squares, eigenproblems)
 on the device, checked against the netlib reference LAPACK on the CPU.
 
 **One source tree, either vendor.** NVIDIA and AMD support does not live here: it
-lives in [gpumod / Warp Wraps](https://github.com/whatDiracIsCooking/gpumod), a
+lives in [gpumod / Warp Wraps](https://github.com/whatDiracIsCooking/WarpWraps), a
 submodule at `deps/gpumod`, which exposes the CUDA and HIP APIs as importable
 modules and maps its backend-neutral `wwr*` names onto whichever one a build
 selected. So there is no `src/cuda` and no `src/hip` here — `src/` is written once
