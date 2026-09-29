@@ -1,6 +1,6 @@
-# Oracle test for calaman.lacpy (built under src/lacpy/). REQUIRES_GPU labels the
-# suite `gpu`, so `ctest -LE gpu` (the card-less CI presets) excludes it -- every
-# case launches the kernel.
+# Oracle test for calaman.lacpy (built under src/lacpy/). REQUIRES_GPU labels
+# the suite `gpu`, so `ctest -LE gpu` (the card-less CI presets) excludes it
+# -- every case launches the kernel.
 #
 # The suite compares against LAPACKE_?lacpy, so it cannot be built without the
 # oracle. Guard on calaman::lapack_reference and return early when it is absent:
@@ -8,7 +8,7 @@
 # pass (docs/architecture.md §3).
 if(NOT TARGET calaman::lapack_reference)
   message(
-    STATUS "calaman::lapack_reference not found; skipping the lacpy oracle tests"
+    STATUS "calaman::lapack_reference not found; skipping lacpy oracle tests"
   )
   return()
 endif()
