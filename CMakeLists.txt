@@ -150,7 +150,7 @@ message(STATUS "GPU backend: ${CALAMAN_GPU_BACKEND}")
 # account. 32 is right for every NVIDIA arch and for RDNA (gfx10xx-gfx12xx);
 # set 64 for CDNA (gfx90a, gfx942). Nothing validates it against a real device.
 #
-# Forwarded to WarpWraps as WWR_WARP_SIZE below, so there is ONE knob rather than
+# Forwarded to WarpWraps as WWR_WARP_SIZE below, so there is ONE knob, not
 # two that can disagree.
 set(CALAMAN_WARP_SIZE
     "32"
@@ -192,7 +192,7 @@ add_link_options($<$<COMPILE_LANGUAGE:CXX>:-lc++abi>)
 # created by find_package is visible only in the directory that found it and
 # its subdirectories. WarpWraps is added as a SUBDIRECTORY below, so targets it
 # finds (hip::device, roc::hipsolver, ...) are not visible in src/ or test/
-# here -- and a target this project links transitively through a WarpWraps module
+# here -- a target this project links transitively through a WarpWraps module
 # has to be resolvable in the directory doing the linking. Finding them at the
 # top level puts them in scope for the whole tree, WarpWraps included, and the
 # second find_package call inside WarpWraps is then a cached no-op.
@@ -377,7 +377,7 @@ endif()
 #
 # OFF BY DEFAULT, WHICH IS NOT WHERE THIS SHOULD END UP. WarpWraps is consumed
 # with add_subdirectory (see deps/CMakeLists.txt), so a calaman library target
-# carries WarpWraps targets in its INTERFACE_LINK_LIBRARIES -- and install(EXPORT)
+# carries WarpWraps targets in its INTERFACE_LINK_LIBRARIES -- install(EXPORT)
 # refuses an export set whose interface names a target that is not exported
 # anywhere. Making this work needs a decision that cannot be made before the
 # first module exists:

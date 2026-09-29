@@ -24,7 +24,7 @@
 #                              parallel_for, and the convenience layer
 #
 # THE BACKEND IS DECIDED IN THE TOP-LEVEL CMakeLists.txt AND FORWARDED HERE.
-# WarpWraps reads WWR_GPU_BACKEND before its own project() call; the values below
+# WarpWraps reads WWR_GPU_BACKEND before its project() call; the values below
 # are written as cache entries before add_subdirectory so that read finds them.
 # FORCE is deliberate: without it a stale entry from an earlier configure in
 # the same build directory would win over the backend this build asked for, and
@@ -38,7 +38,7 @@ set(WWR_WARP_SIZE
     CACHE STRING "Warp size for WarpWraps (follows CALAMAN_WARP_SIZE)" FORCE
 )
 
-# WarpWraps's own runtime test suites and examples are its repository's business,
+# WarpWraps's runtime test suites and examples are its repository's business,
 # not this build's -- but its CMakeLists.txt adds them unconditionally, with no
 # PROJECT_IS_TOP_LEVEL guard, so the only lever available from here is its
 # compile-time-only switch. ON leaves its src/ fully built (which this project
