@@ -433,14 +433,11 @@ enable_testing()
 # First, because everything below links what it defines.
 add_subdirectory(deps)
 
-# src/ is still EMPTY, so its line stays commented until the first shipped
-# module lands. A directory with no CMakeLists.txt is a configure error, so
-# uncomment each one in the commit that adds it.
-#
-# The layout to add them in, which is NOT WarpWraps's: there is no per-backend
-# subtree here. src/ is one backend-neutral tree written against WarpWraps's
-# `wwr*` names, so a module is added once and builds for either backend.
-#add_subdirectory(src)
+# src/ holds the shipped modules -- one backend-neutral tree written against
+# WarpWraps's `wwr*` names (NOT a per-backend subtree), so a module is added
+# once and builds for either backend. The first module (calaman.lacpy) lives
+# there now; add each new one to src/CMakeLists.txt.
+add_subdirectory(src)
 
 # The in-tree examples, written the way a consumer would write them.
 #add_subdirectory(example)
