@@ -76,7 +76,7 @@ DEVCONTAINER_CONFIG=${DEVCONTAINER_CONFIG:-.devcontainer/cuda/devcontainer.json}
 #   workstation the SAME configuration into build-workstation/, so a host build
 #               and a container build can coexist without reconfiguring each
 #               other. Nothing is prebuilt for either; GoogleTest is fetched
-#               and gpumod is built from the submodule.
+#               and WarpWraps is built from the submodule.
 #   debug / asan / compute-sanitizer
 #   hip         the ROCm backend (build-hip/)
 #   compile-time  builds the static_assert tier only: no GPU, no GoogleTest
@@ -135,7 +135,7 @@ COVERAGE_PRESET=${COVERAGE_PRESET:-coverage}
 # Source files devtools/coverage.sh drops from its llvm-cov summary, as an
 # -ignore-filename-regex over the full path.
 #
-# deps/ is everything this project did not write: gpumod's src/ (built from the
+# deps/ is everything this project did not write: WarpWraps's src/ (built from the
 # submodule, and covered by ITS repository's own suites) and GoogleTest. Without
 # this the report is dominated by a dependency an order of magnitude larger than
 # src/, and the number stops meaning anything about this project.
@@ -240,7 +240,7 @@ video"}
 # scanner plus a BMI cache), so the right number is usually LOWER than the core
 # count, and lower still than what you would give pytest. Empty lets Ninja pick
 # (cores + 2), which is what OOM-kills a 16-core box on a module-heavy tree --
-# and this tree builds gpumod's module surface as well as its own.
+# and this tree builds WarpWraps's module surface as well as its own.
 BUILD_JOBS=${BUILD_JOBS:-}
 
 # --- tests ----------------------------------------------------------------
@@ -329,7 +329,7 @@ nvcc:compiling .cu translation units and the whole CUDA backend
 hipconfig:the HIP backend; present only in the \`hip\`/\`combined\` image
 compute-sanitizer:the GPU memcheck/racecheck run (docker compose run --rm compute-sanitizer)
 nsys:Nsight Systems profiling from inside the container
-ccache:warm rebuilds; without it every configure recompiles gpumod from scratch
+ccache:warm rebuilds; without it every configure recompiles WarpWraps from scratch
 clang-tidy:the advisory lint pass (cpp-tier.sh --tidy, and CI's cuda leg)
 clang-format:the C++ formatting pass (see CLAUDE.md -- it is not a git hook)
 cmake-format:the CMake formatting pass; run by hand, not by any hook
@@ -353,7 +353,7 @@ DOCTOR_GPU_VENDORS=${DOCTOR_GPU_VENDORS:-"nvidia amd"}
 # trees. A RELATIVE path is resolved against the repo root, and doctor.sh
 # suggests `git submodule update --init --recursive` for one that is missing.
 #
-#   deps/gpumod   the GPU API layer every module here imports. Absent in a
+#   deps/WarpWraps   the GPU API layer every module here imports. Absent in a
 #                 fresh clone until the submodule is initialised, and the
 #                 configure error it causes names deps/CMakeLists.txt rather
 #                 than the missing checkout.
@@ -363,5 +363,5 @@ DOCTOR_GPU_VENDORS=${DOCTOR_GPU_VENDORS:-"nvidia amd"}
 #                 tests that compare a GPU factorisation against a reference
 #                 result are not built, and CMake says so at configure time
 #                 with a WARNING that is easy to scroll past.
-DOCTOR_REQUIRED_PATHS=${DOCTOR_REQUIRED_PATHS:-"deps/gpumod/CMakeLists.txt:the gpumod submodule -- nothing under src/ can compile without it
+DOCTOR_REQUIRED_PATHS=${DOCTOR_REQUIRED_PATHS:-"deps/WarpWraps/CMakeLists.txt:the WarpWraps submodule -- nothing under src/ can compile without it
 /usr/include/lapacke.h:the CPU reference LAPACK oracle; tests that check numerical output against it are not built"}

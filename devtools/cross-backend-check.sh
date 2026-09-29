@@ -12,14 +12,14 @@
 #
 # A concrete example of the class: a functor that carries a `const` member of
 # CLASS type is non-trivially-copyable under clang, so it fails the
-# device_functor concept gpumod's parallel_for requires -- yet nvcc accepts it.
+# device_functor concept WarpWraps's parallel_for requires -- yet nvcc accepts it.
 # Such code compiles clean, stays green across the whole CUDA tier, and only
-# fails when someone builds ROCm. See gpumod's docs/architecture.md for the rule.
+# fails when someone builds ROCm. See WarpWraps's docs/architecture.md for the rule.
 #
 # WHAT IT COSTS. This is a COMPILE-ONLY check -- no GoogleTest fetch, no runtime
 # tests, no device -- which is why it is worth running every time where
 # devtools/cpp-tier.sh costs minutes. NO TIMINGS ARE QUOTED HERE ON PURPOSE:
-# this tree compiles gpumod's module surface as well as its own, so the cost
+# this tree compiles WarpWraps's module surface as well as its own, so the cost
 # tracks the dependency and a number measured today would be stale by the next
 # submodule bump. Measure it on your box if you need one.
 #

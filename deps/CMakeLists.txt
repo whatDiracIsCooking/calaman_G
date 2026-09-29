@@ -1,5 +1,5 @@
 # ==========================================================================
-# gpumod / Warp Wraps -- the GPU API layer this project is built on
+# WarpWraps -- the GPU API layer this project is built on
 # ==========================================================================
 # A git submodule (see ../.gitmodules), added as a subdirectory so there is ONE
 # build, one toolchain and one backend variable across both projects. Refresh a
@@ -24,60 +24,60 @@
 #                              parallel_for, and the convenience layer
 #
 # THE BACKEND IS DECIDED IN THE TOP-LEVEL CMakeLists.txt AND FORWARDED HERE.
-# gpumod reads WWR_GPU_BACKEND before its own project() call; the values below
+# WarpWraps reads WWR_GPU_BACKEND before its project() call; the values below
 # are written as cache entries before add_subdirectory so that read finds them.
 # FORCE is deliberate: without it a stale entry from an earlier configure in
 # the same build directory would win over the backend this build asked for, and
 # the two projects would then compile for different vendors in one tree.
 set(WWR_GPU_BACKEND
     "${CALAMAN_GPU_BACKEND}"
-    CACHE STRING "GPU backend for gpumod (follows CALAMAN_GPU_BACKEND)" FORCE
+    CACHE STRING "GPU backend for WarpWraps (follows CALAMAN_GPU_BACKEND)" FORCE
 )
 set(WWR_WARP_SIZE
     "${CALAMAN_WARP_SIZE}"
-    CACHE STRING "Warp size for gpumod (follows CALAMAN_WARP_SIZE)" FORCE
+    CACHE STRING "Warp size for WarpWraps (follows CALAMAN_WARP_SIZE)" FORCE
 )
 
-# gpumod's own runtime test suites and examples are its repository's business,
+# WarpWraps's runtime test suites and examples are its repository's business,
 # not this build's -- but its CMakeLists.txt adds them unconditionally, with no
 # PROJECT_IS_TOP_LEVEL guard, so the only lever available from here is its
 # compile-time-only switch. ON leaves its src/ fully built (which this project
 # links) while skipping its GoogleTest fetch and its runtime test directories.
 #
-# What still gets built and ctest-registered from gpumod: its compile-time
+# What still gets built and ctest-registered from WarpWraps: its compile-time
 # static_assert tier and its examples. That is the cost of add_subdirectory
 # consumption today. The clean fix belongs UPSTREAM -- guarding those
 # add_subdirectory calls on `PROJECT_IS_TOP_LEVEL OR WWR_BUILD_TESTING` -- and
-# once gpumod does that, this variable can go back to following
+# once WarpWraps does that, this variable can go back to following
 # CALAMAN_COMPILE_TIME_ONLY.
 #
-# OFF gives you gpumod's whole suite inside this build, which is occasionally
+# OFF gives you WarpWraps's whole suite inside this build, which is occasionally
 # what you want when bisecting a failure across the two projects.
-option(CALAMAN_GPUMOD_TESTS
-       "Configure gpumod's own runtime test suites inside this build" OFF
+option(CALAMAN_WARPWRAPS_TESTS
+       "Configure WarpWraps's own runtime test suites inside this build" OFF
 )
-if(CALAMAN_GPUMOD_TESTS)
+if(CALAMAN_WARPWRAPS_TESTS)
   set(WWR_COMPILE_TIME_ONLY
       OFF
-      CACHE BOOL "gpumod: configure its runtime tests too" FORCE
+      CACHE BOOL "WarpWraps: configure its runtime tests too" FORCE
   )
 else()
   set(WWR_COMPILE_TIME_ONLY
       ON
-      CACHE BOOL "gpumod: skip its GoogleTest fetch and runtime tests" FORCE
+      CACHE BOOL "WarpWraps: skip its GoogleTest fetch and runtime tests" FORCE
   )
 endif()
 
-# gpumod's own install rules. Its option defaults to ${PROJECT_IS_TOP_LEVEL},
+# WarpWraps's own install rules. Its option defaults to ${PROJECT_IS_TOP_LEVEL},
 # which is FALSE here, so this is already OFF -- spelled out because the
 # unresolved half of CALAMAN_INSTALL (see the top-level CMakeLists.txt) is
 # exactly whether this has to become ON.
 set(WWR_INSTALL
     OFF
-    CACHE BOOL "gpumod: generate its own install rules" FORCE
+    CACHE BOOL "WarpWraps: generate its own install rules" FORCE
 )
 
-add_subdirectory(gpumod)
+add_subdirectory(WarpWraps)
 
 # ==========================================================================
 # GoogleTest

@@ -4,7 +4,7 @@
 #   devtools/install-check.sh [--preset NAME] [--prefix DIR] [--keep] [--no-run]
 #
 # DORMANT TODAY, AND IT REFUSES RATHER THAN PRETENDING. Two things it needs do
-# not exist yet: CALAMAN_INSTALL is OFF (gpumod is consumed with
+# not exist yet: CALAMAN_INSTALL is OFF (WarpWraps is consumed with
 # add_subdirectory, so this project's export set would name targets no package
 # exports -- see docs/architecture.md section 2), and there is no
 # example/consumer to build (see example/README.md). The preflight below exits 2
@@ -94,7 +94,7 @@ install-check.sh: cannot run -- there is no example/consumer to build.
   Without that project there is nothing to consume, and a "pass" here would mean
   only that `cmake --install` exited 0 -- which proves nothing (see this file's
   header). example/README.md says what has to exist, and
-  deps/gpumod/example/consumer/ is the working model.
+  deps/WarpWraps/example/consumer/ is the working model.
 EOF
   exit 2
 fi
@@ -104,7 +104,7 @@ if ! grep -qE '^option\(CALAMAN_INSTALL .*\bON\b' "$REPO_ROOT/CMakeLists.txt" &&
   cat >&2 <<'EOF'
 install-check.sh: cannot run -- CALAMAN_INSTALL defaults to OFF.
 
-  gpumod is consumed with add_subdirectory, so this project's export set names
+  WarpWraps is consumed with add_subdirectory, so this project's export set names
   targets that no installed package provides, and install(EXPORT) refuses it.
   docs/architecture.md section 2 has the two ways out; until one is chosen there
   is no package to check. Forcing it with -DCALAMAN_INSTALL=ON fails at generate

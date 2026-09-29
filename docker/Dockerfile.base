@@ -213,7 +213,7 @@ RUN cd /tmp && ./cmake-installer.sh --skip-license --prefix=/usr/local && rm cma
 # The only prebuilt C++ dependency here is the CPU reference LAPACK (stage 1),
 # which is a distro package because it is an oracle rather than a component:
 # nothing under src/ links it. The two dependencies this project BUILDS come
-# from source at configure time -- gpumod from the deps/gpumod submodule, and
+# from source at configure time -- WarpWraps from the deps/WarpWraps submodule, and
 # GoogleTest fetched by deps/CMakeLists.txt -- so nothing in /opt has to be
 # kept in step with the tree.
 FROM compilers AS base

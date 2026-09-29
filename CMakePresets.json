@@ -104,7 +104,7 @@
       "name": "ci-hip",
       "binaryDir": "${sourceDir}/build-ci-hip",
       "displayName": "CI, HIP backend (no device)",
-      "description": "The HIP half of CI, deliberately the same shape as ci-cuda: the whole tree through clang's -x hip front end, runtime test binaries included, then the same `-LE gpu` selection. Compiling the test sources is the point -- clang is the stricter front end, and nvcc waves through code it rejects. Note this also compiles gpumod for HIP, which is where a portability break in the dependency's device code would surface.",
+      "description": "The HIP half of CI, deliberately the same shape as ci-cuda: the whole tree through clang's -x hip front end, runtime test binaries included, then the same `-LE gpu` selection. Compiling the test sources is the point -- clang is the stricter front end, and nvcc waves through code it rejects. Note this also compiles WarpWraps for HIP, which is where a portability break in the dependency's device code would surface.",
       "inherits": "hip"
     }
   ],

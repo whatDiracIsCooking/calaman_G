@@ -8,16 +8,15 @@ eigenproblems) on the device, with the netlib reference LAPACK on the CPU as the
 oracle its tests check against.
 
 **It is agnostic to NVIDIA and AMD, and it owns none of that machinery.** The
-backend split lives in the dependency: [gpumod / Warp
-Wraps](https://github.com/whatDiracIsCooking/WarpWraps), a git submodule at
-`deps/gpumod`, exposes the vendor headers as importable modules and maps its
+backend split lives in the dependency: [WarpWraps](https://github.com/whatDiracIsCooking/WarpWraps), a git submodule at
+`deps/WarpWraps`, exposes the vendor headers as importable modules and maps its
 backend-neutral `wwr*` names onto whichever backend was selected. So there is
 **no `src/cuda` and no `src/hip` here** — `src/` is one tree, written once
 against those names, built for either vendor.
 
 **A build targets exactly one backend.** `CALAMAN_GPU_BACKEND` is `CUDA` or
 `HIP`, read *before* `project()` because it decides whether the CUDA language is
-enabled at all, and forwarded to gpumod as `WWR_GPU_BACKEND` from
+enabled at all, and forwarded to WarpWraps as `WWR_GPU_BACKEND` from
 `deps/CMakeLists.txt`. A HIP build needs no CUDA toolkit; a CUDA build needs no
 ROCm.
 
@@ -38,10 +37,10 @@ to report otherwise:
 
 | | State |
 |---|---|
-| `deps/` | **live.** gpumod submodule + GoogleTest fetch. |
+| `deps/` | **live.** WarpWraps submodule + GoogleTest fetch. |
 | `docker/`, `.devcontainer/`, `devtools/` | **live**, and the LAPACK layer in `docker/Dockerfile.base` is new here. |
-| `CMakeLists.txt` | **live** for the parts that run: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, gpumod. The `add_subdirectory(src)` / `test` / `example` lines are commented out, because a directory with no `CMakeLists.txt` is a configure error. |
-| `cmake/` helpers | renamed, **not yet exercised.** `calaman_install.cmake` still sweeps a `src/{cuda,hip,wrappers}` layout inherited from gpumod, which is not this project's layout — fix it in the commit that first installs something. |
+| `CMakeLists.txt` | **live** for the parts that run: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, WarpWraps. The `add_subdirectory(src)` / `test` / `example` lines are commented out, because a directory with no `CMakeLists.txt` is a configure error. |
+| `cmake/` helpers | renamed, **not yet exercised.** `calaman_install.cmake` still sweeps a `src/{cuda,hip,wrappers}` layout inherited from WarpWraps, which is not this project's layout — fix it in the commit that first installs something. |
 | the install tier | **dormant.** `CALAMAN_INSTALL` defaults OFF; see the option's comment for the two-package problem that has to be decided first. `devtools/install-check.sh` and CI's `install-check` job have nothing to prove until then. |
 | the C++ test tiers | **empty.** They configure and build; they assert nothing about this project. |
 
@@ -50,7 +49,7 @@ When you run something, say which of these it touched.
 ## Setup
 
 ```bash
-git submodule update --init --recursive   # deps/gpumod
+git submodule update --init --recursive   # deps/WarpWraps
 uv sync                                   # creates .venv from uv.lock
 pre-commit install                        # commit-time lint + pre-push gate
 devtools/devcontainer.sh rebuild          # the C++ toolchain lives in here
@@ -59,7 +58,7 @@ devtools/devcontainer.sh rebuild          # the C++ toolchain lives in here
 `uv` is the only assumed host tool, and `uv.lock` is the only place Python
 dependency versions live — after editing `pyproject.toml`, `uv lock` and commit
 the result; never `uv pip install`. The C++ side has two dependencies and builds
-both from source: **gpumod** from the submodule, and **GoogleTest**, fetched by
+both from source: **WarpWraps** from the submodule, and **GoogleTest**, fetched by
 `deps/CMakeLists.txt` at configure time. The one prebuilt dependency is the CPU
 reference LAPACK, which is a distro package in the image.
 
@@ -67,13 +66,13 @@ Run `devtools/doctor.sh` first when anything behaves oddly — on a bare host th
 whole C++ toolchain warns, which is the expected healthy state. The **doctor**
 skill turns each finding into its fix.
 
-## The dependency: what comes from gpumod, and what is ours
+## The dependency: what comes from WarpWraps, and what is ours
 
-Everything under `src/` here imports gpumod rather than a vendor header
+Everything under `src/` here imports WarpWraps rather than a vendor header
 directly. Its layers, outermost first — prefer the outermost one that does the
 job:
 
-| gpumod layer | What it is | Example |
+| WarpWraps layer | What it is | Example |
 |---|---|---|
 | `wwr.extension.*` | handles, error policies, device buffers, `parallel_for`, convenience calls | `wwr.extension.solver` |
 | `wwr.wrappers.*` | type-safe templates over the neutral layer, dispatched on `s/d/c/z` | `wwr.wrappers.solver` |
@@ -85,18 +84,18 @@ lands in `wwr.cuda.*` is a call that only compiles on one backend, so it needs a
 counterpart on the other or it breaks the promise in the first paragraph of this
 file.
 
-Two consequences of consuming gpumod with `add_subdirectory`, both written up
+Two consequences of consuming WarpWraps with `add_subdirectory`, both written up
 in `deps/CMakeLists.txt`:
 
 - **Its compile-time tier and examples build with this project** (it has no
-  `PROJECT_IS_TOP_LEVEL` guard on those). `CALAMAN_GPUMOD_TESTS=OFF` — the
+  `PROJECT_IS_TOP_LEVEL` guard on those). `CALAMAN_WARPWRAPS_TESTS=OFF` — the
   default — is what keeps its *runtime* suites and its GoogleTest fetch out.
   The clean fix belongs upstream.
 - **Vendor packages are found in the top-level `CMakeLists.txt`**, not left to
-  gpumod, because an IMPORTED target is visible only in the directory that found
-  it and below. Keep that list in step with `deps/gpumod/CMakeLists.txt`.
+  WarpWraps, because an IMPORTED target is visible only in the directory that found
+  it and below. Keep that list in step with `deps/WarpWraps/CMakeLists.txt`.
 
-Bump the submodule deliberately (`git -C deps/gpumod fetch && git -C deps/gpumod
+Bump the submodule deliberately (`git -C deps/WarpWraps fetch && git -C deps/WarpWraps
 checkout <sha>`, then commit the gitlink), and run the C++ tier after — a
 dependency bump is exactly the change that a green Python run says nothing about.
 
@@ -205,11 +204,11 @@ carries that cost instead.
   `calaman_add_interface_library` is wired and documented with no call sites —
   do not assume it is dead.
 - Target names use dots and are aliased to `::`.
-- **Backend-neutral by construction.** A `wwr*` name from gpumod is the portable
+- **Backend-neutral by construction.** A `wwr*` name from WarpWraps is the portable
   spelling; a `cu*`/`hip*` name in this tree is a bug unless it sits behind a
   switch that gives both backends an answer.
 - **The umbrella target is `calaman_compile_time_tests`**, not
-  `compile_time_tests` — gpumod defines that second name, and two targets cannot
+  `compile_time_tests` — WarpWraps defines that second name, and two targets cannot
   share one.
 - **`#include` style tracks header ownership.** A header this project owns uses
   quotes, spelled by the path its include root makes resolve — bare for a

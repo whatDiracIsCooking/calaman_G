@@ -1,3 +1,4 @@
-[submodule "deps/gpumod"]
-	path = deps/gpumod
+[submodule "deps/WarpWraps"]
+	path = deps/WarpWraps
 	url = https://github.com/whatDiracIsCooking/WarpWraps.git
+	branch = main

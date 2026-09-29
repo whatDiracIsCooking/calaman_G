@@ -104,9 +104,9 @@ endif()
 # The vendor imported targets (CUDA::cublas, hip::host, ...) appear in this
 # package's INTERFACE_LINK_LIBRARIES, so they have to exist before the export
 # set is included.
-# STILL MISSING FROM THIS FILE: gpumod. Every target in this package names
-# gpumod targets in its interface, so a consumer needs them to exist before the
-# export set below is included -- a `find_dependency(wwr)` here, plus gpumod
+# STILL MISSING FROM THIS FILE: WarpWraps. Every target in this package names
+# WarpWraps targets in its interface, so a consumer needs them to exist before the
+# export set below is included -- a `find_dependency(wwr)` here, plus WarpWraps
 # installed into a prefix the consumer can see. Which of the two arrangements in
 # docs/architecture.md section 2 is chosen decides what that line looks like, so
 # it is not written speculatively. CALAMAN_INSTALL is OFF until then, and no

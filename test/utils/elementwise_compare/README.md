@@ -38,5 +38,5 @@ across the host/device boundary (a global module fragment cannot `import`).
 `instantiations.cpp` explicitly instantiates each exported wrapper for `float`
 and `double`, paired with the `extern template` list in `interface.cppm`; the
 `.cu` instantiates the device launchers for the same types. Add a type by
-extending every list together. This mirrors gpumod's `wwr.extension.random_normal`.
+extending every list together. This mirrors WarpWraps's `wwr.extension.random_normal`.
 The self-test lives at `test/test/elementwise_compare/`.

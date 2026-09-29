@@ -10,13 +10,13 @@ follows is the map and the short list of things to do before opening a PR.
 | `README.md` | What the library is, and how to build it. |
 | `.claude/CLAUDE.md` | How to work *in* this repo: the containers, the presets, the tiers, the dependency, and the reasoning behind each. The long answer to almost any question here. |
 | `docs/architecture.md` | Decisions this project made, dated. |
-| `deps/gpumod/docs/architecture.md` | The **vendor** facts — CUDA vs HIP divergences. They belong to the dependency and are not restated here. |
+| `deps/WarpWraps/docs/architecture.md` | The **vendor** facts — CUDA vs HIP divergences. They belong to the dependency and are not restated here. |
 | `devtools/config.sh` | Every project-specific setting. Edit this, not the scripts. |
 
 ## Setup
 
 ```bash
-git submodule update --init --recursive   # deps/gpumod -- nothing compiles without it
+git submodule update --init --recursive   # deps/WarpWraps -- nothing compiles without it
 uv sync                                   # creates .venv from uv.lock
 pre-commit install                        # commit-time lint + the pre-push gate
 devtools/devcontainer.sh rebuild          # the C++ toolchain lives in the container
@@ -64,7 +64,7 @@ pytest -n auto -rs                # the Python tier (checker scripts, ~2s)
   here *fail* rather than skip — a missing device and a missing reference LAPACK
   — and the second is only visible as a configure-time warning.
 - **A submodule bump is a code change.** Run the C++ tier after one, and say
-  which gpumod commit you moved to.
+  which WarpWraps commit you moved to.
 - **`pytest` tests checker scripts and touches no built binary.** A change under
   `src/` is verified by the C++ tier and by nothing else. Say which suite you ran.
 - To reproduce a CI result exactly, run CI's own presets:
