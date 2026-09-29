@@ -1,0 +1,32 @@
+/**
+ * @file instantiations.cpp
+ * @brief The one explicit instantiation of lacpy per supported type
+ *
+ * Implementation unit of calaman.lacpy. Pairs with the `extern template`
+ * declarations in interface.cppm: together they keep every importer from
+ * instantiating the wrapper again -- its body names the device launcher
+ * declared only in the interface's global module fragment, so it must be
+ * instantiated here, inside this library. The device-side work it calls is
+ * instantiated separately, in lacpy.cu, as device code.
+ *
+ * This list and the .cu's must stay in step -- a type added here without being
+ * added there links against nothing.
+ */
+
+module calaman.lacpy;
+
+// An implementation unit implicitly imports its primary interface, but an
+// import is not re-exported through it -- the names in the signatures below are
+// not visible without these.
+import std;
+import wwr.runtime_api;
+import wwr.extension.runtime;
+
+namespace calaman {
+
+template void lacpy<float>(std::shared_ptr<wwr::extension::DeviceHandle>, copy_region, std::size_t,
+                           std::size_t, const float *, std::size_t, float *, std::size_t);
+template void lacpy<double>(std::shared_ptr<wwr::extension::DeviceHandle>, copy_region, std::size_t,
+                            std::size_t, const double *, std::size_t, double *, std::size_t);
+
+} // namespace calaman
