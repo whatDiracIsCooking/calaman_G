@@ -1,7 +1,7 @@
 # The layer dropdown is the load-bearing field. It decides what verifies a
 # change, and -- for the first option -- whether the change belongs in THIS
-# repository at all: the vendor split lives in the gpumod submodule, so anything
-# that has to know a `cu*` from a `hip*` name is a gpumod issue.
+# repository at all: the vendor split lives in the WarpWraps submodule, so anything
+# that has to know a `cu*` from a `hip*` name is a WarpWraps issue.
 name: Feature request
 description: Something to add, or a shape to change
 labels: [enhancement]
@@ -28,10 +28,10 @@ body:
       label: Which layer
       description: >-
         See docs/architecture.md if this is not obvious. Note the first option:
-        the CUDA/HIP split is the dependency's, so that work happens in gpumod
+        the CUDA/HIP split is the dependency's, so that work happens in WarpWraps
         and arrives here as a submodule bump.
       options:
-        - 'deps/gpumod — a vendor API this project needs exposed (a gpumod issue)'
+        - 'deps/WarpWraps — a vendor API this project needs exposed (a WarpWraps issue)'
         - 'src/ — a LAPACK-level routine, or a change to one'
         - 'src/ — shared machinery: dispatch, layout, workspace, error handling'
         - 'test/ — a suite, or a reference comparison against CPU LAPACK'
@@ -46,7 +46,7 @@ body:
     attributes:
       label: Backend neutrality
       description: >-
-        Everything under `src/` is written once against gpumod's `wwr*` names and
+        Everything under `src/` is written once against WarpWraps's `wwr*` names and
         compiles for both backends. A proposal that needs a `cu*` or `hip*`
         spelling here needs an answer for the other vendor too --
         `devtools/cross-backend-check.sh` is what catches the ones that do not
@@ -75,5 +75,5 @@ body:
       description: >-
         Including "do nothing" — several things in this tree were deliberately
         left out and say so in a comment (the dispatch check not carried over from
-        gpumod, the formatter hooks, the install tier). If one of those is what
+        WarpWraps, the formatter hooks, the install tier). If one of those is what
         you are asking for, say why the stated reason no longer holds.

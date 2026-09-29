@@ -4,7 +4,7 @@
 # it lives under test/ and nothing installs it, so the WHOLE_ARCHIVE wiring
 # below carries no $<INSTALL_INTERFACE:> spelling, unlike a src/ module.
 
-# The device-kernel library. wwr.extension.parallel_for carries gpumod's src
+# The device-kernel library. wwr.extension.parallel_for carries WarpWraps's src
 # include root (so elementwise_compare_bridge.h and the parallel_for.cuh it uses
 # resolve) and wwr.device; the link is PRIVATE, as every device-library link is.
 calaman_add_gpu_device_library(

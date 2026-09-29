@@ -20,7 +20,7 @@ compiles the compile-time tier for the *other* backend, and an example excluded
 from that configuration is an example that stops compiling for AMD without anyone
 noticing.
 
-`deps/gpumod/example/` is the model, and it is in this checkout — its
+`deps/WarpWraps/example/` is the model, and it is in this checkout — its
 `warp_reduce` example is the pattern for one that needs a `.cu` device library.
 
 ## `example/consumer/` — the package tier's other half
@@ -43,5 +43,5 @@ have to happen first:
    `example/CMakeLists.txt` — building it as part of this tree would prove
    nothing, because in-tree targets resolve without the install.
 
-`deps/gpumod/example/consumer/` is the working version of exactly this, and the
+`deps/WarpWraps/example/consumer/` is the working version of exactly this, and the
 one to copy when the time comes.

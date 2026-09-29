@@ -16,15 +16,15 @@
 # GPU_TARGETS are declared in BOTH Dockerfile.hip and Dockerfile.combined (bump
 # them together); GoogleTest is CALAMAN_GOOGLETEST_TAG in deps/CMakeLists.txt.
 #
-# THE gpumod SUBMODULE IS NOT AUTOMATED EITHER, and that one is a choice rather
+# THE WarpWraps SUBMODULE IS NOT AUTOMATED EITHER, and that one is a choice rather
 # than a limitation -- dependabot's `gitsubmodule` ecosystem would do it. It is
-# left off because gpumod is the API this project is written against, not a
+# left off because WarpWraps is the API this project is written against, not a
 # transitive dependency: a bump can change a `wwr*` spelling, and the right
 # response is a reading of its diff plus a run of the C++ tier on a box with a
 # card, which no unattended PR can supply. Bump it deliberately:
 #
-#   git -C deps/gpumod fetch && git -C deps/gpumod checkout <sha>
-#   git add deps/gpumod && devtools/cpp-tier.sh
+#   git -C deps/WarpWraps fetch && git -C deps/WarpWraps checkout <sha>
+#   git add deps/WarpWraps && devtools/cpp-tier.sh
 #
 # Turn it on (weekly PRs that at least prove it still COMPILES on both backends)
 # by adding:

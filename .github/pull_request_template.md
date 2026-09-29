@@ -28,7 +28,7 @@ library computes. Tick what you ran locally:
 
 <!-- Delete what does not apply. -->
 
-- **Bumped `deps/gpumod`?** Name the commit range and say what in its diff
+- **Bumped `deps/WarpWraps`?** Name the commit range and say what in its diff
   reaches this project. A bump is a code change: it can move a `wwr*` spelling,
   and CI proves only that both backends still compile at the new pin.
 - **Touches `docker/`?** The Dockerfiles are built (not pushed) on PRs that
@@ -45,5 +45,5 @@ library computes. Tick what you ran locally:
   tolerance is the easiest thing in this project to loosen by accident.
 - **Changed what a doc claims?** `README.md`, `.claude/CLAUDE.md` and
   `docs/architecture.md` each state facts about this tree; update the one that
-  went stale rather than leaving two answers. Vendor facts belong to gpumod, not
+  went stale rather than leaving two answers. Vendor facts belong to WarpWraps, not
   to `docs/architecture.md` here.

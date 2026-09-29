@@ -64,7 +64,7 @@ is host code and both backends need the same one. If a container is missing
 not `apt-get install` inside it, or the next rebuild loses the fix and nothing
 says so.
 
-Neither variant has anything prebuilt for the C++ side: the gpumod submodule and
+Neither variant has anything prebuilt for the C++ side: the WarpWraps submodule and
 GoogleTest are both built from source inside the container, so **the first build
 in a fresh container is long and the `ccache` volume is what makes the second one
 short.**

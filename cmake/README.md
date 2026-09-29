@@ -3,10 +3,10 @@
 CMake modules for C++23 module libraries and testing.
 
 **These macros arrived with the scaffolding and have no call sites yet** — `src/`
-and `test/` are empty. They are known-good in gpumod, which is where they came
-from and where they are exercised (vendored at `deps/gpumod/cmake/`); read
+and `test/` are empty. They are known-good in WarpWraps, which is where they came
+from and where they are exercised (vendored at `deps/WarpWraps/cmake/`); read
 anything here as "the contract these macros offer", not as "what this tree
-already does". Two carry assumptions that are gpumod's and not this project's,
+already does". Two carry assumptions that are WarpWraps's and not this project's,
 flagged in place below: `calaman_install.cmake` and `calamanConfig.cmake.in`.
 
 ## Files
@@ -26,12 +26,12 @@ cmake/
 └── calaman_internal_helpers.cmake              # Internal helpers (alias creation, include dirs, linking)
 ```
 
-gpumod additionally has a `wwr_add_dispatch_check.cmake` — a build-time check
+WarpWraps additionally has a `wwr_add_dispatch_check.cmake` — a build-time check
 that a wrapper's instantiations really call the vendor entry points its TOML table
 names, read back out of the compiled objects with `llvm-objdump`. **It was
 deliberately not carried over**, because it needs a checker script
 (`test/shared/dispatch.py` there) and dispatch tables that do not exist here yet.
-Copy it from `deps/gpumod/` when this project grows its own `s/d/c/z` dispatch —
+Copy it from `deps/WarpWraps/` when this project grows its own `s/d/c/z` dispatch —
 it is exactly the check that catches a `getrf` template silently calling the
 single-precision entry point for `double`.
 
@@ -48,10 +48,10 @@ build/
 │   ├── googletest-src/
 │   └── googletest-subbuild/
 ├── deps/                   # deps/CMakeLists.txt, added via add_subdirectory
-│   └── gpumod/             # the submodule's own build tree, one dir per module
+│   └── WarpWraps/             # the submodule's own build tree, one dir per module
 ├── lib/                    # Static libraries (gtest, gmock)
 ├── src/                    # Per-module build artifacts. ONE tree, not one per
-│                           # backend: the backend split is gpumod's job
+│                           # backend: the backend split is WarpWraps's job
 └── test/                   # Test executables
 ```
 
@@ -96,7 +96,7 @@ calaman_add_gpu_device_library(
 
 ### What it deliberately does not take
 
-No `LINK_PUBLIC`, no `INCLUDE_DIRS_*`, no separable-compilation switch — each absence is a project invariant, not an oversight. Links are PRIVATE always (a device library's usage requirements are device-code include paths and `-x hip`; nothing linking it should inherit either), include directories arrive by linking the module that owns the kernel's bridge header (in gpumod that is `wwr.extension.parallel_for`), and separable compilation is OFF on every target in this tree. The macro's own header comment has the reasoning. Add a parameter when a real call site needs one.
+No `LINK_PUBLIC`, no `INCLUDE_DIRS_*`, no separable-compilation switch — each absence is a project invariant, not an oversight. Links are PRIVATE always (a device library's usage requirements are device-code include paths and `-x hip`; nothing linking it should inherit either), include directories arrive by linking the module that owns the kernel's bridge header (in WarpWraps that is `wwr.extension.parallel_for`), and separable compilation is OFF on every target in this tree. The macro's own header comment has the reasoning. Add a parameter when a real call site needs one.
 
 It also creates no `::` alias, unlike the two macros below — its call site had none before the macro existed.
 
@@ -109,7 +109,7 @@ calaman_add_gpu_device_library(
   LINK_PRIVATE wwr.extension.parallel_for)
 ```
 
-> Illustrative: there is no such target yet. `deps/gpumod/src/extension/random_normal/CMakeLists.txt`
+> Illustrative: there is no such target yet. `deps/WarpWraps/src/extension/random_normal/CMakeLists.txt`
 > is the real call site to copy from, and note that a device library added here
 > must also be listed in `CROSS_CHECK_DEVICE_TARGETS` (`devtools/config.sh`) for
 > `cross-backend-check.sh --device-only` to reach it.
@@ -207,12 +207,12 @@ CALAMAN_ADD_CXX_MODULE_LIBRARY(
 `calaman_install_package()` once, last, when `CALAMAN_INSTALL` is on.
 
 > **The tier is dormant, and one thing in this file is deliberately unfinished.**
-> The layout assumptions inherited from gpumod are gone — the target sweep and the
+> The layout assumptions inherited from WarpWraps are gone — the target sweep and the
 > header install now treat `src/` as the single neutral tree it is, and the
 > `cusolverMg` special case in `calamanConfig.cmake.in` went with them. What is
-> *not* written is the line that makes a consumer able to resolve gpumod:
+> *not* written is the line that makes a consumer able to resolve WarpWraps:
 > `CALAMAN_INSTALL` defaults **OFF** because a calaman target's interface names
-> gpumod targets that no installed package exports, and the fix depends on which
+> WarpWraps targets that no installed package exports, and the fix depends on which
 > of the two arrangements in `docs/architecture.md` section 2 is chosen. Expect
 > the first real `CALAMAN_INSTALL=ON` to fail at generate time naming a `wwr.*`
 > target; that failure is the accurate report, not a regression.
@@ -237,7 +237,7 @@ shipped:
 **`devtools/install-check.sh` is what verifies all of this**, by installing to a
 throwaway prefix and building `example/consumer` against it. `cpp-tier.sh` cannot:
 it never installs, so an export regression passes it cleanly. Every defect in the
-list above was found that way in gpumod rather than reasoned about — which is the
+list above was found that way in WarpWraps rather than reasoned about — which is the
 argument for standing the tier back up here early rather than late.
 
 ### Forcing a device archive into an exported target

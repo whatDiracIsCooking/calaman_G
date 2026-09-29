@@ -22,7 +22,7 @@ Two rules, and the second is specific to this repo right now:
    CUDA image.
 2. **`src/` and `test/` are empty.** The C++ tier configures and builds, and it
    asserts nothing about this project. A green `cpp-tier.sh` today means *the
-   toolchain, gpumod and the CMake wiring are healthy* — nothing more. Say that,
+   toolchain, WarpWraps and the CMake wiring are healthy* — nothing more. Say that,
    rather than "the C++ tests pass."
 
 ## Two suites, and neither covers the other
@@ -76,11 +76,11 @@ rather than half-running — take the refusal at face value.
 
 Things that will bite:
 
-- **It builds gpumod too.** The dependency is a submodule built from source, and
+- **It builds WarpWraps too.** The dependency is a submodule built from source, and
   with `add_subdirectory` consumption its compile-time tier and examples build
   alongside this project (`deps/CMakeLists.txt` says why). So a cold run is
   dominated by the dependency, a warm one is not, and **a compile error may well
-  be in `deps/gpumod/` rather than in your change** — read the path in the
+  be in `deps/WarpWraps/` rather than in your change** — read the path in the
   diagnostic before assuming it is yours. `ccache` is what makes this bearable;
   `doctor.sh` warns when it is absent.
 - **A missing submodule is the first thing to check** on a fresh clone:
@@ -180,7 +180,7 @@ devtools/install-check.sh --no-run     # build the consumer, do not run it (no G
 ```
 
 **It cannot pass today, and that is expected.** `CALAMAN_INSTALL` defaults OFF
-because gpumod is consumed with `add_subdirectory`, so this project's export set
+because WarpWraps is consumed with `add_subdirectory`, so this project's export set
 would name targets that no package exports; the top-level `CMakeLists.txt` option
 comment states the two ways out. Until one is chosen, this tier and CI's
 `install-check` job have nothing to prove — report it as *not applicable*, never
@@ -198,7 +198,7 @@ says anything about that.
 devtools/coverage.sh                   # configure + build + ctest + llvm-cov, build-coverage/
 ```
 
-`COVERAGE_IGNORE_REGEX` in `devtools/config.sh` drops `/deps/` — gpumod and
+`COVERAGE_IGNORE_REGEX` in `devtools/config.sh` drops `/deps/` — WarpWraps and
 GoogleTest — from the summary, so the number is about this project. With `src/`
 empty there is nothing to measure yet; a percentage reported now is noise.
 
@@ -282,7 +282,7 @@ covers> was not verified here" is an honest result; "all green" on the same run
 is not.
 
 And say what did *not* run at all. While `test/` is empty, the honest sentence
-for a C++ run is: "configure and build succeeded for <preset>, gpumod included;
+for a C++ run is: "configure and build succeeded for <preset>, WarpWraps included;
 ctest ran N entries, none of them this project's — `test/` is empty." A change
 under `src/` reported as "tests pass" on a pytest-only run is the failure this
 skill exists to prevent.

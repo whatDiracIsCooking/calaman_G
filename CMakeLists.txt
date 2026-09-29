@@ -110,11 +110,11 @@ message(
 # a HIP build needs no CUDA toolkit, and a CUDA build needs no ROCm.
 #
 # THIS PROJECT HAS NO PER-BACKEND SOURCE TREE. The backend split lives in the
-# dependency: gpumod (Warp Wraps) maps its backend-neutral `wwr*` names onto
+# dependency: WarpWraps maps its backend-neutral `wwr*` names onto
 # whichever vendor was selected, and everything under src/ here is written once
 # against those names. So this variable's only jobs are to pick the languages
 # to enable, to pick which vendor packages to find, and to be forwarded to
-# gpumod as WWR_GPU_BACKEND below.
+# WarpWraps as WWR_GPU_BACKEND below.
 set(CALAMAN_GPU_BACKEND
     "CUDA"
     CACHE STRING "GPU backend to build against: CUDA or HIP"
@@ -146,11 +146,11 @@ message(STATUS "GPU backend: ${CALAMAN_GPU_BACKEND}")
 # Warp / wavefront size
 # ========================================================================
 # A configure-time constant because neither backend offers a compile-time
-# spelling that is correct in every pass; gpumod's runtime.cuh has the full
+# spelling that is correct in every pass; WarpWraps's runtime.cuh has the full
 # account. 32 is right for every NVIDIA arch and for RDNA (gfx10xx-gfx12xx);
 # set 64 for CDNA (gfx90a, gfx942). Nothing validates it against a real device.
 #
-# Forwarded to gpumod as WWR_WARP_SIZE below, so there is ONE knob rather than
+# Forwarded to WarpWraps as WWR_WARP_SIZE below, so there is ONE knob rather than
 # two that can disagree.
 set(CALAMAN_WARP_SIZE
     "32"
@@ -187,17 +187,17 @@ add_link_options($<$<COMPILE_LANGUAGE:CXX>:-lc++abi>)
 # ========================================================================
 # Find the backend's packages
 # ========================================================================
-# These are the same calls gpumod's own top-level CMakeLists.txt makes, and
+# These are the same calls WarpWraps's own top-level CMakeLists.txt makes, and
 # repeating them here is deliberate rather than redundant: an IMPORTED target
 # created by find_package is visible only in the directory that found it and
-# its subdirectories. gpumod is added as a SUBDIRECTORY below, so targets it
+# its subdirectories. WarpWraps is added as a SUBDIRECTORY below, so targets it
 # finds (hip::device, roc::hipsolver, ...) are not visible in src/ or test/
-# here -- and a target this project links transitively through a gpumod module
+# here -- and a target this project links transitively through a WarpWraps module
 # has to be resolvable in the directory doing the linking. Finding them at the
-# top level puts them in scope for the whole tree, gpumod included, and the
-# second find_package call inside gpumod is then a cached no-op.
+# top level puts them in scope for the whole tree, WarpWraps included, and the
+# second find_package call inside WarpWraps is then a cached no-op.
 #
-# Keep this list in step with deps/gpumod/CMakeLists.txt; a divergence
+# Keep this list in step with deps/WarpWraps/CMakeLists.txt; a divergence
 # surfaces as a "target not found" at generate time, naming a vendor target.
 if(CALAMAN_GPU_BACKEND STREQUAL "CUDA")
   find_package(CUDAToolkit REQUIRED)
@@ -333,7 +333,7 @@ include(cmake/calaman_install.cmake)
 # ========================================================================
 # AddressSanitizer (host code only)
 # ========================================================================
-# Set at the top level, so it reaches gpumod's targets too.
+# Set at the top level, so it reaches WarpWraps's targets too.
 option(ENABLE_ASAN
        "Enable AddressSanitizer instrumentation for host (CXX) code" OFF
 )
@@ -375,18 +375,18 @@ endif()
 # Whether to generate install rules and the CMake package (see
 # cmake/calaman_install.cmake).
 #
-# OFF BY DEFAULT, WHICH IS NOT WHERE THIS SHOULD END UP. gpumod is consumed
+# OFF BY DEFAULT, WHICH IS NOT WHERE THIS SHOULD END UP. WarpWraps is consumed
 # with add_subdirectory (see deps/CMakeLists.txt), so a calaman library target
-# carries gpumod targets in its INTERFACE_LINK_LIBRARIES -- and install(EXPORT)
+# carries WarpWraps targets in its INTERFACE_LINK_LIBRARIES -- and install(EXPORT)
 # refuses an export set whose interface names a target that is not exported
 # anywhere. Making this work needs a decision that cannot be made before the
 # first module exists:
 #
-#   * install gpumod alongside (forward WWR_INSTALL=ON, and have
+#   * install WarpWraps alongside (forward WWR_INSTALL=ON, and have
 #     calamanConfig.cmake find_dependency(wwr)) -- two packages, one prefix;
-#     needs gpumod to offer `wwr::` ALIAS targets in-tree, since that is the
+#     needs WarpWraps to offer `wwr::` ALIAS targets in-tree, since that is the
 #     spelling an installed consumer resolves; or
-#   * consume an already-installed gpumod through find_package instead of
+#   * consume an already-installed WarpWraps through find_package instead of
 #     add_subdirectory, for install builds only.
 #
 # Until then `devtools/install-check.sh` and CI's install-check job have
@@ -415,7 +415,7 @@ option(
 # add_dependencies()'s its own targets onto it, so it is defined before those
 # directories are added.
 #
-# NAMED calaman_compile_time_tests, not compile_time_tests: gpumod defines a
+# NAMED calaman_compile_time_tests, not compile_time_tests: WarpWraps defines a
 # target of that second name, and two targets cannot share one name in a build.
 add_custom_target(
   calaman_compile_time_tests COMMENT "Building the compile-time tests"
@@ -429,7 +429,7 @@ enable_testing()
 # ========================================================================
 # Subdirectories
 # ========================================================================
-# gpumod (the GPU API layer this project is written against) and GoogleTest.
+# WarpWraps (the GPU API layer this project is written against) and GoogleTest.
 # First, because everything below links what it defines.
 add_subdirectory(deps)
 
@@ -437,8 +437,8 @@ add_subdirectory(deps)
 # module lands. A directory with no CMakeLists.txt is a configure error, so
 # uncomment each one in the commit that adds it.
 #
-# The layout to add them in, which is NOT gpumod's: there is no per-backend
-# subtree here. src/ is one backend-neutral tree written against gpumod's
+# The layout to add them in, which is NOT WarpWraps's: there is no per-backend
+# subtree here. src/ is one backend-neutral tree written against WarpWraps's
 # `wwr*` names, so a module is added once and builds for either backend.
 #add_subdirectory(src)
 

@@ -5,8 +5,8 @@ LAPACK-shaped work (factorisations, linear solves, least squares, eigenproblems)
 on the device, checked against the netlib reference LAPACK on the CPU.
 
 **One source tree, either vendor.** NVIDIA and AMD support does not live here: it
-lives in [gpumod / Warp Wraps](https://github.com/whatDiracIsCooking/WarpWraps), a
-submodule at `deps/gpumod`, which exposes the CUDA and HIP APIs as importable
+lives in [WarpWraps](https://github.com/whatDiracIsCooking/WarpWraps), a
+submodule at `deps/WarpWraps`, which exposes the CUDA and HIP APIs as importable
 modules and maps its backend-neutral `wwr*` names onto whichever one a build
 selected. So there is no `src/cuda` and no `src/hip` here — `src/` is written once
 and compiles for both. A build targets exactly one backend
@@ -37,7 +37,7 @@ For the AMD backend, `devtools/devcontainer.sh --hip shell`. Either way,
 |---|---|
 | `src/` | the library: one backend-neutral tree (empty today) |
 | `test/` | its suites (empty today) |
-| `deps/` | the gpumod submodule and the GoogleTest fetch |
+| `deps/` | the WarpWraps submodule and the GoogleTest fetch |
 | `cmake/` | the macros every target is declared through |
 | `docker/`, `.devcontainer/` | the images, in a four-file diamond |
 | `devtools/` | the tiers: `cpp-tier.sh`, `cross-backend-check.sh`, `install-check.sh`, `coverage.sh`, `doctor.sh`, and the container/worktree drivers |
@@ -49,7 +49,7 @@ For the AMD backend, `devtools/devcontainer.sh --hip shell`. Either way,
   the way it is. The long answer to almost any question here.
 - **`docs/CONTRIBUTING.md`** — setup, the gates, and what to run before a PR.
 - **`docs/architecture.md`** — decisions this project made.
-- **`deps/gpumod/docs/architecture.md`** — the CUDA-vs-HIP vendor facts, which
+- **`deps/WarpWraps/docs/architecture.md`** — the CUDA-vs-HIP vendor facts, which
   belong to the dependency and are not restated here.
 
 ## License

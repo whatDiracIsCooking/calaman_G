@@ -57,7 +57,7 @@ dev = [
 # sits beside the script it tests: today only
 # .claude/hooks/test_protect_main.py, for the main-checkout guard. It is named
 # rather than collected from the repo root, so pytest does not walk the C++ tree,
-# the build directories or the gpumod submodule (which has a pytest suite of its
+# the build directories or the WarpWraps submodule (which has a pytest suite of its
 # own that is its repository's business). .claude/hooks is a dot-directory, which
 # pytest's default norecursedirs (`.*`) would skip, so norecursedirs below is
 # narrowed to re-admit it. Do NOT add a pytest.ini or conftest.py next to the

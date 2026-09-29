@@ -21,8 +21,8 @@ Sections are cited from code by number, so **append rather than insert**.
 
 ## Where the vendor facts live
 
-**Anything true of CUDA vs HIP rather than of this project belongs to gpumod, and
-is written down there:** `deps/gpumod/docs/architecture.md` — the wavefront-width
+**Anything true of CUDA vs HIP rather than of this project belongs to WarpWraps, and
+is written down there:** `deps/WarpWraps/docs/architecture.md` — the wavefront-width
 divergence, headers that poison macros, enumerator values that differ where names
 agree, `static inline` vendor functions that cannot be re-exported, the
 const-correctness divergences between cuBLAS and hipBLAS, and the rest. It is a
@@ -39,12 +39,12 @@ project's own API.
 ## 1. The backend split is the dependency's, not ours
 
 **Decision.** `calaman_G` has no `src/cuda` and no `src/hip`. Every module under
-`src/` is written once against gpumod's backend-neutral `wwr*` names and compiles
+`src/` is written once against WarpWraps's backend-neutral `wwr*` names and compiles
 for either vendor; `CALAMAN_GPU_BACKEND` chooses which, and
 `deps/CMakeLists.txt` forwards it as `WWR_GPU_BACKEND`.
 
 **Context.** The alternative — a per-vendor subtree here — duplicates the
-problem gpumod exists to solve, and doubles it: a routine implemented twice
+problem WarpWraps exists to solve, and doubles it: a routine implemented twice
 diverges numerically, and a numerical divergence between backends is far harder
 to notice than a compile error.
 
@@ -59,29 +59,29 @@ to notice than a compile error.
 - Anything that cannot be made neutral has to be stated here as a section of its
   own, with what each backend does.
 
-## 2. gpumod is consumed with `add_subdirectory`, and what that costs
+## 2. WarpWraps is consumed with `add_subdirectory`, and what that costs
 
-**Decision.** A git submodule at `deps/gpumod`, added as a subdirectory, rather
+**Decision.** A git submodule at `deps/WarpWraps`, added as a subdirectory, rather
 than a fetched tag or an installed package. One build, one toolchain, one backend
 variable, and a two-repo change can be made and tested in one tree.
 
 **Consequences, all of them live today** (`deps/CMakeLists.txt` carries the
 detail):
 
-- gpumod's CMakeLists adds its own `example/` and `test/` unconditionally — no
+- WarpWraps's CMakeLists adds its own `example/` and `test/` unconditionally — no
   `PROJECT_IS_TOP_LEVEL` guard — so its compile-time tier and examples build as
   part of this project. `WWR_COMPILE_TIME_ONLY=ON` is forwarded to keep its
   *runtime* suites and its GoogleTest fetch out. **The clean fix belongs
-  upstream**, and once gpumod guards those directories this forwarding can go.
+  upstream**, and once WarpWraps guards those directories this forwarding can go.
 - Vendor packages are found in *this* project's top-level `CMakeLists.txt`,
   because an `IMPORTED` target is visible only in the directory that found it and
-  below. Without that, a target reached transitively through a gpumod module
+  below. Without that, a target reached transitively through a WarpWraps module
   fails to resolve at generate time.
 - **The install tier is unresolved.** A calaman target's
-  `INTERFACE_LINK_LIBRARIES` names gpumod targets, and `install(EXPORT)` refuses
+  `INTERFACE_LINK_LIBRARIES` names WarpWraps targets, and `install(EXPORT)` refuses
   an export set whose interface names a target no package exports. Either install
-  gpumod alongside (which needs `wwr::` ALIAS targets in-tree, the spelling an
-  installed consumer resolves) or consume an installed gpumod through
+  WarpWraps alongside (which needs `wwr::` ALIAS targets in-tree, the spelling an
+  installed consumer resolves) or consume an installed WarpWraps through
   `find_package` for install builds. `CALAMAN_INSTALL` is OFF until that is
   decided, and `devtools/install-check.sh` has nothing to prove meanwhile.
 
@@ -122,7 +122,7 @@ for exactly this reason.
 library already has. What is *not* kept is the calling convention: no `lwork`
 query-then-allocate dance exposed to the caller, no `info` out-parameter as the
 only error channel, no leading-dimension argument that has to agree with a
-separately passed extent. Those are Fortran-77 accommodations, and gpumod's
+separately passed extent. Those are Fortran-77 accommodations, and WarpWraps's
 extension layer already offers handles, device buffers and an error policy.
 
 **Consequence.** For each routine, the mapping from LAPACK's signature to this

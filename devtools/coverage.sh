@@ -17,7 +17,7 @@
 # coverage of the tests it could run, which is not the same number and is not
 # comparable with one from a machine that has a GPU -- say which it was.
 #
-# COVERAGE_IGNORE_REGEX in config.sh drops /deps/ (gpumod and GoogleTest): the
+# COVERAGE_IGNORE_REGEX in config.sh drops /deps/ (WarpWraps and GoogleTest): the
 # dependency is an order of magnitude larger than src/, is covered by its own
 # repository's suites, and leaving it in makes the number say nothing about this
 # project. Read what remains as a floor rather than a grade -- a template line
@@ -195,7 +195,7 @@ for o in "${objects[@]:1}"; do obj_args+=(-object "$o"); done
 
 # --- report ---------------------------------------------------------------
 # Restrict to src/ (the trailing path filter) -- the report is about the
-# project's own code, not GoogleTest, gpumod or the test files themselves. Then
+# project's own code, not GoogleTest, WarpWraps or the test files themselves. Then
 # drop COVERAGE_IGNORE_REGEX (from config.sh: /deps/) so a dependency built in
 # this tree cannot dominate the number -- see that variable's comment.
 declare -a ignore_args=()

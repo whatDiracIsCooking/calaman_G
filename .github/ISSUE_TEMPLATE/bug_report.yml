@@ -66,14 +66,14 @@ body:
       required: true
 
   - type: input
-    id: gpumod
+    id: warpwraps
     attributes:
-      label: gpumod commit
+      label: WarpWraps commit
       description: >-
         `git submodule status` — the whole line, because a leading `+` means the
         checkout is not the commit this branch pins. Most of what this project
         compiles comes from that submodule, so a compile error under
-        `deps/gpumod/` is a report about a pin rather than about this tree.
+        `deps/WarpWraps/` is a report about a pin rather than about this tree.
       placeholder: git submodule status
     validations:
       required: false

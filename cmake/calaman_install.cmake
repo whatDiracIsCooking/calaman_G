@@ -128,19 +128,19 @@ endfunction()
 # install and a target that does not exist yet cannot be found.
 function(calaman_install_package)
   # ONE recursive sweep of src/, because src/ is one tree. This is where this
-  # file differs most from the gpumod version it came from: there, src/ had a
+  # file differs most from the WarpWraps version it came from: there, src/ had a
   # per-backend subtree plus a wrappers subtree, and each was swept
   # separately to keep the non-recursive collection of the neutral layer
   # from double-counting them. Here the backend split is the dependency's, so
   # there is nothing to separate -- and `deps/` is not under src/, so the sweep
-  # cannot reach gpumod or GoogleTest.
+  # cannot reach WarpWraps or GoogleTest.
   _calaman_collect_library_targets(
     "${PROJECT_SOURCE_DIR}/src" _targets RECURSE
   )
   list(REMOVE_DUPLICATES _targets)
 
-  # THE PART THAT IS NOT SOLVED YET. gpumod is consumed with
-  # add_subdirectory, so a target collected above carries gpumod targets in
+  # THE PART THAT IS NOT SOLVED YET. WarpWraps is consumed with
+  # add_subdirectory, so a target collected above carries WarpWraps targets in
   # its INTERFACE_LINK_LIBRARIES, and install(EXPORT) refuses an export set
   # whose interface names a target that is not exported anywhere. Expect the
   # first real call of this function to fail with exactly that, naming a

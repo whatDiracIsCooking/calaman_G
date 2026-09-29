@@ -63,7 +63,7 @@ CheckOptions:
   # Two naming systems this project does not own, exempted rather than annotated
   # at each site:
   #
-  #   wwr[A-Z]*  gpumod's backend-neutral layer mirrors the vendor entry point it
+  #   wwr[A-Z]*  WarpWraps's backend-neutral layer mirrors the vendor entry point it
   #              fronts (wwrsolverDnXgetrf, wwrMalloc), so it is camelCase by
   #              design. It surfaces both as real functions and as the constexpr
   #              aliases WWR_FUNCTION/WWR_VALUE generate. Only names this tree

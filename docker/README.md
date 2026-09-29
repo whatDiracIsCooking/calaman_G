@@ -192,7 +192,7 @@ checker scripts, not numerics. The `compute-sanitizer` service still deselects
 `no_sanitizer`, because instrumented runs turn a merely-slow case into an
 hours-long one.
 
-The gtest half builds the whole tree, **gpumod included** — it is a submodule
+The gtest half builds the whole tree, **WarpWraps included** — it is a submodule
 built from source, so a first run in a cold container pays for the dependency's
 module surface as well as this project's. `dc build` once before `dc test` if
 you want those two costs reported separately.

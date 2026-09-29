@@ -129,11 +129,11 @@ so an `export` after the container is up does not reach it.
 **`[warn] <path> absent`** — a `DOCTOR_REQUIRED_PATHS` entry. There are two,
 and they fail very differently:
 
-- **`deps/gpumod/CMakeLists.txt`** — the submodule is not initialised, and
-  *nothing under `src/` can compile*: every module here imports gpumod. Fix with
+- **`deps/WarpWraps/CMakeLists.txt`** — the submodule is not initialised, and
+  *nothing under `src/` can compile*: every module here imports WarpWraps. Fix with
   `git submodule update --init --recursive`, which doctor suggests. Worth
   recognising by its downstream symptom too: the configure error names
-  `deps/CMakeLists.txt` (`add_subdirectory given source "gpumod" which is not an
+  `deps/CMakeLists.txt` (`add_subdirectory given source "WarpWraps" which is not an
   existing directory`), which points at the wiring rather than at the missing
   checkout.
 - **`/usr/include/lapacke.h`** — the CPU reference LAPACK. On the **host** this is
@@ -197,7 +197,7 @@ Five failures that look like something else entirely:
    claim it makes. A change that only a card would catch stays ungated until
    `devtools/cpp-tier.sh` runs locally. Doctor reports tools, not that absence.
 
-6. **A dependency that is present but stale.** `deps/gpumod` existing satisfies
+6. **A dependency that is present but stale.** `deps/WarpWraps` existing satisfies
    `DOCTOR_REQUIRED_PATHS`; it says nothing about which commit is checked out.
    `git submodule status` (a leading `+` means the checkout differs from the
    gitlink this branch records) is the check doctor does not make.

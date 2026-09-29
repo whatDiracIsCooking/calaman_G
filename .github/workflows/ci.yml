@@ -13,7 +13,7 @@
 #                 docs-only. So a `.md`-only PR goes green on lint+test alone.
 #   lint          ruff + cmake-lint
 #   python        the pytest tier, on 3.13
-#   cpp (cuda)    the whole tree built for CUDA -- this project, the gpumod
+#   cpp (cuda)    the whole tree built for CUDA -- this project, the WarpWraps
 #                 submodule, GoogleTest and every test binary -- then
 #                 `ctest -LE gpu`, then an ADVISORY clang-tidy pass over
 #                 src/*.cpp that cannot fail the job
@@ -31,7 +31,7 @@
 # legs currently prove is:
 #
 #   * the toolchain, the presets and the CMake wiring configure and build;
-#   * the gpumod submodule compiles for both backends at this pin, its own
+#   * the WarpWraps submodule compiles for both backends at this pin, its own
 #     compile-time static_assert tier included (it is built as a subdirectory --
 #     deps/CMakeLists.txt says why);
 #   * nothing at all about this project's numerics, because there is none yet.
@@ -110,7 +110,7 @@ jobs:
   # counts as code and builds. The expensive job (`cpp`) gates on
   # `code == 'true'`; `ci-ok` accepts its `skipped` result ONLY when `code` is
   # `false`, so the skip a real code change must never produce is still caught.
-  # A submodule bump changes deps/gpumod, which is not on the allowlist, so it
+  # A submodule bump changes deps/WarpWraps, which is not on the allowlist, so it
   # counts as code -- which is right. No third-party action -- a git diff is
   # transparent and needs no pin.
   changes:
@@ -254,7 +254,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # deps/gpumod is a submodule and every module here imports it; without
+          # deps/WarpWraps is a submodule and every module here imports it; without
           # this, configure dies in deps/CMakeLists.txt naming a missing
           # directory rather than a missing checkout.
           submodules: recursive
@@ -304,7 +304,7 @@ jobs:
           include-hidden-files: true
 
   # NO install-check JOB, DELIBERATELY. The package tier is dormant:
-  # CALAMAN_INSTALL is OFF because gpumod is consumed with add_subdirectory, so
+  # CALAMAN_INSTALL is OFF because WarpWraps is consumed with add_subdirectory, so
   # this project's export set would name targets no installed package provides
   # (docs/architecture.md section 2), and there is no example/consumer to build
   # against a prefix (example/README.md). devtools/install-check.sh exits 2 --
@@ -313,7 +313,7 @@ jobs:
   # that proves nothing.
   #
   # RESTORE IT in the commit that flips CALAMAN_INSTALL ON: re-add the job (its
-  # shape is in gpumod's own ci.yml, which this file came from -- a container leg
+  # shape is in WarpWraps's own ci.yml, which this file came from -- a container leg
   # running `devtools/install-check.sh --preset ci-cuda --no-run`), and add
   # `install-check` back to BOTH `needs:` and the GATED set in ci-ok below.
   # Without that second half nothing gates it.
