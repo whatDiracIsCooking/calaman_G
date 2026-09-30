@@ -1,7 +1,7 @@
 # calaman.common.constants -- typed mathematical constants (kZero .. kPi), a
 # header-plus-module pair with no device code and no implementation unit: the
 # values are `inline constexpr` in constants.h, and this module only re-exports
-# them (constants.cppm includes the header in its GMF and republishes the names).
+# them (constants.cppm includes the header in its GMF and republishes them).
 #
 # INCLUDE_DIRS_PUBLIC is the src/ root, and PUBLIC on purpose. constants.h is a
 # GMF-shared header meant to be #included by other modules and by device .cu TUs

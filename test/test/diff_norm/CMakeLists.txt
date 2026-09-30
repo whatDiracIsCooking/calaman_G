@@ -5,11 +5,11 @@
 # The suite compares against the reference CBLAS (cblas_?asum / cblas_?nrm2 /
 # cblas_i?amax), which arrives with the same oracle target as LAPACKE, so it
 # cannot be built without the oracle. Guard on calaman::lapack_reference and
-# return early when it is absent: a missing oracle is a missing TIER named in the
-# configure output, not a silent pass (docs/architecture.md §3).
+# return early when it is absent: a missing oracle is a missing TIER named in
+# the configure output, not a silent pass (docs/architecture.md §3).
 if(NOT TARGET calaman::lapack_reference)
   message(
-    STATUS "calaman::lapack_reference not found; skipping diff_norm oracle tests"
+    STATUS "calaman::lapack_reference not found; skipping diff_norm tests"
   )
   return()
 endif()
