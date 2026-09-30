@@ -19,21 +19,25 @@
 
 import std;
 import wwr.runtime_api;
-import wwr.extension.error_handling;
-import wwr.extension.runtime;
 import wwr.extension.memory_buffer;
 import calaman.lacpy;
 import calaman.test.elementwise_compare;
+import calaman.test.shared.abort_policy;
+import calaman.test.shared.device_handle;
 
 namespace calaman {
 namespace {
 
-using wwr::extension::AbortPolicy;
 using wwr::extension::DeviceBufferWrapper;
-using wwr::extension::DeviceHandle;
 using wwr::extension::HostBufferWrapper;
 
 using calaman::test::count_mismatches;
+
+// AbortPolicy and DeviceHandle are this repo's own, under test/shared/:
+// WarpWraps ships neither, so a consumer names the policy it wants and supplies
+// a concrete device_handle. See test/shared/README.md.
+using test::AbortPolicy;
+using test::DeviceHandle;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -41,7 +45,7 @@ using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
 template<typename T>
 using HostBuffer = HostBufferWrapper<T, HostAbort, HostAbort>;
 template<typename T>
-using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort>;
+using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceHandle, DeviceAbort>;
 
 /// @brief Upload `host` to a fresh device buffer on `handle`'s stream
 template<typename T>
@@ -112,7 +116,9 @@ void expect_matches_reference(copy_region region, std::size_t m, std::size_t n, 
   auto d_ref = to_device(handle, host_b_ref, b_size);
   wwr::wwrStreamSynchronize(handle->stream().get());
 
-  lacpy(handle, region, m, n, d_a.data(), lda, d_b.data(), ldb);
+  // lacpy takes the stream, not the handle: it allocates nothing, so a stream is
+  // its whole requirement (src/lacpy/interface.cppm).
+  lacpy(handle->stream().get(), region, m, n, d_a.data(), lda, d_b.data(), ldb);
 
   EXPECT_EQ(count_mismatches(handle, d_b.data(), d_ref.data(), b_size), 0u)
       << "region=" << static_cast<int>(region) << " m=" << m << " n=" << n << " lda=" << lda

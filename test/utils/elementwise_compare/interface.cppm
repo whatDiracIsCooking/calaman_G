@@ -11,11 +11,17 @@
  *
  * Comparison is exact inequality (a[i] != b[i]); there is no tolerance.
  *
+ * Unlike calaman.lacpy, these take a DEVICE HANDLE and not a bare stream: they
+ * allocate scratch, so they need the device index and pool a stream does not
+ * carry. The handle is calaman::test::DeviceHandle, which this repo owns under
+ * test/shared/ because WarpWraps ships no concrete handle -- see
+ * test/shared/README.md.
+ *
  * Usage:
  *   import calaman.test.elementwise_compare;
- *   using namespace wwr::extension;
+ *   import calaman.test.shared.device_handle;
  *
- *   auto handle = std::make_shared<DeviceHandle>(0);
+ *   auto handle = std::make_shared<calaman::test::DeviceHandle>(0);
  *   // d_a, d_b: device arrays of n floats, already populated
  *   unsigned int differing = calaman::test::count_mismatches(handle, d_a, d_b, n);
  *
@@ -32,14 +38,28 @@ export module calaman.test.elementwise_compare;
 
 import std;
 import wwr.runtime_api;
-import wwr.extension.error_handling;
-import wwr.extension.runtime;
 import wwr.extension.memory_buffer;
+import calaman.test.shared.abort_policy;
+import calaman.test.shared.device_handle;
 
 // Not an `export namespace` block: an explicit instantiation declaration
 // (`extern template`) cannot be exported, so the template carries its own
 // `export` and the declarations below sit in the plain namespace.
 namespace calaman::test {
+
+// How this utility allocates, hoisted out of the three bodies that were each
+// spelling it. Not exported: the policies are an implementation choice, unlike
+// DeviceHandle, which is in the signatures. Every slot is abort-on-failure --
+// a scratch allocation that fails in a test fixture should die loudly, not be
+// reported to a caller with no way to react.
+using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
+using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
+
+template<typename T>
+using DeviceBuffer =
+    wwr::extension::DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceHandle, DeviceAbort>;
+template<typename T>
+using HostBuffer = wwr::extension::HostBufferWrapper<T, HostAbort, HostAbort>;
 
 /**
  * @brief Count how many of the first `n` elements of `d_a` and `d_b` differ
@@ -57,33 +77,30 @@ namespace calaman::test {
  * @return Number of indices i in [0, n) where d_a[i] != d_b[i]
  */
 export template<typename T>
-unsigned int count_mismatches(std::shared_ptr<wwr::extension::DeviceHandle> handle, const T *d_a,
-                              const T *d_b, const std::size_t n) {
+unsigned int count_mismatches(std::shared_ptr<DeviceHandle> handle, const T *d_a, const T *d_b,
+                              const std::size_t n) {
   if (n == 0) {
     return 0u;
   }
 
-  using DeviceAbort = wwr::extension::AbortPolicy<wwr::wwrError_t>;
-  using HostAbort = wwr::extension::AbortPolicy<wwr::extension::stdHostMemoryError_t>;
-
   const auto stream = handle->stream().get();
 
-  wwr::extension::DeviceBufferWrapper<unsigned int, DeviceAbort, DeviceAbort> diffs(n, handle);
-  wwr::extension::DeviceBufferWrapper<unsigned int, DeviceAbort, DeviceAbort> result(1, handle);
+  DeviceBuffer<unsigned int> diffs(n, handle);
+  DeviceBuffer<unsigned int> result(1, handle);
 
   device::write_mismatch_flags(stream, d_a, d_b, diffs.data(), n);
   device::reduce_count(stream, diffs.data(), result.data(), n);
 
-  wwr::extension::HostBufferWrapper<unsigned int, HostAbort, HostAbort> host_count(1);
+  HostBuffer<unsigned int> host_count(1);
   wwr::extension::copy(host_count, result, stream);
   wwr::wwrStreamSynchronize(stream);
   return host_count.data()[0];
 }
 
-extern template unsigned int count_mismatches<float>(std::shared_ptr<wwr::extension::DeviceHandle>,
-                                                     const float *, const float *, std::size_t);
-extern template unsigned int count_mismatches<double>(std::shared_ptr<wwr::extension::DeviceHandle>,
-                                                      const double *, const double *, std::size_t);
+extern template unsigned int count_mismatches<float>(std::shared_ptr<DeviceHandle>, const float *,
+                                                     const float *, std::size_t);
+extern template unsigned int count_mismatches<double>(std::shared_ptr<DeviceHandle>, const double *,
+                                                      const double *, std::size_t);
 
 /**
  * @brief The largest |d_a[i] - d_b[i]| over the first `n` elements
@@ -102,33 +119,30 @@ extern template unsigned int count_mismatches<double>(std::shared_ptr<wwr::exten
  * @return max over i in [0, n) of |d_a[i] - d_b[i]|
  */
 export template<typename T>
-T max_abs_diff(std::shared_ptr<wwr::extension::DeviceHandle> handle, const T *d_a, const T *d_b,
+T max_abs_diff(std::shared_ptr<DeviceHandle> handle, const T *d_a, const T *d_b,
                const std::size_t n) {
   if (n == 0) {
     return T(0);
   }
 
-  using DeviceAbort = wwr::extension::AbortPolicy<wwr::wwrError_t>;
-  using HostAbort = wwr::extension::AbortPolicy<wwr::extension::stdHostMemoryError_t>;
-
   const auto stream = handle->stream().get();
 
-  wwr::extension::DeviceBufferWrapper<T, DeviceAbort, DeviceAbort> abs_diff(n, handle);
-  wwr::extension::DeviceBufferWrapper<T, DeviceAbort, DeviceAbort> result(1, handle);
+  DeviceBuffer<T> abs_diff(n, handle);
+  DeviceBuffer<T> result(1, handle);
 
   device::write_abs_diff(stream, d_a, d_b, abs_diff.data(), n);
   device::reduce_max(stream, abs_diff.data(), result.data(), n);
 
-  wwr::extension::HostBufferWrapper<T, HostAbort, HostAbort> host_max(1);
+  HostBuffer<T> host_max(1);
   wwr::extension::copy(host_max, result, stream);
   wwr::wwrStreamSynchronize(stream);
   return host_max.data()[0];
 }
 
-extern template float max_abs_diff<float>(std::shared_ptr<wwr::extension::DeviceHandle>,
-                                          const float *, const float *, std::size_t);
-extern template double max_abs_diff<double>(std::shared_ptr<wwr::extension::DeviceHandle>,
-                                            const double *, const double *, std::size_t);
+extern template float max_abs_diff<float>(std::shared_ptr<DeviceHandle>, const float *,
+                                          const float *, std::size_t);
+extern template double max_abs_diff<double>(std::shared_ptr<DeviceHandle>, const double *,
+                                            const double *, std::size_t);
 
 /**
  * @brief How many of the first `n` elements differ by more than the tolerance
@@ -152,35 +166,32 @@ extern template double max_abs_diff<double>(std::shared_ptr<wwr::extension::Devi
  * @return count of i in [0, n) with |d_a[i]-d_b[i]| > atol + rtol*|d_b[i]|
  */
 export template<typename T>
-unsigned int count_beyond_tolerance(std::shared_ptr<wwr::extension::DeviceHandle> handle,
-                                    const T *d_a, const T *d_b, const std::size_t n, const T atol,
+unsigned int count_beyond_tolerance(std::shared_ptr<DeviceHandle> handle, const T *d_a,
+                                    const T *d_b, const std::size_t n, const T atol,
                                     const T rtol = T(0)) {
   if (n == 0) {
     return 0u;
   }
 
-  using DeviceAbort = wwr::extension::AbortPolicy<wwr::wwrError_t>;
-  using HostAbort = wwr::extension::AbortPolicy<wwr::extension::stdHostMemoryError_t>;
-
   const auto stream = handle->stream().get();
 
-  wwr::extension::DeviceBufferWrapper<unsigned int, DeviceAbort, DeviceAbort> flags(n, handle);
-  wwr::extension::DeviceBufferWrapper<unsigned int, DeviceAbort, DeviceAbort> result(1, handle);
+  DeviceBuffer<unsigned int> flags(n, handle);
+  DeviceBuffer<unsigned int> result(1, handle);
 
   device::write_tolerance_flags(stream, d_a, d_b, flags.data(), n, atol, rtol);
   device::reduce_count(stream, flags.data(), result.data(), n);
 
-  wwr::extension::HostBufferWrapper<unsigned int, HostAbort, HostAbort> host_count(1);
+  HostBuffer<unsigned int> host_count(1);
   wwr::extension::copy(host_count, result, stream);
   wwr::wwrStreamSynchronize(stream);
   return host_count.data()[0];
 }
 
-extern template unsigned int
-count_beyond_tolerance<float>(std::shared_ptr<wwr::extension::DeviceHandle>, const float *,
-                              const float *, std::size_t, float, float);
-extern template unsigned int
-count_beyond_tolerance<double>(std::shared_ptr<wwr::extension::DeviceHandle>, const double *,
-                               const double *, std::size_t, double, double);
+extern template unsigned int count_beyond_tolerance<float>(std::shared_ptr<DeviceHandle>,
+                                                           const float *, const float *,
+                                                           std::size_t, float, float);
+extern template unsigned int count_beyond_tolerance<double>(std::shared_ptr<DeviceHandle>,
+                                                            const double *, const double *,
+                                                            std::size_t, double, double);
 
 } // namespace calaman::test

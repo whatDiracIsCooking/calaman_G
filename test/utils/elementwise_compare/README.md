@@ -14,7 +14,12 @@ device-pointers-in / scalar-out:
 - **`max_abs_diff(handle, a, b, n) -> T`** — the worst `max|a[i]-b[i]|`. The
   magnitude metric: assert it is at most the tolerance a comparison allows.
 
-All are templated over `float` and `double`.
+All are templated over `float` and `double`. `handle` is a
+`std::shared_ptr<calaman::test::DeviceHandle>` — a device handle rather than a
+bare stream, because each of these allocates a scratch buffer and so needs the
+device index and memory pool a stream does not carry. That is the opposite of
+`calaman.lacpy`, which allocates nothing and takes a `wwrStream_t`; see
+`test/shared/README.md`.
 
 ## Why two kernels
 

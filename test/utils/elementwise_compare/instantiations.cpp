@@ -20,27 +20,25 @@ module calaman.test.elementwise_compare;
 // wrapper body below are not visible without these.
 import std;
 import wwr.runtime_api;
-import wwr.extension.error_handling;
-import wwr.extension.runtime;
 import wwr.extension.memory_buffer;
+import calaman.test.shared.abort_policy;
+import calaman.test.shared.device_handle;
 
 namespace calaman::test {
 
-template unsigned int count_mismatches<float>(std::shared_ptr<wwr::extension::DeviceHandle>,
-                                              const float *, const float *, std::size_t);
-template unsigned int count_mismatches<double>(std::shared_ptr<wwr::extension::DeviceHandle>,
-                                               const double *, const double *, std::size_t);
+template unsigned int count_mismatches<float>(std::shared_ptr<DeviceHandle>, const float *,
+                                              const float *, std::size_t);
+template unsigned int count_mismatches<double>(std::shared_ptr<DeviceHandle>, const double *,
+                                               const double *, std::size_t);
 
-template float max_abs_diff<float>(std::shared_ptr<wwr::extension::DeviceHandle>, const float *,
-                                   const float *, std::size_t);
-template double max_abs_diff<double>(std::shared_ptr<wwr::extension::DeviceHandle>, const double *,
-                                     const double *, std::size_t);
+template float max_abs_diff<float>(std::shared_ptr<DeviceHandle>, const float *, const float *,
+                                   std::size_t);
+template double max_abs_diff<double>(std::shared_ptr<DeviceHandle>, const double *, const double *,
+                                     std::size_t);
 
-template unsigned int
-count_beyond_tolerance<float>(std::shared_ptr<wwr::extension::DeviceHandle>, const float *,
-                              const float *, std::size_t, float, float);
-template unsigned int
-count_beyond_tolerance<double>(std::shared_ptr<wwr::extension::DeviceHandle>, const double *,
-                               const double *, std::size_t, double, double);
+template unsigned int count_beyond_tolerance<float>(std::shared_ptr<DeviceHandle>, const float *,
+                                                    const float *, std::size_t, float, float);
+template unsigned int count_beyond_tolerance<double>(std::shared_ptr<DeviceHandle>, const double *,
+                                                     const double *, std::size_t, double, double);
 
 } // namespace calaman::test

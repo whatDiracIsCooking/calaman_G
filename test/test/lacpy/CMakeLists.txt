@@ -21,10 +21,10 @@ calaman_add_gtest_executable(
   LINK
   calaman.lacpy
   calaman.test.elementwise_compare
+  calaman.test.shared.abort_policy
+  calaman.test.shared.device_handle
   calaman::lapack_reference
   wwr.runtime_api
-  wwr.extension.error_handling
-  wwr.extension.runtime
   wwr.extension.memory_buffer
 )
 

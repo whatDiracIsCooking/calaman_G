@@ -9,9 +9,9 @@ calaman_add_gtest_executable(
   elementwise_compare_tests.cpp
   LINK
   calaman.test.elementwise_compare
+  calaman.test.shared.abort_policy
+  calaman.test.shared.device_handle
   wwr.runtime_api
-  wwr.extension.error_handling
-  wwr.extension.runtime
   wwr.extension.memory_buffer
 )
 

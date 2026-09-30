@@ -32,7 +32,6 @@ calaman_add_cxx_module_library(
   instantiations.cpp
   LINK_PUBLIC
   wwr.runtime_api
-  wwr.extension.runtime
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE
