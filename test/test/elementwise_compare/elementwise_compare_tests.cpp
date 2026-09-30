@@ -10,28 +10,33 @@
 
 import std;
 import wwr.runtime_api;
-import wwr.extension.error_handling;
-import wwr.extension.runtime;
 import wwr.extension.memory_buffer;
 import calaman.test.elementwise_compare;
+import calaman.test.shared.abort_policy;
+import calaman.test.shared.device_handle;
 
 namespace calaman::test {
 namespace {
 
-using wwr::extension::AbortPolicy;
 using wwr::extension::DeviceBufferWrapper;
-using wwr::extension::DeviceHandle;
 using wwr::extension::HostBufferWrapper;
 
+// AbortPolicy and DeviceHandle need no using-declaration here: this suite is
+// itself in calaman::test, where test/shared/ puts them. WarpWraps ships
+// neither -- see test/shared/README.md.
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
 
+template<typename T>
+using HostBuffer = HostBufferWrapper<T, HostAbort, HostAbort>;
+template<typename T>
+using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceHandle, DeviceAbort>;
+
 /// @brief Upload `host` to a fresh device buffer on `handle`'s stream
 template<typename T>
-DeviceBufferWrapper<T, DeviceAbort, DeviceAbort>
-to_device(std::shared_ptr<DeviceHandle> handle, const HostBufferWrapper<T, HostAbort, HostAbort> &host,
-          std::size_t n) {
-  DeviceBufferWrapper<T, DeviceAbort, DeviceAbort> device(n, handle);
+DeviceBuffer<T> to_device(std::shared_ptr<DeviceHandle> handle, const HostBuffer<T> &host,
+                          std::size_t n) {
+  DeviceBuffer<T> device(n, handle);
   wwr::extension::copy(device, host, handle->stream().get());
   return device;
 }
@@ -42,8 +47,8 @@ void identical_arrays_count_zero() {
   auto handle = std::make_shared<DeviceHandle>(0);
   const std::size_t n = 1024;
 
-  HostBufferWrapper<T, HostAbort, HostAbort> host_a(n);
-  HostBufferWrapper<T, HostAbort, HostAbort> host_b(n);
+  HostBuffer<T> host_a(n);
+  HostBuffer<T> host_b(n);
   for (std::size_t i = 0; i < n; ++i) {
     host_a.data()[i] = static_cast<T>(i);
     host_b.data()[i] = static_cast<T>(i);
@@ -63,8 +68,8 @@ void planted_differences_are_counted() {
   const std::size_t n = 1000;
   const unsigned int planted = 37;
 
-  HostBufferWrapper<T, HostAbort, HostAbort> host_a(n);
-  HostBufferWrapper<T, HostAbort, HostAbort> host_b(n);
+  HostBuffer<T> host_a(n);
+  HostBuffer<T> host_b(n);
   for (std::size_t i = 0; i < n; ++i) {
     host_a.data()[i] = static_cast<T>(1);
     host_b.data()[i] = static_cast<T>(1);
@@ -90,8 +95,8 @@ void max_abs_diff_finds_worst_gap() {
   auto handle = std::make_shared<DeviceHandle>(0);
   const std::size_t n = 1000;
 
-  HostBufferWrapper<T, HostAbort, HostAbort> host_a(n);
-  HostBufferWrapper<T, HostAbort, HostAbort> host_b(n);
+  HostBuffer<T> host_a(n);
+  HostBuffer<T> host_b(n);
   for (std::size_t i = 0; i < n; ++i) {
     host_a.data()[i] = static_cast<T>(1);
     host_b.data()[i] = static_cast<T>(1);
@@ -112,8 +117,8 @@ void tolerance_counts_only_beyond() {
   auto handle = std::make_shared<DeviceHandle>(0);
   const std::size_t n = 1000;
 
-  HostBufferWrapper<T, HostAbort, HostAbort> host_a(n);
-  HostBufferWrapper<T, HostAbort, HostAbort> host_b(n);
+  HostBuffer<T> host_a(n);
+  HostBuffer<T> host_b(n);
   for (std::size_t i = 0; i < n; ++i) {
     host_a.data()[i] = static_cast<T>(1);
     host_b.data()[i] = static_cast<T>(1);

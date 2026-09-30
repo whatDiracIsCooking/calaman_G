@@ -20,13 +20,12 @@ module calaman.lacpy;
 // not visible without these.
 import std;
 import wwr.runtime_api;
-import wwr.extension.runtime;
 
 namespace calaman {
 
-template void lacpy<float>(std::shared_ptr<wwr::extension::DeviceHandle>, copy_region, std::size_t,
-                           std::size_t, const float *, std::size_t, float *, std::size_t);
-template void lacpy<double>(std::shared_ptr<wwr::extension::DeviceHandle>, copy_region, std::size_t,
-                            std::size_t, const double *, std::size_t, double *, std::size_t);
+template void lacpy<float>(wwr::wwrStream_t, copy_region, std::size_t, std::size_t, const float *,
+                           std::size_t, float *, std::size_t);
+template void lacpy<double>(wwr::wwrStream_t, copy_region, std::size_t, std::size_t,
+                            const double *, std::size_t, double *, std::size_t);
 
 } // namespace calaman

@@ -24,18 +24,22 @@ import std;
 
 import wwr.blas;
 import wwr.runtime_api;
-import wwr.extension.error_handling;
-import wwr.extension.runtime;
 import wwr.extension.memory_buffer;
 import calaman.diff_norm;
+import calaman.test.shared.abort_policy;
+import calaman.test.shared.device_handle;
 
 namespace calaman {
 namespace {
 
-using wwr::extension::AbortPolicy;
 using wwr::extension::DeviceBufferWrapper;
-using wwr::extension::DeviceHandle;
 using wwr::extension::HostBufferWrapper;
+
+// AbortPolicy and DeviceHandle are this repo's own, under test/shared/:
+// WarpWraps ships neither, so a consumer names the policy it wants and supplies
+// a concrete device_handle. See test/shared/README.md.
+using test::AbortPolicy;
+using test::DeviceHandle;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -43,7 +47,7 @@ using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
 template<typename T>
 using HostBuffer = HostBufferWrapper<T, HostAbort, HostAbort>;
 template<typename T>
-using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort>;
+using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceHandle, DeviceAbort>;
 
 /// @brief Upload `host` to a fresh device buffer on `handle`'s stream
 template<typename T>

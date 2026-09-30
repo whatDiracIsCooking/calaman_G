@@ -34,9 +34,9 @@ calaman_add_cxx_module_library(
   instantiations.cpp
   LINK_PUBLIC
   wwr.runtime_api
-  wwr.extension.error_handling
-  wwr.extension.runtime
   wwr.extension.memory_buffer
+  calaman.test.shared.abort_policy
+  calaman.test.shared.device_handle
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE
