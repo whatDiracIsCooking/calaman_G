@@ -10,7 +10,7 @@
 #   wwr.wrappers.blas       axpy, asum, nrm2, iamax
 #   wwr.blas                wwrblasHandle_t / wwrblasStatus_t / WWRBLAS_STATUS_*
 #   wwr.runtime_api         wwrMemcpy + wwrSuccess for the ell_inf read
-#   calaman.common.constants kNegativeOne<T>, the fixed axpy scalar
+#   calaman.common          kNegativeOne<T>, the fixed axpy scalar (:constants)
 calaman_add_cxx_module_library(
   NAME
   calaman.diff_norm
@@ -20,5 +20,5 @@ calaman_add_cxx_module_library(
   wwr.wrappers.blas
   wwr.blas
   wwr.runtime_api
-  calaman.common.constants
+  calaman.common
 )

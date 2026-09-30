@@ -7,7 +7,7 @@
  * difference. The reduction is selected by a Norm enum -- ell_1 (sum of
  * magnitudes), ell_2 (Euclidean), or ell_inf (largest magnitude). The result is
  * ||y - x|| in the chosen norm, the distance between two vectors. The axpy scalar
- * is fixed at -1, taken from calaman.common.constants as kNegativeOne<T>, so
+ * is fixed at -1, taken from calaman.common as kNegativeOne<T>, so
  * there is no alpha to pass.
  *
  * The three norms are NOT symmetric in BLAS, and ell_inf is the odd one. ell_1 is
@@ -50,7 +50,7 @@ export module calaman.diff_norm;
 import wwr.blas;               // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
 import wwr.runtime_api;        // wwrMemcpy, wwrMemcpyDeviceToHost, wwrSuccess (ell_inf fetch)
 import wwr.wrappers.blas;      // axpy, asum, nrm2, iamax
-import calaman.common.constants; // kNegativeOne<T>
+import calaman.common;         // kNegativeOne<T> (from the :constants partition)
 
 namespace calaman {
 
