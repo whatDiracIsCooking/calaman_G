@@ -43,6 +43,12 @@ devtools/devcontainer.sh down      # stop and remove the container
 - `shell -c "<cmd>"` runs one command inside — how you inspect a container
   without an interactive session, and how the C++ tier is run:
   `devtools/devcontainer.sh shell -c devtools/cpp-tier.sh`.
+- **`shell` and `test` need the container already running**, and say so:
+  `devcontainer exec` neither creates one nor starts a stopped one, so after a
+  reboot or a `docker stop` they refuse with *"the `<variant>` container …
+  exists, but is stopped"* and print the `up` that fixes it. `up` on a stopped
+  container is a `docker start` — no rebuild, seconds. Reach for `rebuild`
+  only if the config or a `Dockerfile` has changed since.
 
 ### Three variants, one toolchain
 
