@@ -6,4 +6,6 @@
 # A module that computes what a LAPACK routine computes carries LAPACK's name
 # (docs/architecture.md §4).
 
+add_subdirectory(common)
+add_subdirectory(diff_norm)
 add_subdirectory(lacpy)
