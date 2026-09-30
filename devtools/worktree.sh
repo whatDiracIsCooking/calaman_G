@@ -113,12 +113,19 @@ teardown_container() {
     fi
   done
   # The build also leaves a per-worktree image, tagged vsc-<basename>-<64hex>
-  # (the `naming to .../vsc-...` line in `add`'s build log), and every
-  # `rebuild` adds another under a fresh hash. Neither the container removal
-  # above nor `git worktree remove` touches them, so drop them here -- on a
-  # multi-GB base image this is the largest thing that would otherwise leak.
-  # Match the 64-hex hash exactly so a name that prefixes another (feature-x
-  # vs feature-x-batching) cannot cross-match and delete another worktree's
+  # (the `naming to .../vsc-...` line in `add`'s build log). That hash is of
+  # the worktree PATH, not of the build, so a rebuild reuses the name rather
+  # than adding another -- and every GPU variant that has been up here left a
+  # `:<variant>` tag on its own image (devcontainer.sh's tag_variant_image),
+  # which is what keeps the variants other than the last one attributable to
+  # this worktree at all. Neither the container removal above nor `git
+  # worktree remove` touches them, so drop them here -- on a multi-GB base
+  # image this is the largest thing that would otherwise leak. Removal is by
+  # image ID, so every tag on one goes at once; an image an earlier rebuild
+  # left with NO tag is `docker image prune`'s job rather than ours, since
+  # `<none>` says nothing about which worktree it came from. Match the 64-hex
+  # hash exactly so a name that prefixes another (feature-x vs
+  # feature-x-batching) cannot cross-match and delete another worktree's
   # image.
   local imgs
   imgs=$(project_images \
@@ -412,6 +419,12 @@ cmd_gc() {
   # for a LIVE worktree are deliberately not handled here -- they stay tagged
   # with a live name; `rm` clears a worktree's whole set on teardown, and
   # `docker image prune` clears cross-worktree churn.
+  #
+  # `sort -u` because `docker images` prints one row per TAG, and every variant
+  # that has been up on a worktree leaves a second tag on that worktree's image
+  # (devcontainer.sh's tag_variant_image). The repository is the same in each
+  # row, so without this one image is reported -- and `docker rmi`'d -- once
+  # per variant.
   while read -r rep id; do
     [ -n "$id" ] || continue
     case "$rep" in
@@ -423,7 +436,7 @@ cmd_gc() {
           orph_i+=("$id|$rep")
         fi ;;
     esac
-  done < <(project_images)
+  done < <(project_images | sort -u)
 
   local total=$(( ${#orph_c[@]} + ${#orph_v[@]} + ${#orph_i[@]} ))
 

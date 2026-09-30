@@ -101,6 +101,15 @@ sources its *own* copy — `lib.sh` resolves the repo root from its own location
 — so editing it changes the default for that checkout alone. Handy for a
 worktree dedicated to one backend; just don't commit it.
 
+`shell` and `test` check, before handing over to the CLI, that the variant they
+selected is actually *running*, because `devcontainer exec` neither creates a
+container nor starts a stopped one — against a container that a reboot or a
+`docker stop` left down it fails with the daemon's bare
+`container <id> is not running`, an id you have never seen, on a variant it
+does not name. The check reports which variant is down or missing and prints
+the `up` that fixes it; it never starts one for you, for the same reason `down`
+does not guess a variant.
+
 `devtools/doctor.sh` prints the active config, and **FAILs** if it points at a
 file that is not there — every `devcontainer.sh` command refuses until that is
 fixed. Its `PROJECT_NAME`-drift check globs every `devcontainer.json` in here, so a new
@@ -114,6 +123,18 @@ so the cuda, hip and combined containers for one worktree are three separate
 containers that can be up simultaneously. `devcontainer.sh` matches on both
 labels, so `down` and the `CPUSET`/`CPUS` limits act on the variant you
 selected and leave the siblings alone.
+
+**The images are not keyed that way, and that asymmetry is worth knowing.** The
+CLI names a built image `vsc-<workspace basename>-<sha256 of the workspace
+path>` — the config file is nowhere in that hash — so all three variants of one
+worktree build to a single image name, and each `up` retags it away from
+whichever variant built it last. No container is harmed (each holds its image
+by id, and `nvcc` in the one you left running is still `nvcc`), but the image
+that lost the tag becomes an unattributable `<none>` in `docker images`, and
+switching variants re-exports the image even when every layer is cached.
+`devcontainer.sh` therefore adds a second tag, `vsc-<…>:<variant>`, on every
+`up`/`rebuild`, so each variant's image stays named — and, since the repository
+name is unchanged, `worktree.sh rm` and `gc` still sweep them.
 
 **That cuts both ways: the variant flag is needed on teardown too.** A `--hip
 up` followed by a bare `down` takes down the *CUDA* container and leaves the

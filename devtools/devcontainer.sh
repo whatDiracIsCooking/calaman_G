@@ -52,6 +52,14 @@
 # resolves the workspace from its own location, so it does the right thing
 # whichever checkout you call it from, and from any cwd.
 #
+# IMAGES do not key on the config file, and that asymmetry surprises people:
+# the CLI names a built image `vsc-<workspace basename>-<sha256 of the
+# workspace PATH>`, so all three variants of one checkout build to that ONE
+# name and each `up` retags it away from the last. The containers are
+# unharmed -- each holds its image by id -- but the variant that lost the tag
+# goes untagged and unexplainable in `docker images`, so `up` and `rebuild`
+# add a `:<variant>` tag beside the CLI's `:latest`. See tag_variant_image.
+#
 # Project-specific values (the test command, the worker count) come from
 # devtools/config.sh -- edit that, not this.
 set -euo pipefail
@@ -117,6 +125,16 @@ if [ -n "${DEVCONTAINER_CONFIG:-}" ]; then
     exit 1
   fi
   DC_CONFIG=(--config "$dc_config_path")
+fi
+
+# The variant this call drives: the directory name under .devcontainer/, which
+# is what names a config here -- cuda, hip, combined. Empty only if
+# DEVCONTAINER_CONFIG was cleared by hand, since config.sh always sets it.
+# Derived from the RESOLVED path rather than from the flag, so it is still
+# right when the config came from the environment or from config.sh's default.
+VARIANT=
+if [ -n "${dc_config_path:-}" ]; then
+  VARIANT=$(basename "$(dirname "$dc_config_path")")
 fi
 
 usage() { usage_from_header "${BASH_SOURCE[0]}"; }
@@ -267,7 +285,7 @@ export_host_gids() {
   local grp gid var cfg=${dc_config_path:-}
   # Name the VARIANT in the warning: every config file is called
   # devcontainer.json, so the basename alone would not say which one.
-  [ -z "$cfg" ] || cfg=$(basename "$(dirname "$cfg")")/$(basename "$cfg")
+  [ -z "$cfg" ] || cfg=$VARIANT/$(basename "$cfg")
   while IFS= read -r grp; do
     [ -n "$grp" ] || continue
     var=CALAMAN_${grp//-/_}_GID
@@ -289,6 +307,68 @@ export_host_gids() {
       echo "         in there, fix ROCM_GROUPS in config.sh or that fallback." >&2
     fi
   done <<<"${ROCM_GROUPS:-}"
+}
+
+# Fail before `exec` does, naming the variant and the command that fixes it.
+#
+# `devcontainer exec` neither creates a container nor STARTS a stopped one. Run
+# against a variant that is merely stopped -- a reboot, a `docker stop`, a
+# machine that slept -- it fails with the daemon's raw
+# `container <id> is not running`, which names an id you have never seen, says
+# nothing about WHICH variant it belongs to, and reads like a broken container
+# rather than one that is simply down. A variant that was never built reads
+# much the same way. Both are one `up` away.
+#
+# A diagnostic, not a gate: with no docker on PATH there is nothing to inspect
+# here, so let the CLI produce its own error rather than inventing one.
+require_running() {
+  command -v docker >/dev/null 2>&1 || return 0
+  [ -n "$(container_ids || true)" ] && return 0
+  if [ -n "$(container_ids --stopped || true)" ]; then
+    echo "error: the ${VARIANT:-active} container for $WORKSPACE exists, but is stopped." >&2
+  else
+    echo "error: no ${VARIANT:-active} container for $WORKSPACE." >&2
+  fi
+  echo "       start it: devtools/devcontainer.sh ${variant_flag:+$variant_flag }up" >&2
+  echo "       (rebuild instead if its devcontainer.json or Dockerfile has moved on)" >&2
+  exit 1
+}
+
+# Tag the image this variant just built with the variant's name.
+#
+# WHY: the CLI derives a built image's name from the workspace folder ALONE --
+# `vsc-<basename>-<sha256 of the path>`, with the config file nowhere in it --
+# while it keys the CONTAINER on both. So the three variants of one checkout
+# share a single image name, and every `up` retags it away from whichever
+# variant built it last, leaving that one's image untagged: still on disk,
+# still held by its container, and no longer attributable in `docker images`.
+# There is no `--image-name` on `up` to head that off -- the CLI offers that
+# flag on `build` only -- so the tag goes on afterwards.
+#
+# It is a SECOND tag on the SAME repository, deliberately: `vsc-<...>:cuda`
+# beside the CLI's `vsc-<...>:latest`, not a name of our own. worktree.sh's
+# `rm` and `gc` recognise this project's build images by that
+# `vsc-<basename>-<64hex>` repository and delete by image id, so they keep
+# sweeping these with no edit there; a parallel naming scheme would leak past
+# both.
+#
+# Non-fatal throughout, like apply_cpu_limits: `up` has already done its work
+# by this point, and a missing tag costs legibility rather than a container.
+tag_variant_image() {
+  [ -n "$VARIANT" ] || return 0
+  local cid repo img
+  cid=$(container_ids | head -1 || true)
+  [ -n "$cid" ] || return 0
+  repo=$(docker inspect "$cid" --format '{{.Config.Image}}' 2>/dev/null || true)
+  img=$(docker inspect "$cid" --format '{{.Image}}' 2>/dev/null || true)
+  # Only an image the CLI built for this workspace. A config that names a
+  # prebuilt `image` runs someone else's tag, and stamping one of our variant
+  # names onto that would claim something about an image we did not build.
+  case "$repo" in vsc-*) ;; *) return 0 ;; esac
+  [ -n "$img" ] || return 0
+  if docker tag "$img" "${repo%%:*}:$VARIANT" 2>/dev/null; then
+    echo "image: tagged ${repo%%:*}:$VARIANT" >&2
+  fi
 }
 
 # The CLI prints the whole `docker run` invocation on failure, GH_TOKEN and
@@ -317,6 +397,7 @@ case "${1:-}" in
     require_git_dir
     export_host_gids
     run_cli up --workspace-folder "$WORKSPACE" "${DC_CONFIG[@]}" "$@"
+    tag_variant_image
     apply_cpu_limits
     ;;
   rebuild)
@@ -330,10 +411,12 @@ case "${1:-}" in
     export_host_gids
     run_cli up --workspace-folder "$WORKSPACE" \
       --remove-existing-container "${DC_CONFIG[@]}" "$@"
+    tag_variant_image
     apply_cpu_limits
     ;;
   shell)
     shift
+    require_running
     # An INTERACTIVE shell must not route through run_cli, and the reason is
     # not the redaction but the pipe it needs to do it. Two things break once
     # the CLI's stdout is not a terminal:
@@ -363,6 +446,7 @@ case "${1:-}" in
     ;;
   test)
     shift
+    require_running
     # TEST_CMD may carry its own arguments, so split it as a command line
     # rather than on whitespace alone.
     config_args "$TEST_CMD"
