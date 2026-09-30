@@ -29,7 +29,7 @@
  *
  * Consumers include this by its root-relative path, `"common/constants.h"`; the
  * sibling constants.cppm includes it bare and re-exports these names so importers
- * of `calaman.common.constants` see the same `calaman::` spellings.
+ * of `calaman.common` see the same `calaman::` spellings.
  */
 
 #pragma once

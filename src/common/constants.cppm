@@ -1,6 +1,6 @@
 /**
  * @file constants.cppm
- * @brief Primary interface for calaman.common.constants -- the module face of
+ * @brief The :constants partition of calaman.common -- the module face of
  *        constants.h
  *
  * Carries the typed constants (kZero, kOne, kTwo, kNegativeOne, kPi) to
@@ -14,19 +14,17 @@
  * implicitly exported, so `export using` republishes each under its original
  * `calaman::` spelling. Importers and #includers therefore see identical names.
  *
- * Add a constant in ONE place -- constants.h -- then add its `using` below, or
- * `import` consumers will not see it.
- *
- * Usage:
- *   import calaman.common.constants;
- *   const double two_pi = calaman::kTwo<double> * calaman::kPi<double>;
+ * This is a partition, not a standalone module: outside code reaches these names
+ * only through `import calaman.common;` (the primary interface re-exports this
+ * partition). Add a constant in ONE place -- constants.h -- then add its `using`
+ * below, or importers will not see it.
  */
 
 module;
 
 #include "constants.h"
 
-export module calaman.common.constants;
+export module calaman.common:constants;
 
 // Republish the header's names, which sit in the global module fragment, into
 // the purview so importers see them.
