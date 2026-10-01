@@ -46,10 +46,14 @@ the device half; `lacpy_bridge.h` carries the launcher declaration across the
 host/device boundary (a global module fragment cannot `import`).
 `instantiations.cpp` explicitly instantiates the wrapper for each type.
 
-The copy is one `wwr.extension.parallel_for` map over the `m*n` elements. A
-triangular region launches the full `m*n` grid and skips out-of-region elements
-rather than iterating a packed triangular index range — correct and simplest;
-skipping the wasted threads is a possible later optimisation.
+The copy is one hand-launched kernel: a 2-D grid of 1-D blocks, each block
+`4*WWR_WARP_SIZE` threads along the rows (x), with `blockIdx.y` naming the
+column. Column-major storage makes that a coalesced access, and `idivup`
+(`calaman.common`, `common/align_up.h`) sizes the x-direction block count. A
+triangular region launches the full grid and skips out-of-region elements rather
+than iterating a packed triangular index range — correct and simplest; skipping
+the wasted threads, and lifting the `gridDim.y` ≤ 65535 column bound that the
+one-block-per-column mapping carries, are possible later optimisations.
 
 ## Tested
 

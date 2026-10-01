@@ -5,14 +5,20 @@
 // CMake needs, under HIP this directory's CMakeLists.txt forces LANGUAGE CXX
 // back on so clang compiles it with -x hip.
 //
-// The copy is an index-per-thread map over the m*n elements of A, so it reuses
-// wwr.extension.parallel_for rather than a hand-written launcher. A triangular
-// region launches the full m*n grid and skips the elements outside it: correct,
-// and simplest for a first cut. Mapping a triangular index range to (i, j)
-// without the skipped threads is a possible later optimisation (see README).
+// The copy is one thread per element over a 2-D grid of 1-D blocks: the block's
+// 4*WWR_WARP_SIZE threads run along x (matrix rows), and blockIdx.y names the
+// column. Column-major storage makes a column contiguous, so a warp's
+// consecutive rows are consecutive addresses -- a coalesced access. Rows need
+// idivup(m, block) blocks in x (common/align_up.h); columns map one block each
+// in y, so gridDim.y is n and no bound on the column index is needed.
+//
+// A triangular region still launches the full grid and skips the elements
+// outside it: correct, and simplest. Mapping a packed triangular index range to
+// (i, j) without the skipped threads is a possible later optimisation (README).
 #include "lacpy_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include "common/align_up.h"
+#include "runtime.cuh"
 
 #include <cstddef>
 
@@ -20,64 +26,90 @@ namespace calaman::device {
 
 namespace {
 
-// The integer region contract from lacpy_bridge.h, named for the predicate below.
-constexpr int kRegionFull = 0;
-constexpr int kRegionUpper = 1;
-constexpr int kRegionLower = 2;
+// The integer region contract from lacpy_bridge.h, named for the predicate
+// below and used as the kernel's non-type template argument.
+constexpr unsigned int kRegionFull = 0;
+constexpr unsigned int kRegionUpper = 1;
+constexpr unsigned int kRegionLower = 2;
 
-/// @brief Copies one column-major element A(i,j) -> B(i,j) if it is in-region
+/// @brief [kernel] Copy column-major A(i,j) -> B(i,j) for the in-region elements
 ///
-/// Members are const so the functor is not copy-assignable, which is what
-/// parallel_for's device_functor concept checks for immutability. The linear
-/// index splits column-major: j = idx / m, i = idx - j*m.
-template<typename T>
-struct lacpy_functor {
-  const T *const a_;
-  T *const b_;
-  const std::size_t m_;
-  const std::size_t lda_;
-  const std::size_t ldb_;
-  const int region_;
+/// The row index i comes from the 1-D block laid along x; the column j is
+/// blockIdx.y. The grid is sized so every j is in range, so only i needs a bound.
+///
+/// @tparam Region the copied triangle (full/upper/lower), a non-type template
+///         argument so the region test below resolves at compile time.
+template<typename T, unsigned int Region>
+__global__ void lacpy_kernel(const T *const a, T *const b, const std::size_t m,
+                             const std::size_t lda, const std::size_t ldb) {
+  // The usual flattened thread index. i and j keep the builtins' unsigned int
+  // and widen to size_t in the address below, where j * ldb -- the offset that
+  // can exceed 32 bits -- is formed in 64-bit because ldb is size_t.
+  const unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+  const unsigned int j = blockIdx.y;
 
-  __device__ void operator()(const std::size_t idx) const {
-    const std::size_t j = idx / m_;
-    const std::size_t i = idx - j * m_;
-
-    // Upper is the diagonal and above (row <= col); lower is the diagonal and
-    // below (row >= col). All threads take the same region_ branch, so the only
-    // divergence is at the diagonal.
-    bool in_region = true;
-    if (region_ == kRegionUpper) {
-      in_region = i <= j;
-    } else if (region_ == kRegionLower) {
-      in_region = i >= j;
-    }
-
-    if (in_region) {
-      b_[i + j * ldb_] = a_[i + j * lda_];
-    }
+  if (i >= m) {
+    return;
   }
-};
+
+  // Upper is the diagonal and above (row <= col); lower is the diagonal and
+  // below (row >= col). Region is a template argument, so this is an if
+  // constexpr -- each specialization is branchless but for the diagonal, where
+  // neighbouring threads disagree on in_region.
+  bool in_region = true;
+  if constexpr (Region == kRegionUpper) {
+    in_region = i <= j;
+  } else if constexpr (Region == kRegionLower) {
+    in_region = i >= j;
+  }
+
+  if (in_region) {
+    b[i + j * ldb] = a[i + j * lda];
+  }
+}
 
 } // namespace
 
 template<typename T>
-void launch_lacpy(const wwr::wwrStream_t stream, const int region, const std::size_t m,
-                  const std::size_t n, const T *a, const std::size_t lda, T *b,
-                  const std::size_t ldb) {
-  const std::size_t count = m * n;
-  if (count < 1) {
+void lacpy(const wwr::wwrStream_t stream, const int region, const std::size_t m,
+           const std::size_t n, const T *a, const std::size_t lda, T *b, const std::size_t ldb) {
+  if (m < 1 || n < 1) {
     return;
   }
-  const lacpy_functor<T> functor{a, b, m, lda, ldb, region};
-  wwr::extension::parallel_for(stream, count, functor);
+
+  // 4 warps per block, laid along the rows. WWR_WARP_SIZE (runtime.cuh, carried
+  // as a define by wwr.device) is a configure-time value -- 32 by default, so
+  // 128 unless a CDNA build sets 64 and makes it 256. unsigned int is dim3's
+  // own field type.
+  constexpr unsigned int kBlockSize = 4 * WWR_WARP_SIZE;
+
+  // The row-block count is computed in size_t (idivup<std::size_t>) so a tall
+  // matrix cannot overflow a 32-bit intermediate; it and n then narrow to dim3's
+  // unsigned int fields. One block per column in y, whose 65535 bound maps
+  // matrices up to that many columns -- wider than any first-cut caller (the
+  // triangular-packing optimisation in the README revisits it).
+  const dim3 grid(idivup<std::size_t>(m, kBlockSize), n);
+  const dim3 block(kBlockSize);
+
+  // Dispatch the runtime region to the matching compile-time specialization.
+  switch (region) {
+  case kRegionUpper:
+    lacpy_kernel<T, kRegionUpper><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
+    break;
+  case kRegionLower:
+    lacpy_kernel<T, kRegionLower><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
+    break;
+  default:
+    lacpy_kernel<T, kRegionFull><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
+    break;
+  }
 }
 
 // One per supported type, matching interface.cppm's extern template list and
 // instantiations.cpp's -- all three lists cover the same types.
-template void launch_lacpy<float>(wwr::wwrStream_t, int, std::size_t, std::size_t, const float *,
-                                  std::size_t, float *, std::size_t);
-template void launch_lacpy<double>(wwr::wwrStream_t, int, std::size_t, std::size_t, const double *,
-                                   std::size_t, double *, std::size_t);
+template void lacpy<float>(wwr::wwrStream_t, int, std::size_t, std::size_t, const float *,
+                           std::size_t, float *, std::size_t);
+template void lacpy<double>(wwr::wwrStream_t, int, std::size_t, std::size_t, const double *,
+                            std::size_t, double *, std::size_t);
 
 } // namespace calaman::device

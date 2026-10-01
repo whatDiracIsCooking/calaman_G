@@ -50,7 +50,7 @@ namespace calaman {
 
 /// @brief Which part of A to copy -- the typed replacement for DLACPY's UPLO
 ///
-/// Enumerator values are the integer contract launch_lacpy() takes (see
+/// Enumerator values are the integer contract device::lacpy() takes (see
 /// lacpy_bridge.h); keep them in step.
 export enum class copy_region : int {
   full = 0,  ///< the whole m-by-n matrix
@@ -84,7 +84,7 @@ void lacpy(const wwr::wwrStream_t stream, const copy_region region, const std::s
   if (m == 0 || n == 0) {
     return;
   }
-  device::launch_lacpy(stream, static_cast<int>(region), m, n, d_a, lda, d_b, ldb);
+  device::lacpy(stream, static_cast<int>(region), m, n, d_a, lda, d_b, ldb);
 }
 
 extern template void lacpy<float>(wwr::wwrStream_t, copy_region, std::size_t, std::size_t,
