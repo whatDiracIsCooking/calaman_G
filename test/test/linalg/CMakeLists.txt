@@ -31,6 +31,35 @@ calaman_add_gtest_suite_tests(
   LinalgScaffoldTests
 )
 
+# Oracle suite for calaman.linalg:larfg -- the elementary Householder reflector.
+# Unlike the scaffold, it stages [alpha; x] on the device and runs the BLAS
+# routines, so it is REQUIRES_GPU (labeled `gpu`, excluded by `ctest -LE gpu`).
+# It compares against LAPACKE_?larfg; the two test/shared/ modules back the
+# device buffers that stage the inputs, and tolerance supplies eps<T>().
+calaman_add_gtest_executable(
+  NAME
+  larfg_tests
+  SOURCES
+  larfg_tests.cpp
+  LINK
+  calaman.linalg
+  calaman.test.shared.abort_policy
+  calaman.test.shared.device_handle
+  calaman.test.shared.tolerance
+  calaman::lapack_reference
+  wwr.blas
+  wwr.runtime_api
+  wwr.extension.memory_buffer
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  larfg_tests
+  SUITES
+  LarfgOracleTests
+  REQUIRES_GPU
+)
+
 # Oracle test for calaman.linalg's larf (applying an elementary reflector).
 # REQUIRES_GPU: every case stages C and v on the device and runs the gemv/ger
 # kernels, so `ctest -LE gpu` excludes it. It compares against LAPACKE_?larf
