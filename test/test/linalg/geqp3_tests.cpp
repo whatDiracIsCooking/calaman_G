@@ -1,6 +1,9 @@
 // Oracle test for calaman.linalg:geqp3 -- the top-level QR-with-column-pivoting
-// driver, all-free unblocked path. The oracle is LAPACKE_?geqp3 with jpvt = 0
-// (every column free), so the two must agree on the pivot permutation jpvt, on
+// driver, both the all-free path and the caller-fixed-prefix path. The oracle is
+// LAPACKE_?geqp3: with jpvt = 0 (every column free) for the all-free suites, and
+// with a NON-TRIVIAL input jpvt (a mix of fixed-nonzero and free-zero entries)
+// for the Geqp3FixedPrefixTests suite, since LAPACKE_?geqp3 honours that same
+// input-jpvt convention. The two must agree on the pivot permutation jpvt, on
 // |R| (its diagonal magnitudes), and on the factorization residual
 // ||A*P - Q*R|| / ||A||.
 //
@@ -27,6 +30,7 @@
 import std;
 
 import wwr.blas;
+import wwr.solver;
 import wwr.runtime_api;
 import wwr.extension.memory_buffer;
 import calaman.linalg;
@@ -355,6 +359,155 @@ TEST(Geqp3OracleTests, EmptyMatrices) {
   }
 
   wwr::wwrblasDestroy(blas);
+}
+
+// -------------------------------------------------------------------------
+// Fixed-prefix regime (nfxd > 0): a non-trivial input jpvt marks some columns
+// fixed. The 15-arg geqp3 overload pre-permutes the fixed columns to the front,
+// geqrf's the fixed block, ormqr's Q^T onto the free tail, and hands the free
+// trailing submatrix to the all-free path. LAPACKE_?geqp3 honours the same input
+// convention, so it is the oracle: pass BOTH the device and the reference the
+// same initial jpvt and compare the final jpvt and the residual.
+// -------------------------------------------------------------------------
+
+int ref_geqp3_fixed(int m, int n, float *a, int lda, int *jpvt, float *tau) {
+  return LAPACKE_sgeqp3(LAPACK_COL_MAJOR, m, n, a, lda, jpvt, tau);
+}
+int ref_geqp3_fixed(int m, int n, double *a, int lda, int *jpvt, double *tau) {
+  return LAPACKE_dgeqp3(LAPACK_COL_MAJOR, m, n, a, lda, jpvt, tau);
+}
+
+/// @brief geqp3's fixed-prefix path must match the reference for one case
+///
+/// @p mark is the input jpvt: nonzero marks a fixed leading column (held in the
+/// leading positions in the given order), zero a free column. It is passed to
+/// both the device overload and LAPACKE_?geqp3.
+template<typename T>
+void expect_fixed_matches_reference(int m, int n, unsigned seed, std::vector<int> mark,
+                                    int nb = 0) {
+  const int lda = m;
+  const int k = std::min(m, n);
+  std::mt19937 rng(seed);
+  std::uniform_real_distribution<double> dist(-3.0, 3.0);
+
+  std::vector<T> a_orig(static_cast<std::size_t>(lda) * n);
+  for (auto &x : a_orig) {
+    x = static_cast<T>(dist(rng));
+  }
+
+  // Reference: LAPACKE_?geqp3 with the caller's input jpvt.
+  std::vector<T> ref_a = a_orig;
+  std::vector<int> ref_jpvt = mark;
+  std::vector<T> ref_tau(static_cast<std::size_t>(k));
+  ASSERT_EQ(ref_geqp3_fixed(m, n, ref_a.data(), lda, ref_jpvt.data(), ref_tau.data()), 0);
+
+  // Device: the 15-arg overload. vn1/vn2/work are scratch; the solver handle
+  // shares the blas handle's stream; swork is sized by geqp3_solver_work_size.
+  auto handle = std::make_shared<DeviceHandle>(0);
+  wwr::wwrblasHandle_t blas{};
+  ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
+  wwr::wwrsolverDnHandle_t solver{};
+  ASSERT_EQ(wwr::wwrsolverDnCreate(&solver), wwr::WWRSOLVER_STATUS_SUCCESS);
+  ASSERT_EQ(wwr::wwrsolverDnSetStream(solver, handle->stream().get()),
+            wwr::WWRSOLVER_STATUS_SUCCESS);
+
+  auto d_a = to_device(handle, a_orig);
+  std::vector<T> tau_init(static_cast<std::size_t>(k), T{0});
+  auto d_tau = to_device(handle, tau_init);
+
+  std::vector<T> scratch(static_cast<std::size_t>(n), T{0});
+  auto d_vn1 = to_device(handle, scratch);
+  auto d_vn2 = to_device(handle, scratch);
+  std::vector<T> work_init(geqp3_work_size(m, n), T{0});
+  auto d_work = to_device(handle, work_init);
+
+  const int lwork_solver = geqp3_solver_work_size<T>(solver, m, n);
+  std::vector<T> swork_init(static_cast<std::size_t>(lwork_solver), T{0});
+  auto d_swork = to_device(handle, swork_init);
+  std::vector<int> info_init(1, 0);
+  auto d_info = to_device(handle, info_init);
+
+  std::vector<int> jpvt = mark;
+  const auto status = geqp3<T>(blas, solver, m, n, d_a.data(), lda, jpvt.data(), d_tau.data(),
+                               d_vn1.data(), d_vn2.data(), d_work.data(), d_swork.data(),
+                               lwork_solver, d_info.data(), nb);
+  ASSERT_EQ(status, wwr::WWRBLAS_STATUS_SUCCESS) << "m=" << m << " n=" << n;
+
+  const auto got_a = from_device(handle, d_a, static_cast<std::size_t>(lda) * n);
+  const auto got_tau = from_device(handle, d_tau, static_cast<std::size_t>(k));
+  wwr::wwrsolverDnDestroy(solver);
+  wwr::wwrblasDestroy(blas);
+
+  const T norm_a = frobenius_norm(a_orig);
+  const T tol =
+      factorization_tol<T>(norm_a, static_cast<std::size_t>(m), static_cast<std::size_t>(n));
+
+  // 1. The fixed columns land at the front in their given order, and (with
+  // well-separated norms in the free tail) the whole permutation matches the
+  // reference exactly.
+  for (int j = 0; j < n; ++j) {
+    EXPECT_EQ(jpvt[static_cast<std::size_t>(j)], ref_jpvt[static_cast<std::size_t>(j)])
+        << "jpvt[" << j << "] m=" << m << " n=" << n << " seed=" << seed;
+  }
+
+  // 2. |R| diagonal magnitudes, in order (pivots match here).
+  for (int i = 0; i < k; ++i) {
+    const T got = std::abs(got_a[static_cast<std::size_t>(i) * lda + i]);
+    const T ref = std::abs(ref_a[static_cast<std::size_t>(i) * lda + i]);
+    EXPECT_NEAR(got, ref, tol) << "|R| diag " << i << " m=" << m << " n=" << n;
+  }
+
+  // 3. Residual ||A(:,jpvt) - Q*R|| / ||A|| within tolerance, reconstructed from
+  // the device's own packed output and tau against A permuted by the final jpvt.
+  const auto qr = reconstruct_qr(got_a, got_tau, m, n, lda);
+  std::vector<T> residual(static_cast<std::size_t>(lda) * n);
+  for (int j = 0; j < n; ++j) {
+    const int src = jpvt[static_cast<std::size_t>(j)] - 1;
+    for (int i = 0; i < m; ++i) {
+      residual[static_cast<std::size_t>(j) * lda + i] =
+          a_orig[static_cast<std::size_t>(src) * lda + i] -
+          qr[static_cast<std::size_t>(j) * lda + i];
+    }
+  }
+  EXPECT_LE(frobenius_norm(residual), tol)
+      << "residual m=" << m << " n=" << n << " seed=" << seed;
+}
+
+// A mix of fixed (nonzero) and free (zero) columns, tall / wide / square, over
+// both the unblocked and the blocked free-tail route. The fixed marks are not a
+// contiguous prefix, so the pre-permute genuinely reorders columns.
+TEST(Geqp3FixedPrefixTests, TallDouble) {
+  expect_fixed_matches_reference<double>(10, 5, 100, {1, 0, 1, 0, 0});
+  expect_fixed_matches_reference<double>(12, 6, 101, {0, 1, 0, 0, 1, 0});
+}
+TEST(Geqp3FixedPrefixTests, TallFloat) {
+  expect_fixed_matches_reference<float>(8, 4, 102, {1, 0, 0, 1});
+}
+TEST(Geqp3FixedPrefixTests, WideDouble) {
+  expect_fixed_matches_reference<double>(5, 10, 103, {0, 1, 0, 1, 0, 0, 0, 1, 0, 0});
+}
+TEST(Geqp3FixedPrefixTests, SquareDouble) {
+  expect_fixed_matches_reference<double>(6, 6, 104, {1, 0, 1, 0, 0, 1});
+}
+// First column fixed only, and a single fixed column in the middle -- small nfxd.
+TEST(Geqp3FixedPrefixTests, SingleFixedDouble) {
+  expect_fixed_matches_reference<double>(9, 5, 105, {1, 0, 0, 0, 0});
+  expect_fixed_matches_reference<double>(9, 5, 106, {0, 0, 1, 0, 0});
+}
+// Multi-block free tail: min(m,n) well past kBlockSize so the free-tail path runs
+// several :laqps blocks after the fixed prefix.
+TEST(Geqp3FixedPrefixTests, MultiBlockDouble) {
+  std::vector<int> mark(70, 0);
+  mark[0] = 1;
+  mark[5] = 1;
+  mark[40] = 1;
+  expect_fixed_matches_reference<double>(80, 70, 107, mark);
+}
+// nfxd == 0 through the 15-arg overload: an all-zero jpvt must forward to the
+// all-free path and still match, so the overload is a safe single entry point.
+TEST(Geqp3FixedPrefixTests, NoFixedForwardsDouble) {
+  expect_fixed_matches_reference<double>(8, 5, 108, {0, 0, 0, 0, 0});
 }
 
 } // namespace

@@ -45,10 +45,14 @@
 #           reaches wwr_backend PRIVATE and the src/ root through the PUBLIC
 #           include dir.
 #   :geqp3  geqp3.cppm -- the top-level QR-with-column-pivoting driver (?geqp3),
-#           all-free BLOCKED path: seeds the column norms vn1/vn2 with one
-#           wwr::nrm2 per column, then runs :laqps blocks (finishing the tail
-#           with :laqp2) above a small crossover, else one :laqp2 panel. A pure
-#           host composition; needs nothing :laqp2 / :laqps do not already link.
+#           both the all-free BLOCKED path (seeds vn1/vn2 with one wwr::nrm2 per
+#           column, then :laqps blocks finishing with a :laqp2 tail above a
+#           small crossover, else one :laqp2 panel) and the fixed-prefix path
+#           (pre-permute the fixed columns to the front, wwr::geqrf the leading
+#           block, wwr::ormqr Q^T onto the free tail, then the all-free path on
+#           the free trailing submatrix). The fixed-prefix path adds the two
+#           solver links below; both paths are pure host compositions over
+#           already-wrapped routines.
 
 # The downdate device-kernel libraries -- hand-launched through
 # wwr.extension.parallel_for from laqp2.cu / laqps.cu, so each links that
@@ -85,7 +89,9 @@ calaman_add_cxx_module_library(
   geqp3.cppm
   LINK_PUBLIC
   wwr.wrappers.blas
+  wwr.wrappers.solver
   wwr.blas
+  wwr.solver
   wwr.runtime_api
   calaman.common
   LINK_PRIVATE

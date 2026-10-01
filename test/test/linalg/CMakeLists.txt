@@ -154,12 +154,16 @@ calaman_add_gtest_suite_tests(
 )
 
 # Oracle suite for calaman.linalg:geqp3 -- the top-level QR-with-column-pivoting
-# driver, all-free blocked path. REQUIRES_GPU: every case stages A/tau/vn1/
-# vn2/work on the device and runs the reflector + downdate kernels, so `ctest
-# -LE gpu` excludes it. The oracle is LAPACKE_?geqp3 with jpvt = 0; the two
-# test/shared/ modules stage the device buffers and tolerance supplies the
-# factorization bound. geqp3 takes a bare wwrblasHandle_t plus caller-supplied
-# device scratch (seeding vn1/vn2 itself) and allocates nothing.
+# driver, the all-free path (Geqp3OracleTests) and the caller-fixed-prefix path
+# (Geqp3FixedPrefixTests). REQUIRES_GPU: every case stages A/tau/vn1/vn2/work on
+# the device and runs the reflector + downdate kernels, so `ctest -LE gpu`
+# excludes it. The oracle is LAPACKE_?geqp3 -- with jpvt = 0 for the all-free
+# suites, and with a non-trivial input jpvt for the fixed-prefix suite (LAPACKE
+# honours the same input convention). The two test/shared/ modules stage the
+# device buffers and tolerance supplies the factorization bound. geqp3 takes a
+# bare wwrblasHandle_t (and a wwrsolverDnHandle_t for the fixed-prefix overload,
+# hence wwr.solver here for the test's own handle creation) plus caller-supplied
+# device scratch, and allocates nothing.
 calaman_add_gtest_executable(
   NAME
   geqp3_tests
@@ -172,6 +176,7 @@ calaman_add_gtest_executable(
   calaman.test.shared.tolerance
   calaman::lapack_reference
   wwr.blas
+  wwr.solver
   wwr.runtime_api
   wwr.extension.memory_buffer
 )
@@ -181,5 +186,6 @@ calaman_add_gtest_suite_tests(
   geqp3_tests
   SUITES
   Geqp3OracleTests
+  Geqp3FixedPrefixTests
   REQUIRES_GPU
 )
