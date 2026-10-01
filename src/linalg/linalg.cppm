@@ -33,3 +33,4 @@ export module calaman.linalg;
 export import :larfg;
 export import :larf;
 export import :laqp2;
+export import :geqp3;
