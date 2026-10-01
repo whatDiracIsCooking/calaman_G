@@ -1,4 +1,4 @@
-// Oracle test for calaman.linalg:larfg: the generated Householder reflector must
+// Oracle test for calaman.larfg: the generated Householder reflector must
 // agree with the reference LAPACK -- LAPACKE_slarfg / LAPACKE_dlarfg -- computed
 // in the SAME precision on the host. larfg builds H = I - tau*v*v^T with
 // v = [1; v_tail] so that H*[alpha; x] = [beta; 0]; the device path must produce
@@ -28,7 +28,7 @@ import std;
 import wwr.blas;
 import wwr.runtime_api;
 import wwr.extension.memory_buffer;
-import calaman.linalg;
+import calaman.larfg;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
 import calaman.test.shared.tolerance;

@@ -1,4 +1,4 @@
-// Oracle test for calaman.linalg:geqp3 -- the top-level QR-with-column-pivoting
+// Oracle test for calaman.geqp3 -- the top-level QR-with-column-pivoting
 // driver, both the all-free path and the caller-fixed-prefix path. The oracle is
 // LAPACKE_?geqp3: with jpvt = 0 (every column free) for the all-free suites, and
 // with a NON-TRIVIAL input jpvt (a mix of fixed-nonzero and free-zero entries)
@@ -33,7 +33,7 @@ import wwr.blas;
 import wwr.solver;
 import wwr.runtime_api;
 import wwr.extension.memory_buffer;
-import calaman.linalg;
+import calaman.geqp3;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
 import calaman.test.shared.tolerance;

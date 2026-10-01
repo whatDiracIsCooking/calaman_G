@@ -1,7 +1,7 @@
 /**
  * @file geqp3.cppm
- * @brief The :geqp3 partition of calaman.linalg -- the top-level QR-with-column-
- *        pivoting driver, LAPACK's ?geqp3 (the all-free path and the
+ * @brief The calaman.geqp3 module -- the top-level QR-with-column-pivoting
+ *        driver, LAPACK's ?geqp3 (the all-free path and the
  *        caller-fixed-prefix path)
  *
  * Factors an m-by-n column-major matrix with column pivoting into A*P = Q*R,
@@ -39,37 +39,37 @@
  * Templated over float, double.
  *
  * BLOCKED (level-3). When min(m,n) exceeds kCrossoverBlockSize the driver runs a
- * loop of :laqps blocks of up to kBlockSize columns -- each block factors kb
+ * loop of laqps blocks of up to kBlockSize columns -- each block factors kb
  * columns (kb <= nb, possibly short if a column norm collapses) and applies its
  * effect to the rest of the trailing matrix with ONE gemm -- advancing the panel
  * offset by the returned kb, and finishes the tail (the last min(m,n) - offset
- * columns, below the crossover) with the unblocked :laqp2. When min(m,n) is at
- * or below the crossover the whole matrix is one :laqp2 panel, as before (#11).
+ * columns, below the crossover) with the unblocked laqp2. When min(m,n) is at
+ * or below the crossover the whole matrix is one laqp2 panel, as before (#11).
  * This is the seam issue #12 fills: #11 shipped the unblocked driver with the
  * crossover held above every n; here the crossover is a real, small constant.
  *
  * A HOST COMPOSITION, not a kernel: the norm seed is a wwr::nrm2 loop, each panel
- * is :laqps or :laqp2, and the one host<->device sync per step is the panels'
- * own granularity. No .cu of its own (:laqps carries the downdate kernel).
+ * is laqps or laqp2, and the one host<->device sync per step is the panels'
+ * own granularity. No .cu of its own (laqps carries the downdate kernel).
  *
  * Allocation-free shipped surface (CLAUDE.md, test/shared/README.md): A, tau,
  * vn1, vn2 are caller-provided device pointers and jpvt a HOST int array. The
- * blocked path needs :laqps's extra scratch -- the auxiliary matrix F (n-by-nb),
+ * blocked path needs laqps's extra scratch -- the auxiliary matrix F (n-by-nb),
  * the vector auxv (length nb) and the int degraded-column mask -- so the driver's
  * @p work contract is EXTENDED: work must hold, as one device T buffer,
  * n (laqp2's per-step larf intermediate) + n*nb (F) + nb (auxv) + the mask (n
  * ints, reinterpreted from n T slots, valid since sizeof(T) >= sizeof(int) for
  * float/double). The helper geqp3_work_size(m, n) returns that length; the test
- * allocates it. geqp3 seeds vn1/vn2 before handing the panels on; :laqp2
- * initialises jpvt, and :laqps only updates it, so for the blocked path geqp3
- * initialises jpvt to the identity itself before the first :laqps block.
+ * allocates it. geqp3 seeds vn1/vn2 before handing the panels on; laqp2
+ * initialises jpvt, and laqps only updates it, so for the blocked path geqp3
+ * initialises jpvt to the identity itself before the first laqps block.
  *
  * Requires the handle's DEFAULT (host) pointer mode, like larfg/laqp2/laqps, and
  * orders the per-column norm uploads on the handle's own stream. Complex ?geqp3
  * is a deliberate later extension, as larfg/laqp2 document.
  *
  * Usage (all-free, 11-arg):
- *   import calaman.linalg;
+ *   import calaman.geqp3;
  *   import wwr.blas;          // wwrblasHandle_t, wwrblasCreate
  *   // d_A: m x n device matrix, lda; d_tau: length min(m,n);
  *   // d_vn1, d_vn2: length n (scratch, seeded here);
@@ -88,37 +88,37 @@
  *                          d_vn2, d_work, d_swork, swork_len, d_info);
  */
 
-export module calaman.linalg:geqp3;
+export module calaman.geqp3;
 
 import wwr.blas;            // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_*
 import wwr.runtime_api;     // wwrMemcpy(Async), wwrStreamSynchronize, wwrSuccess
 import wwr.wrappers.blas;   // nrm2, wwrblasSideMode_t, wwrblasOperation_t
 import wwr.wrappers.solver; // geqrf, geqrf_bufferSize, ormqr, ormqr_bufferSize
-import :laqp2;              // calaman::laqp2
-import :laqps;              // calaman::laqps
+import calaman.laqp2;       // calaman::laqp2
+import calaman.laqps;       // calaman::laqps
 import std;                // std::min
 
 namespace calaman {
 
-/// @brief The block width the blocked path factors per :laqps call
+/// @brief The block width the blocked path factors per laqps call
 ///
-/// Each :laqps block factors up to this many columns, deferring one gemm per
+/// Each laqps block factors up to this many columns, deferring one gemm per
 /// block. 32 is a conventional LAPACK-style panel width -- wide enough that the
 /// level-3 gemm dominates the per-column level-2 work, narrow enough that F
 /// (n-by-nb) stays small. The real LAPACK asks ilaenv; a fixed constant is the
 /// honest first cut for a single-GPU library with no machine database.
 inline constexpr int kBlockSize = 32;
 
-/// @brief The crossover below which the matrix is one unblocked :laqp2 panel
+/// @brief The crossover below which the matrix is one unblocked laqp2 panel
 ///
 /// Blocked QR only pays off once there is a trailing matrix large enough for the
 /// deferred gemm to beat repeated level-2 updates; below this the bookkeeping
 /// (F, the deferred gemm, the mask recompute) is pure overhead, so the driver
-/// runs :laqp2 directly. Held deliberately SMALL (not the 1<<30 seam #11 used),
-/// so any non-trivial matrix takes the blocked :laqps route and the oracle suite
+/// runs laqp2 directly. Held deliberately SMALL (not the 1<<30 seam #11 used),
+/// so any non-trivial matrix takes the blocked laqps route and the oracle suite
 /// exercises it. A caller that drives @p nb past min(m,n) (see geqp3's nb
-/// parameter) forces the single-:laqp2 tail regardless, which the crossover test
+/// parameter) forces the single-laqp2 tail regardless, which the crossover test
 /// uses to check the fallback still matches.
 inline constexpr int kCrossoverBlockSize = 4;
 
@@ -128,7 +128,7 @@ inline constexpr int kCrossoverBlockSize = 4;
 /// intermediate; [n, n + n*nb) the auxiliary matrix F (n-by-nb, ldf = n);
 /// [n + n*nb, n + n*nb + nb) auxv; [n + n*nb + nb, n + n*nb + nb + n) the int
 /// degraded-column mask (n ints reinterpreted from n T slots). nb is kBlockSize
-/// capped at min(m,n), matching the width geqp3 passes to :laqps.
+/// capped at min(m,n), matching the width geqp3 passes to laqps.
 export inline constexpr std::size_t geqp3_work_size(const int m, const int n) {
   if (m <= 0 || n <= 0) {
     return 1;
@@ -181,8 +181,8 @@ int geqp3_solver_work_size(wwr::wwrsolverDnHandle_t solver, const int m, const i
 /// Produces A*P = Q*R in place: R in A's upper trapezoid, reflector j below the
 /// diagonal of column j, tau[j] the j-th scalar, jpvt the 1-based column
 /// permutation. Seeds vn1[j] = vn2[j] = ||A(:,j)|| with one wwr::nrm2 per column,
-/// then factors in :laqps blocks of @p nb columns (finishing the tail with
-/// :laqp2) when min(m,n) > kCrossoverBlockSize, else as one :laqp2 panel.
+/// then factors in laqps blocks of @p nb columns (finishing the tail with
+/// laqp2) when min(m,n) > kCrossoverBlockSize, else as one laqp2 panel.
 ///
 /// Short-circuits: the first failing nrm2 / upload / panel status is returned and
 /// the factorization stops there. Returns success and writes nothing when the
@@ -201,7 +201,7 @@ int geqp3_solver_work_size(wwr::wwrsolverDnHandle_t solver, const int m, const i
 /// @param vn2 Device array, length n; original column norms, seeded here
 /// @param work Device workspace, length >= geqp3_work_size(m, n)
 /// @param nb Block width override; 0 (the default) uses kBlockSize. A value past
-///           min(m,n) forces the single-:laqp2 tail -- the crossover fallback
+///           min(m,n) forces the single-laqp2 tail -- the crossover fallback
 /// @return The status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
 namespace detail {
 
@@ -210,8 +210,8 @@ namespace detail {
 /// The shared engine behind both geqp3 overloads: it pivots and factors the
 /// columns [start, n) over the FULL m rows (pivot rows begin at row @p start, so
 /// column swaps are full-length and rows above @p start -- already-factored R --
-/// are preserved), reusing :laqps blocks of @p block columns finishing with a
-/// :laqp2 tail above the crossover, else one :laqp2 panel. The free columns'
+/// are preserved), reusing laqps blocks of @p block columns finishing with a
+/// laqp2 tail above the crossover, else one laqp2 panel. The free columns'
 /// vn1/vn2 (indices [start, n)) must be pre-seeded to describe A(start:m, col).
 /// jpvt[start:n] is OVERWRITTEN with a LOCAL 1-based permutation of {1..n-start}
 /// (position start+p holds which pre-call free column, 1-based within the panel,
@@ -226,15 +226,15 @@ wwr::wwrblasStatus_t factor_free_panel(wwr::wwrblasHandle_t handle, const int m,
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
-  // Below the crossover (or an nb override past the panel), one unblocked :laqp2
-  // panel at offset=start over the full-m columns: :laqp2 seeds jpvt[start:] to
+  // Below the crossover (or an nb override past the panel), one unblocked laqp2
+  // panel at offset=start over the full-m columns: laqp2 seeds jpvt[start:] to
   // the LOCAL identity {1..n-start} and pivots full-m columns itself.
   if (mn <= kCrossoverBlockSize || block >= mn) {
     return laqp2<T>(handle, m, n - start, start, A + static_cast<std::size_t>(start) * lda, lda,
                     jpvt + start, tau + start, vn1 + start, vn2 + start, work);
   }
 
-  // Blocked: :laqps only UPDATES jpvt (the driver owns the running permutation
+  // Blocked: laqps only UPDATES jpvt (the driver owns the running permutation
   // across blocks), so seed the LOCAL identity over [start, n) before block one.
   for (int j = start; j < n; ++j) {
     jpvt[j] = j - start + 1;
@@ -268,15 +268,15 @@ wwr::wwrblasStatus_t factor_free_panel(wwr::wwrblasHandle_t handle, const int m,
     offset += kb;
     // A block that returned fewer columns than asked (a collapsing norm) means
     // the remaining panel is better finished unblocked -- fall through to the
-    // :laqp2 tail below, exactly as LAPACK breaks its blocked loop.
+    // laqp2 tail below, exactly as LAPACK breaks its blocked loop.
     if (kb < want) {
       break;
     }
   }
 
-  // Tail: the remaining columns [offset, n), finished as one :laqp2 panel at
+  // Tail: the remaining columns [offset, n), finished as one laqp2 panel at
   // offset=offset over the full-m columns, so its full-length swaps preserve the
-  // R rows above `offset` that the blocks already filled. :laqp2 reseeds
+  // R rows above `offset` that the blocks already filled. laqp2 reseeds
   // jpvt[offset:] to the LOCAL identity {1 .. n-offset}, so it comes back as a
   // permutation of those local indices; translate it through a snapshot of the
   // pre-tail jpvt[offset:n] (themselves panel-local {1..n-start} indices) so the

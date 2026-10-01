@@ -1,6 +1,6 @@
 /**
  * @file laqps_bridge.h
- * @brief Device-launcher declaration shared between calaman.linalg:laqps and its
+ * @brief Device-launcher declaration shared between calaman.laqps and its
  *        device-compiled translation unit
  *
  * Included by laqps.cppm in its GLOBAL MODULE FRAGMENT, and by laqps.cu

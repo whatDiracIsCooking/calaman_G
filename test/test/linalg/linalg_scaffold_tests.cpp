@@ -1,4 +1,4 @@
-// Scaffold suite for the calaman.linalg tier: it proves the module imports and
+// Scaffold suite for the linalg tier: it proves every linalg module imports and
 // links, the shared tolerance helper computes the agreed bound, and the
 // reference LAPACK (LAPACKE) is reachable as the oracle -- the pieces every
 // reflector/pivoted-QR PR slots into.
@@ -16,7 +16,13 @@
 
 import std;
 
-import calaman.linalg; // exports nothing yet; imported to prove it compiles/links
+// Imported only to prove every linalg module compiles and links on a card-less
+// runner (none of their names are used here); the numerical suites exercise them.
+import calaman.larfg;
+import calaman.larf;
+import calaman.laqp2;
+import calaman.laqps;
+import calaman.geqp3;
 import calaman.test.shared.tolerance;
 
 namespace calaman {

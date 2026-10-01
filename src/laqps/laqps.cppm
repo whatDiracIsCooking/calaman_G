@@ -1,7 +1,7 @@
 /**
  * @file laqps.cppm
- * @brief The :laqps partition of calaman.linalg -- the blocked, level-3
- *        Businger-Golub pivoted-QR panel, LAPACK's ?laqps
+ * @brief The calaman.laqps module -- the blocked, level-3 Businger-Golub
+ *        pivoted-QR panel, LAPACK's ?laqps
  *
  * Factors up to @p nb columns of the trailing submatrix of an m-by-n
  * column-major matrix A, starting at row/column @p offset, with Businger-Golub
@@ -59,7 +59,7 @@
  * deliberate later extension, for the reasons larfg/laqp2 document.
  *
  * Usage:
- *   import calaman.linalg;
+ *   import calaman.laqps;
  *   import wwr.blas;          // wwrblasHandle_t, wwrblasCreate
  *   // d_A: m x n; d_tau: length min(m,n); d_vn1,d_vn2: length n;
  *   // d_F: n x nb; d_auxv: length nb; d_flags: int length n; jpvt: host int[n]
@@ -72,21 +72,26 @@ module;
 
 #include "laqps_bridge.h"
 
-export module calaman.linalg:laqps;
+export module calaman.laqps;
 
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_OP_*, WWRBLAS_STATUS_*
 import wwr.runtime_api;   // wwrMemcpy(Async), wwrStreamSynchronize, wwrSuccess
 import wwr.wrappers.blas; // iamax, swap, nrm2, gemv, gemm
-import :larfg;            // calaman::larfg
+import calaman.larfg;     // calaman::larfg
 import std;               // std::sqrt, std::min, std::vector
 
 namespace calaman {
 
-// detail, not an anonymous namespace: these helpers are named by the exported
-// laqps template's body, which is instantiated in every importer's TU. A named
-// (unexported) namespace gives them module linkage, reachable by the
-// instantiation yet absent from the module's public surface (as laqp2 does).
-namespace detail {
+// laqps_detail, not an anonymous namespace: these helpers are named by the
+// exported laqps template's body, which is instantiated in every importer's TU.
+// A named (unexported) namespace gives them module linkage, reachable by the
+// instantiation yet absent from the module's public surface (as laqp2 does). The
+// namespace is MODULE-SPECIFIC (laqps_detail, not a bare detail) because
+// calaman.laqp2 defines an identically-named swap_device_scalar: once the two
+// live in separate modules, a consumer that imports both (calaman.geqp3) would
+// see one qualified name attached to two modules -- ill-formed -- unless the
+// namespaces differ.
+namespace laqps_detail {
 
 /// @brief Swap two single device scalars through a host staging pair, on @p stream
 ///
@@ -123,7 +128,7 @@ bool set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &value) {
          wwr::wwrStreamSynchronize(stream) == wwr::wwrSuccess;
 }
 
-} // namespace detail
+} // namespace laqps_detail
 
 /// @brief Factor up to @p nb columns of A's trailing submatrix (LAPACK ?laqps)
 ///
@@ -222,8 +227,8 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
           return sf;
         }
       }
-      if (!detail::swap_device_scalar<T>(stream, vn1 + k, vn1 + pvt) ||
-          !detail::swap_device_scalar<T>(stream, vn2 + k, vn2 + pvt)) {
+      if (!laqps_detail::swap_device_scalar<T>(stream, vn1 + k, vn1 + pvt) ||
+          !laqps_detail::swap_device_scalar<T>(stream, vn2 + k, vn2 + pvt)) {
         return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
       }
       const int tmp = jpvt[k];
@@ -254,13 +259,13 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
         return s;
       }
     }
-    if (!detail::set_device_scalar<T>(stream, tau + k, host_tau)) {
+    if (!laqps_detail::set_device_scalar<T>(stream, tau + k, host_tau)) {
       return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
     }
 
     // Set A(rk,k) = 1 so `col` is the full reflector v with v[0] == 1, the form
     // the F-building gemvs below need. Restored to beta after step 5.
-    if (!detail::set_device_scalar<T>(stream, col, one)) {
+    if (!laqps_detail::set_device_scalar<T>(stream, col, one)) {
       return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
     }
 
@@ -273,7 +278,7 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
     // 4b, F(k,k) stays 0). Explicitly zero F(0:k+1, k) first so the accumulate in
     // 4b lands on a clean slate and the deferred gemm reads a well-defined F.
     for (int i = 0; i <= k && trail >= 0; ++i) {
-      if (!detail::set_device_scalar<T>(stream, F + static_cast<size_t>(k) * ldf + i, zero)) {
+      if (!laqps_detail::set_device_scalar<T>(stream, F + static_cast<size_t>(k) * ldf + i, zero)) {
         return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
       }
     }
@@ -318,7 +323,7 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
     }
 
     // Restore A(rk,k) = beta (the reflector's leading R entry).
-    if (!detail::set_device_scalar<T>(stream, col, beta)) {
+    if (!laqps_detail::set_device_scalar<T>(stream, col, beta)) {
       return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
     }
 
@@ -379,8 +384,8 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
       if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
         return s;
       }
-      if (!detail::set_device_scalar<T>(stream, vn1 + j, norm) ||
-          !detail::set_device_scalar<T>(stream, vn2 + j, norm)) {
+      if (!laqps_detail::set_device_scalar<T>(stream, vn1 + j, norm) ||
+          !laqps_detail::set_device_scalar<T>(stream, vn2 + j, norm)) {
         return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
       }
     }

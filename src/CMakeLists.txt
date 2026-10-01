@@ -11,5 +11,14 @@ add_subdirectory(diff_norm)
 add_subdirectory(gebal)
 add_subdirectory(horner)
 add_subdirectory(lacpy)
-add_subdirectory(linalg)
 add_subdirectory(orthogonalize)
+
+# The dense linear-algebra routines -- the geqp3 column-pivoted-QR call graph,
+# one directory and one module per LAPACK routine. Added in call-graph order so
+# each module's dependencies are declared before it: larfg/larf, then laqp2
+# (larfg+larf) and laqps (larfg), then the geqp3 driver (laqp2+laqps).
+add_subdirectory(larfg)
+add_subdirectory(larf)
+add_subdirectory(laqp2)
+add_subdirectory(laqps)
+add_subdirectory(geqp3)

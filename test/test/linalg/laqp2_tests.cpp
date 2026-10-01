@@ -1,4 +1,4 @@
-// Oracle test for calaman.linalg:laqp2 -- the level-2 Businger-Golub pivoted-QR
+// Oracle test for calaman.laqp2 -- the level-2 Businger-Golub pivoted-QR
 // panel. LAPACKE ships no ?laqp2 C binding, so the oracle is LAPACKE_?geqp3 run
 // on the WHOLE matrix as one panel (offset 0): geqp3's panel IS laqp2 when the
 // block size covers all columns, so the two must agree on the pivot permutation,
@@ -33,7 +33,7 @@ import std;
 import wwr.blas;
 import wwr.runtime_api;
 import wwr.extension.memory_buffer;
-import calaman.linalg;
+import calaman.laqp2;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
 import calaman.test.shared.tolerance;

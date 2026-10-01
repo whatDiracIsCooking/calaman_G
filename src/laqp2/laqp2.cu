@@ -1,6 +1,6 @@
 // laqp2.cu
 //
-// The device-kernel half of calaman.linalg:laqp2: the LAWN 176 partial-norm
+// The device-kernel half of calaman.laqp2: the LAWN 176 partial-norm
 // downdate, the one elementwise-over-columns stage of the level-2 pivoted QR
 // panel. Everything else in laqp2 is a host composition of wrapped BLAS plus
 // larfg/larf; this is the only piece that is genuinely per-column device work,
