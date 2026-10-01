@@ -4,15 +4,15 @@
 #   common.cppm         primary interface; only `export import`s the partitions
 #   :constants          constants.cppm + constants.h -- typed constants
 #   :align_up           align_up.cppm + align_up.h -- integer rounding helpers
-#   :enums              enums.cppm + enums.h -- LAPACK selector enums (Jobz, Uplo)
+#   :enums              enums.cppm + enums.h -- the LAPACK selector enums
 #   :workspace_builder  workspace_builder.cppm -- byte sizing for a device
 #                       scratch buffer (WorkspaceBuilder); pure host arithmetic
 #
-# The :constants, :align_up and :enums partitions are each a header-plus-partition
-# pair with no device code and no implementation unit: the values/helpers/enums
-# are `inline constexpr` / `constexpr` / scoped enums in the .h, and the .cppm
-# only re-exports them (includes the header in its GMF and republishes the
-# names). The .h is a
+# The :constants, :align_up and :enums partitions have no device code and no
+# implementation unit: each is a header-plus-partition pair whose values,
+# helpers or enums are `inline constexpr` / `constexpr` / scoped enums in the
+# .h, while the .cppm only re-exports them (includes the header in its GMF and
+# republishes the names). The .h is a
 # GMF-shared header, #included both by other modules and by device .cu TUs as
 # "common/<name>.h", so the include root that resolves that spelling must be
 # EXPORTED, not PRIVATE (CLAUDE.md, Conventions). These are the first shared
