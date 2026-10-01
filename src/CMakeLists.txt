@@ -9,3 +9,4 @@
 add_subdirectory(common)
 add_subdirectory(diff_norm)
 add_subdirectory(lacpy)
+add_subdirectory(linalg)

@@ -1,12 +1,15 @@
 # `test/shared/`
 
-Two types the test tier owns because WarpWraps deliberately stopped shipping
-them, and calaman deliberately does not ship them either.
+Test-support modules imported by more than one suite. The first two are types
+the test tier owns because WarpWraps deliberately stopped shipping them, and
+calaman deliberately does not ship them either; the third is the numerical
+tolerance the linalg oracle suites share.
 
 | Module | Type |
 |---|---|
 | `calaman.test.shared.abort_policy` | `calaman::test::AbortPolicy<T>` — print to stderr and abort |
 | `calaman.test.shared.device_handle` | `calaman::test::DeviceHandle` — one GPU's index, properties, default stream, default pool |
+| `calaman.test.shared.tolerance` | `eps<T>()`, `frobenius_norm`, `factorization_tol` — the shared `O(eps * ‖A‖ * min(m,n))` bound |
 
 ## Why they are not in `src/`
 
