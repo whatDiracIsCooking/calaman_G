@@ -28,5 +28,5 @@
 
 export module calaman.linalg;
 
-// No partitions yet -- the reflector/pivoted-QR PRs add one `export import`
-// line each, in call-graph order (larfg/larf, then laqp2, then geqp3/laqps).
+// Partitions in call-graph order (larfg/larf, then laqp2, then geqp3/laqps).
+export import :larfg;
