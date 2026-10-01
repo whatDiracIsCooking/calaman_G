@@ -36,7 +36,7 @@ namespace calaman::device {
 /// @tparam T Element type; instantiated for float, double
 /// @param region 0 = full, 1 = upper triangle, 2 = lower triangle
 template<typename T>
-void launch_lacpy(wwr::wwrStream_t stream, int region, std::size_t m, std::size_t n, const T *a,
-                  std::size_t lda, T *b, std::size_t ldb);
+void lacpy(wwr::wwrStream_t stream, int region, std::size_t m, std::size_t n, const T *a,
+           std::size_t lda, T *b, std::size_t ldb);
 
 } // namespace calaman::device

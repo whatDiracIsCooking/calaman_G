@@ -2,16 +2,24 @@
 # GPU counterpart of LAPACK's ?lacpy. A shipped src/ module: it is written once
 # against WarpWraps's `wwr*` names and builds for either backend.
 
-# The device-kernel library. wwr.extension.parallel_for carries WarpWraps's src
-# include root (so lacpy_bridge.h and the parallel_for.cuh it uses resolve) and
-# wwr.device; the link is PRIVATE, as every device-library link is.
+# The device-kernel library. The kernel is hand-launched (a 2-D grid of 1-D
+# blocks), so it links the pieces directly rather than riding
+# wwr.extension.parallel_for: wwr.device carries WarpWraps's src include root
+# (runtime.cuh) plus WWR_WARP_SIZE and the runtime libs;
+# wwr.extension.bridge carries the same root for the gpu_stream_bridge.h that
+# lacpy_bridge.h pulls in, named explicitly because that dependency is real;
+# calaman.common exports the src/ root that resolves "common/align_up.h"
+# (idivup, for the x-direction block count). The link is PRIVATE, as every
+# device-library link is.
 calaman_add_gpu_device_library(
   NAME
   calaman.lacpy.device
   SOURCES
   lacpy.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr.device
+  wwr.extension.bridge
+  calaman.common
 )
 
 # The module itself: ordinary host C++23, no device code. instantiations.cpp is
@@ -39,7 +47,7 @@ calaman_add_cxx_module_library(
   IMPORT_STD
 )
 
-# Force the device archive members in, or the explicit device::launch_lacpy<T>
+# Force the device archive members in, or the explicit device::lacpy<T>
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link. The install-interface spelling waits on
 # the install tier (CALAMAN_INSTALL, docs/architecture.md §2); this build-
