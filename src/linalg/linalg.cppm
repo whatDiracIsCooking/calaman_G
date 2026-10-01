@@ -28,5 +28,7 @@
 
 export module calaman.linalg;
 
-// Partitions in call-graph order (larfg/larf, then laqp2, then geqp3/laqps).
+// Partitions land in call-graph order (larfg/larf, then laqp2, then
+// geqp3/laqps); each adds one `export import` line here.
 export import :larfg;
+export import :larf;
