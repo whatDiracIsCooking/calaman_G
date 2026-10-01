@@ -137,7 +137,7 @@ std::vector<T> reconstruct_qr(const std::vector<T> &packed, const std::vector<T>
 template<typename T>
 void expect_matches_reference(int m, int n, unsigned seed,
                               std::function<void(std::vector<T> &, int, int)> perturb = {},
-                              bool unique_pivots = true) {
+                              bool unique_pivots = true, int nb = 0) {
   const int lda = m;
   const int k = std::min(m, n);
   std::mt19937 rng(seed);
@@ -170,12 +170,15 @@ void expect_matches_reference(int m, int n, unsigned seed,
   std::vector<T> scratch(static_cast<std::size_t>(n), T{0});
   auto d_vn1 = to_device(handle, scratch);
   auto d_vn2 = to_device(handle, scratch);
-  auto d_work = to_device(handle, scratch);
+  // work must hold the blocked driver's extended scratch (laqp2 scratch | F |
+  // auxv | the int mask); geqp3_work_size gives the length for this m, n.
+  std::vector<T> work_init(geqp3_work_size(m, n), T{0});
+  auto d_work = to_device(handle, work_init);
 
   std::vector<int> jpvt(static_cast<std::size_t>(n), 0);
   const auto status =
       geqp3<T>(blas, m, n, d_a.data(), lda, jpvt.data(), d_tau.data(), d_vn1.data(),
-               d_vn2.data(), d_work.data());
+               d_vn2.data(), d_work.data(), nb);
   ASSERT_EQ(status, wwr::WWRBLAS_STATUS_SUCCESS) << "m=" << m << " n=" << n;
 
   const auto got_a = from_device(handle, d_a, static_cast<std::size_t>(lda) * n);
@@ -300,6 +303,31 @@ TEST(Geqp3OracleTests, DegenerateShapes) {
   expect_matches_reference<double>(5, 1, 50);
   expect_matches_reference<double>(1, 5, 51);
   expect_matches_reference<double>(1, 1, 52);
+}
+
+// Crossover fallback: a block width driven PAST min(m,n) forces geqp3 to skip
+// the blocked :laqps loop and factor the whole matrix as one :laqp2 panel. The
+// same inputs that take the blocked route by default (min(m,n) > the crossover)
+// must still match the reference when pushed onto the unblocked route, proving
+// the two paths agree. nb = 1000 is far past any min(m,n) here.
+TEST(Geqp3OracleTests, CrossoverFallbackDouble) {
+  expect_matches_reference<double>(12, 8, 60, {}, true, 1000);
+  expect_matches_reference<double>(16, 16, 61, {}, true, 1000);
+  expect_matches_reference<double>(10, 12, 62, {}, true, 1000);
+}
+TEST(Geqp3OracleTests, CrossoverFallbackFloat) {
+  expect_matches_reference<float>(12, 8, 63, {}, true, 1000);
+}
+
+// Larger matrices: min(m,n) well past kBlockSize, so geqp3 runs MULTIPLE :laqps
+// blocks before the tail -- exercising the block-to-block hand-off (F reset per
+// block, the running jpvt across blocks, the per-block deferred gemm).
+TEST(Geqp3OracleTests, MultiBlockDouble) {
+  expect_matches_reference<double>(80, 70, 70);
+  expect_matches_reference<double>(64, 64, 71);
+}
+TEST(Geqp3OracleTests, MultiBlockFloat) {
+  expect_matches_reference<float>(80, 70, 72);
 }
 
 // Empty matrices: m == 0 or n == 0 means min(m,n) == 0 -- nothing to factor.
