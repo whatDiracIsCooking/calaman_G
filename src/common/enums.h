@@ -1,8 +1,8 @@
 /**
  * @file enums.h
  * @brief Scoped enums for the LAPACK-shaped selector arguments (Jobz, Uplo,
- *        Trans, Side, Diag, Range, JobSvd) and the diff_norm Norm selector, as a
- *        header shareable by device .cu code and module GMFs alike
+ *        Trans, Side, Diag, Range, JobSvd, Region) and the diff_norm Norm
+ *        selector, as a header shareable by device .cu code and module GMFs alike
  *
  * A plain header, not a module unit, for the same reason constants.h and
  * align_up.h are: a scoped enum is a compile-time tag that both a device
@@ -18,6 +18,12 @@
  * does not belong here. Norm is the exception -- not a LAPACK char but the
  * reduction diff_norm selects (ell_1 / ell_2 / ell_inf); it lives here because it
  * is shared vocabulary rather than a diff_norm-private detail.
+ *
+ * Region is the near-twin of Uplo kept deliberately apart: `?lacpy`/`?laset`
+ * overload their `uplo` char with a third "all of the matrix" case that no
+ * symmetric routine has, so Region carries that third enumerator while Uplo
+ * stays exactly two-valued for Cholesky, the symmetric eigensolvers and the
+ * symmetric-norm routines.
  *
  * Consumers #include this by its root-relative path, "common/enums.h".
  */
@@ -43,6 +49,17 @@ enum class Jobz : std::uint8_t {
 enum class Uplo : std::uint8_t {
     U, ///< Upper triangle.
     L, ///< Lower triangle.
+};
+
+/// @brief Which region of a general matrix a copy/fill touches -- LAPACK's
+///        `?lacpy`/`?laset` UPLO, whose else-case copies/sets the whole matrix.
+///
+/// Distinct from Uplo on purpose: those two routines overload the `uplo` char
+/// with a third "all of the matrix" meaning, which no symmetric routine shares.
+enum class Region : std::uint8_t {
+    U, ///< Upper triangle/trapezoid: the diagonal and above.
+    L, ///< Lower triangle/trapezoid: the diagonal and below.
+    A, ///< All of the matrix: the whole m-by-n rectangle.
 };
 
 /// @brief Whether and how an operand is transposed (LAPACK `trans`).
