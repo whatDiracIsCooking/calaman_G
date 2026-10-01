@@ -121,8 +121,40 @@ calaman_add_gtest_suite_tests(
   REQUIRES_GPU
 )
 
+# Oracle suite for calaman.linalg:laqps -- the level-3 blocked pivoted-QR panel.
+# REQUIRES_GPU: every case stages A/tau/vn1/vn2 and the laqps scratch
+# (F/auxv/flags) on the device and runs the reflector + downdate kernels, so
+# `ctest -LE gpu` excludes it. LAPACKE ships no ?laqps binding, so the oracle is
+# LAPACKE_?geqp3 over the whole matrix (laqps at offset 0 with nb >= min(m,n)
+# factors it as one block); the two test/shared/ modules stage the device
+# buffers and tolerance supplies the factorization bound. laqps takes a bare
+# wwrblasHandle_t plus caller-supplied device arrays and allocates nothing.
+calaman_add_gtest_executable(
+  NAME
+  laqps_tests
+  SOURCES
+  laqps_tests.cpp
+  LINK
+  calaman.linalg
+  calaman.test.shared.abort_policy
+  calaman.test.shared.device_handle
+  calaman.test.shared.tolerance
+  calaman::lapack_reference
+  wwr.blas
+  wwr.runtime_api
+  wwr.extension.memory_buffer
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  laqps_tests
+  SUITES
+  LaqpsOracleTests
+  REQUIRES_GPU
+)
+
 # Oracle suite for calaman.linalg:geqp3 -- the top-level QR-with-column-pivoting
-# driver, all-free unblocked path. REQUIRES_GPU: every case stages A/tau/vn1/
+# driver, all-free blocked path. REQUIRES_GPU: every case stages A/tau/vn1/
 # vn2/work on the device and runs the reflector + downdate kernels, so `ctest
 # -LE gpu` excludes it. The oracle is LAPACKE_?geqp3 with jpvt = 0; the two
 # test/shared/ modules stage the device buffers and tolerance supplies the

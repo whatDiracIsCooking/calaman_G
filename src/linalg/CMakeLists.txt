@@ -35,20 +35,39 @@
 #           laqp2_bridge.h (gpu_stream_bridge.h -> selected_backend.h), so like
 #           lacpy it links wwr_backend PRIVATE and reaches the src/ root through
 #           the PUBLIC include dir already set for the other partitions.
+#   :laqps  laqps.cppm -- the level-3 blocked Businger-Golub pivoted-QR panel
+#           (?laqps), a host composition of larfg plus wwr.wrappers.blas (iamax,
+#           swap, gemv, gemm, nrm2) that accumulates the auxiliary matrix F and
+#           defers the trailing-matrix update to one gemm per block. Its one
+#           device stage, the deferred LAWN 176 partial-norm downdate (plus a
+#           one-shot flag clear), is the second device library below. Its GMF
+#           includes laqps_bridge.h (gpu_stream_bridge.h), so like :laqp2 it
+#           reaches wwr_backend PRIVATE and the src/ root through the PUBLIC
+#           include dir.
 #   :geqp3  geqp3.cppm -- the top-level QR-with-column-pivoting driver (?geqp3),
-#           all-free unblocked path: seeds the column norms vn1/vn2 with one
-#           wwr::nrm2 per column, then runs :laqp2 over all columns at offset 0.
-#           A pure host composition; needs nothing :laqp2 does not already link.
+#           all-free BLOCKED path: seeds the column norms vn1/vn2 with one
+#           wwr::nrm2 per column, then runs :laqps blocks (finishing the tail
+#           with :laqp2) above a small crossover, else one :laqp2 panel. A pure
+#           host composition; needs nothing :laqp2 / :laqps do not already link.
 
-# The downdate device-kernel library -- hand-launched through
-# wwr.extension.parallel_for from laqp2.cu, so it links that INTERFACE library
-# (which carries wwr.device + the bridge include root) PRIVATE, like
-# WarpWraps's own parallel_for consumers.
+# The downdate device-kernel libraries -- hand-launched through
+# wwr.extension.parallel_for from laqp2.cu / laqps.cu, so each links that
+# INTERFACE library (which carries wwr.device + the bridge include root)
+# PRIVATE, like WarpWraps's own parallel_for consumers.
 calaman_add_gpu_device_library(
   NAME
   calaman.linalg.laqp2.device
   SOURCES
   laqp2.cu
+  LINK_PRIVATE
+  wwr.extension.parallel_for
+)
+
+calaman_add_gpu_device_library(
+  NAME
+  calaman.linalg.laqps.device
+  SOURCES
+  laqps.cu
   LINK_PRIVATE
   wwr.extension.parallel_for
 )
@@ -62,6 +81,7 @@ calaman_add_cxx_module_library(
   larfg.cppm
   larf.cppm
   laqp2.cppm
+  laqps.cppm
   geqp3.cppm
   LINK_PUBLIC
   wwr.wrappers.blas
@@ -78,10 +98,11 @@ calaman_add_cxx_module_library(
 )
 
 # Force the device archive members in, or the explicit
-# device::laqp2_downdate<T> instantiations are dropped (the module only names
-# them through lazily-resolved calls) and a consumer fails to link -- the same
-# whole-archive link lacpy needs.
+# device::laqp2_downdate<T> / device::laqps_downdate<T> instantiations are
+# dropped (the module only names them through lazily-resolved calls) and a
+# consumer fails to link -- the same whole-archive link lacpy needs.
 target_link_libraries(
   calaman.linalg
   PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.linalg.laqp2.device>"
+         "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.linalg.laqps.device>"
 )
