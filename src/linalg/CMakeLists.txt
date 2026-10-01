@@ -28,8 +28,9 @@
 #           status, WWRBLAS_OP_* constants) and calaman.common (kZero/kOne
 #           scalars, the Side enum).
 #   :laqp2  laqp2.cppm -- the level-2 Businger-Golub pivoted-QR panel (?laqp2),
-#           a host composition of larfg/larf plus wwr.wrappers.blas (iamax, swap,
-#           nrm2); its one device stage, the LAWN 176 partial-norm downdate, is
+#           a host composition of larfg/larf plus wwr.wrappers.blas (iamax,
+#           swap, nrm2); its one device stage, the LAWN 176 partial-norm
+#           downdate, is
 #           the device library below. The partition's GMF includes
 #           laqp2_bridge.h (gpu_stream_bridge.h -> selected_backend.h), so like
 #           lacpy it links wwr_backend PRIVATE and reaches the src/ root through
@@ -71,9 +72,10 @@ calaman_add_cxx_module_library(
   IMPORT_STD
 )
 
-# Force the device archive members in, or the explicit device::laqp2_downdate<T>
-# instantiations are dropped (the module only names them through lazily-resolved
-# calls) and a consumer fails to link -- the same whole-archive link lacpy needs.
+# Force the device archive members in, or the explicit
+# device::laqp2_downdate<T> instantiations are dropped (the module only names
+# them through lazily-resolved calls) and a consumer fails to link -- the same
+# whole-archive link lacpy needs.
 target_link_libraries(
   calaman.linalg
   PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.linalg.laqp2.device>"
