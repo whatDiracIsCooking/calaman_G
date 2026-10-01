@@ -1,4 +1,4 @@
-// Oracle test for calaman.linalg:laqps -- the level-3 blocked Businger-Golub
+// Oracle test for calaman.laqps -- the level-3 blocked Businger-Golub
 // pivoted-QR panel. LAPACKE ships no ?laqps C binding, so the oracle is
 // LAPACKE_?geqp3 run on the WHOLE matrix: driven at offset 0 with a block width
 // nb >= min(m,n), laqps factors the entire matrix as one block (kb = min(m,n))
@@ -33,7 +33,7 @@ import std;
 import wwr.blas;
 import wwr.runtime_api;
 import wwr.extension.memory_buffer;
-import calaman.linalg;
+import calaman.laqps;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
 import calaman.test.shared.tolerance;

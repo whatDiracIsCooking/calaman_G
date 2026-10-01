@@ -1,4 +1,4 @@
-// Oracle test for calaman.linalg's larf: applying the elementary reflector
+// Oracle test for calaman.larf: applying the elementary reflector
 // H = I - tau*v*v^T to a matrix C must agree with the reference LAPACK for BOTH
 // sides, computed in the SAME precision on the host.
 //
@@ -44,7 +44,7 @@ import std;
 import wwr.blas;
 import wwr.runtime_api;
 import wwr.extension.memory_buffer;
-import calaman.linalg;
+import calaman.larf;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
 import calaman.test.shared.tolerance;

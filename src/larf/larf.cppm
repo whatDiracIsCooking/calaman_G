@@ -1,6 +1,6 @@
 /**
  * @file larf.cppm
- * @brief The :larf partition of calaman.linalg -- apply an elementary reflector
+ * @brief The calaman.larf module -- apply an elementary reflector
  *
  * One host routine that applies the elementary (Householder) reflector
  * H = I - tau * v * v^T to a matrix C, in place, for side L (C := H*C) or side R
@@ -46,14 +46,14 @@
  * to settle here; complex would pick geru/gerc and conj(v) deliberately later).
  *
  * Usage:
- *   import calaman.linalg;   // names calaman::larf
+ *   import calaman.larf;     // names calaman::larf, calaman::Side
  *   import wwr.blas;         // wwrblasHandle_t, wwrblasCreate, ...
  *   // d_C: m x n device matrix, ldc; d_v: reflector; d_w: workspace length n
  *   calaman::larf<double>(handle, calaman::Side::L, m, n, d_v, 1, tau, d_C, ldc,
  *                         d_w);
  */
 
-export module calaman.linalg:larf;
+export module calaman.larf;
 
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_OP_*, WWRBLAS_STATUS_*
 import wwr.wrappers.blas; // gemv, ger
@@ -62,8 +62,9 @@ import calaman.common;    // kZero<T>, kOne<T> (:constants), Side (:enums)
 namespace calaman {
 
 // Side (L / R) lives in calaman.common's :enums partition. Re-export it so
-// `import calaman.linalg;` alone names calaman::Side, as the usage example relies
-// on -- the same re-export diff_norm does for calaman::Norm.
+// `import calaman.larf;` alone names calaman::Side, as the usage example relies
+// on -- the same re-export diff_norm does for calaman::Norm. The downstream
+// laqp2 module reaches Side through this re-export (`import calaman.larf;`).
 export using calaman::Side;
 
 /// @brief Apply the elementary reflector H = I - tau*v*v^T to C, in place

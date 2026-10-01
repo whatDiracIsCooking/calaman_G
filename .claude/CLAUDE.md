@@ -32,10 +32,13 @@ cannot carry a capital. `doctor.sh` warns when `PROJECT_NAME` and any
 ## The state of the tree — read this before trusting any tier
 
 `src/` and `test/` **are live and GPU-exercised.** `src/` ships `calaman.common`,
-`calaman.diff_norm`, `calaman.lacpy`, and `calaman.linalg` — the latter the whole
-`geqp3` column-pivoted-QR call graph: `larfg`, `larf`, `laqp2`, `laqps`, and the
-`geqp3` driver (all-free and fixed-prefix). The test tier checks each against the
-reference LAPACK on a real card. What is still NOT live is the install tier; the
+`calaman.diff_norm`, `calaman.lacpy`, and the `geqp3` column-pivoted-QR call graph
+as **one module per LAPACK routine, each in its own `src/` directory**:
+`calaman.larfg`, `calaman.larf`, `calaman.laqp2`, `calaman.laqps`, and the
+`calaman.geqp3` driver (all-free and fixed-prefix). The inter-routine edges are
+real module imports (`laqp2` imports `larfg`+`larf`, `laqps` imports `larfg`,
+`geqp3` imports `laqp2`+`laqps`), not partitions of one umbrella module. The test
+tier checks each against the reference LAPACK on a real card. What is still NOT live is the install tier; the
 table says which is which, so report the tier you actually touched.
 
 | | State |

@@ -1,6 +1,6 @@
 // laqps.cu
 //
-// The device-kernel half of calaman.linalg:laqps: the deferred LAWN 176
+// The device-kernel half of calaman.laqps: the deferred LAWN 176
 // partial-norm downdate, the one elementwise-over-columns stage of the blocked,
 // level-3 pivoted QR panel. Everything else in laqps is a host composition of
 // wrapped BLAS (iamax / swap / gemv / gemm / nrm2) plus larfg; this is the only

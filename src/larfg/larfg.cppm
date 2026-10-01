@@ -1,7 +1,7 @@
 /**
  * @file larfg.cppm
- * @brief The :larfg partition of calaman.linalg -- generate an elementary
- *        Householder reflector, LAPACK's ?larfg
+ * @brief The calaman.larfg module -- generate an elementary Householder
+ *        reflector, LAPACK's ?larfg
  *
  * Builds H = I - tau * v * v^T, with v = [1; v_tail], such that
  * H * [alpha; x] = [beta; 0]. Inputs are the leading scalar @p alpha and the
@@ -45,7 +45,7 @@
  * calaman.diff_norm and calaman.common/constants.h document.
  *
  * Usage:
- *   import calaman.linalg;
+ *   import calaman.larfg;
  *   import wwr.blas;   // wwrblasHandle_t, wwrblasCreate, WWRBLAS_STATUS_SUCCESS
  *   wwr::wwrblasHandle_t handle{};
  *   wwr::wwrblasCreate(&handle);
@@ -54,7 +54,7 @@
  *   calaman::larfg(handle, n, d_alpha, d_x, 1, &tau, &beta);
  */
 
-export module calaman.linalg:larfg;
+export module calaman.larfg;
 
 import wwr.blas;               // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
 import wwr.runtime_api;        // wwrMemcpy(Async), wwrMemcpy{Device,Host}To*, wwrSuccess

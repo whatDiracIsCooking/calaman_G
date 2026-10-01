@@ -1,7 +1,7 @@
 /**
  * @file laqp2.cppm
- * @brief The :laqp2 partition of calaman.linalg -- the unblocked, level-2
- *        Businger-Golub pivoted-QR panel, LAPACK's ?laqp2
+ * @brief The calaman.laqp2 module -- the unblocked, level-2 Businger-Golub
+ *        pivoted-QR panel, LAPACK's ?laqp2
  *
  * Factors an m-by-n column-major matrix with column pivoting into A*P = Q*R,
  * overwriting A the standard LAPACK way: R in the upper trapezoid, the j-th
@@ -60,7 +60,7 @@
  * would read differ materially from a trivial instantiation.
  *
  * Usage:
- *   import calaman.linalg;
+ *   import calaman.laqp2;
  *   import wwr.blas;          // wwrblasHandle_t, wwrblasCreate
  *   // d_A: m x n device matrix, lda; d_tau: length min(m,n);
  *   // d_vn1, d_vn2: length n (initial column norms); d_work: length n;
@@ -73,23 +73,27 @@ module;
 
 #include "laqp2_bridge.h"
 
-export module calaman.linalg:laqp2;
+export module calaman.laqp2;
 
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
 import wwr.runtime_api;   // wwrMemcpy(Async), wwrStreamSynchronize, wwrSuccess
 import wwr.wrappers.blas; // iamax, swap, nrm2
-import :larfg;            // calaman::larfg
-import :larf;             // calaman::larf, calaman::Side
+import calaman.larfg;     // calaman::larfg
+import calaman.larf;      // calaman::larf, calaman::Side
 import std;               // std::sqrt, std::min, std::vector
 
 namespace calaman {
 
-// detail, not an anonymous namespace: this helper is named by the exported
+// laqp2_detail, not an anonymous namespace: this helper is named by the exported
 // laqp2 template's body, which is instantiated in every importer's TU. An
 // anonymous namespace would give it internal linkage, invisible there; a named
 // (unexported) namespace gives it module linkage, reachable by the
-// instantiation yet absent from the module's public surface.
-namespace detail {
+// instantiation yet absent from the module's public surface. The namespace is
+// MODULE-SPECIFIC (laqp2_detail, not a bare detail) because calaman.laqps
+// defines an identically-named swap_device_scalar: once the two live in separate
+// modules, a consumer that imports both (calaman.geqp3) would see one qualified
+// name attached to two modules -- ill-formed -- unless the namespaces differ.
+namespace laqp2_detail {
 
 /// @brief Swap two single device scalars through a host staging pair, on @p stream
 ///
@@ -118,7 +122,7 @@ bool swap_device_scalar(wwr::wwrStream_t stream, T *a, T *b) {
   return true;
 }
 
-} // namespace detail
+} // namespace laqp2_detail
 
 /// @brief Factor A with Businger-Golub column pivoting (LAPACK ?laqp2)
 ///
@@ -199,8 +203,8 @@ wwr::wwrblasStatus_t laqp2(wwr::wwrblasHandle_t handle, const int m, const int n
       if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
         return s;
       }
-      if (!detail::swap_device_scalar<T>(stream, vn1 + i, vn1 + pvt) ||
-          !detail::swap_device_scalar<T>(stream, vn2 + i, vn2 + pvt)) {
+      if (!laqp2_detail::swap_device_scalar<T>(stream, vn1 + i, vn1 + pvt) ||
+          !laqp2_detail::swap_device_scalar<T>(stream, vn2 + i, vn2 + pvt)) {
         return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
       }
       const int tmp = jpvt[i];
