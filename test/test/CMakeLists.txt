@@ -2,6 +2,7 @@
 # test/utils/ (added before this directory) and the shared modules under
 # test/shared/.
 
+add_subdirectory(complex_cast)
 add_subdirectory(diff_norm)
 add_subdirectory(gebal)
 add_subdirectory(horner)
