@@ -1,6 +1,5 @@
-# test/test/ -- the GPU test suites. Each links the utilities it needs from
-# test/utils/ (added before this directory, so those targets already exist).
+# test/test/ -- the GPU test suites. A suite links any utilities it needs from
+# test/utils/ (added before this directory) and the shared modules under
+# test/shared/.
 
 add_subdirectory(diff_norm)
-add_subdirectory(elementwise_compare)
-add_subdirectory(lacpy)
