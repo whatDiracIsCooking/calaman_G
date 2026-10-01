@@ -14,11 +14,10 @@ if(NOT TARGET calaman::lapack_reference)
   return()
 endif()
 
-# No elementwise_compare here, unlike lacpy: diff_norm returns a single host
-# scalar (host pointer mode), so the check is scalar-vs-scalar, not a device
-# array comparison. wwr.extension.memory_buffer and the two test/shared/
-# modules are only for the device buffers that stage the inputs -- diff_norm
-# itself takes a bare wwrblasHandle_t and allocates nothing.
+# diff_norm returns a single host scalar (host pointer mode), so the check is
+# scalar-vs-scalar. wwr.extension.memory_buffer and the two test/shared/ modules
+# are only for the device buffers that stage the inputs -- diff_norm itself
+# takes a bare wwrblasHandle_t and allocates nothing.
 calaman_add_gtest_executable(
   NAME
   diff_norm_tests

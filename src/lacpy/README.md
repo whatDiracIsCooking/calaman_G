@@ -46,11 +46,6 @@ the device half; `lacpy_bridge.h` carries the launcher declaration across the
 host/device boundary (a global module fragment cannot `import`).
 `instantiations.cpp` explicitly instantiates the wrapper for each type.
 
-`test/utils/elementwise_compare/` has the same four-file shape, but takes a
-`calaman::test::DeviceHandle` rather than a stream — it allocates scratch, so it
-needs the device index and pool that a stream does not carry. The difference is
-the rule, not an inconsistency: each takes the narrowest thing it uses.
-
 The copy is one `wwr.extension.parallel_for` map over the `m*n` elements. A
 triangular region launches the full `m*n` grid and skips out-of-region elements
 rather than iterating a packed triangular index range — correct and simplest;
@@ -58,7 +53,7 @@ skipping the wasted threads is a possible later optimisation.
 
 ## Tested
 
-Against the reference LAPACK oracle (`LAPACKE_?lacpy`) at
-`test/test/lacpy/` — the copy is exact, so the GPU result must match the oracle
-bit for bit, including the untouched region. That suite is skipped when
-`calaman::lapack_reference` is absent (`docs/architecture.md` §3).
+Not currently. The reference-LAPACK oracle suite that lived at `test/test/lacpy/`
+was removed together with the `calaman.test.elementwise_compare` utility it used
+for the exact device-side comparison; lacpy has no automated test until that
+comparison is reinstated (e.g. via `calaman.diff_norm` or a replacement utility).
