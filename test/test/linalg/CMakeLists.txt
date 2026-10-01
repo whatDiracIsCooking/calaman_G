@@ -30,3 +30,33 @@ calaman_add_gtest_suite_tests(
   SUITES
   LinalgScaffoldTests
 )
+
+# Oracle test for calaman.linalg's larf (applying an elementary reflector).
+# REQUIRES_GPU: every case stages C and v on the device and runs the gemv/ger
+# kernels, so `ctest -LE gpu` excludes it. It compares against LAPACKE_?larf
+# (calaman::lapack_reference), with wwr.extension.memory_buffer + the two
+# test/shared/ modules staging the device buffers -- larf itself takes a bare
+# wwrblasHandle_t plus a caller-supplied workspace and allocates nothing.
+calaman_add_gtest_executable(
+  NAME
+  larf_tests
+  SOURCES
+  larf_tests.cpp
+  LINK
+  calaman.linalg
+  calaman.test.shared.abort_policy
+  calaman.test.shared.device_handle
+  calaman.test.shared.tolerance
+  calaman::lapack_reference
+  wwr.blas
+  wwr.runtime_api
+  wwr.extension.memory_buffer
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  larf_tests
+  SUITES
+  LarfOracleTests
+  REQUIRES_GPU
+)
