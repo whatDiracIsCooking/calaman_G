@@ -31,18 +31,23 @@ cannot carry a capital. `doctor.sh` warns when `PROJECT_NAME` and any
 
 ## The state of the tree — read this before trusting any tier
 
-`src/` and `test/` **are empty.** The scaffolding below is adapted and
-internally consistent, but almost nothing is exercised yet, and it is dishonest
-to report otherwise:
+`src/` and `test/` **are live and GPU-exercised.** `src/` ships `calaman.common`,
+`calaman.diff_norm`, `calaman.lacpy`, and `calaman.linalg` — the latter the whole
+`geqp3` column-pivoted-QR call graph: `larfg`, `larf`, `laqp2`, `laqps`, and the
+`geqp3` driver (all-free and fixed-prefix). The test tier checks each against the
+reference LAPACK on a real card. What is still NOT live is the install tier; the
+table says which is which, so report the tier you actually touched.
 
 | | State |
 |---|---|
 | `deps/` | **live.** WarpWraps submodule + GoogleTest fetch. |
 | `docker/`, `.devcontainer/`, `devtools/` | **live**, and the LAPACK layer in `docker/Dockerfile.base` is new here. |
-| `CMakeLists.txt` | **live** for the parts that run: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, WarpWraps. The `add_subdirectory(src)` / `test` / `example` lines are commented out, because a directory with no `CMakeLists.txt` is a configure error. |
-| `cmake/` helpers | renamed, **not yet exercised.** `calaman_install.cmake` still sweeps a `src/{cuda,hip,wrappers}` layout inherited from WarpWraps, which is not this project's layout — fix it in the commit that first installs something. |
-| the install tier | **dormant.** `CALAMAN_INSTALL` defaults OFF; see the option's comment for the two-package problem that has to be decided first. `devtools/install-check.sh` and CI's `install-check` job have nothing to prove until then. |
-| the C++ test tiers | **empty.** They configure and build; they assert nothing about this project. |
+| `src/`, `test/` | **live.** The modules above plus their suites; `add_subdirectory(src)` and `(test)` are enabled. Only `#add_subdirectory(example)` stays commented — there is no `example/` tier yet (a directory with no `CMakeLists.txt` is a configure error). |
+| `CMakeLists.txt` | **live**: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, WarpWraps, and now `src/` and `test/`. |
+| the `cmake/` target macros | **exercised** — `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` macros, and `calaman_add_gpu_device_library` all have call sites now. `calaman_add_interface_library` still has none (documented, not dead). |
+| `calaman_install.cmake` | dormant, but **no longer wrong-shaped**: it does one recursive sweep of the single `src/` tree now; the old per-backend `src/{cuda,hip,wrappers}` sweep inherited from WarpWraps is gone. |
+| the install tier | **dormant.** `CALAMAN_INSTALL` defaults OFF; `calaman_install_package()` is still expected to fail on the unexported `wwr.*` interface targets until the two-package problem (docs/architecture.md §2) is decided. `devtools/install-check.sh` and CI's `install-check` job have nothing to prove until then. |
+| the C++ test tiers | **live and asserting.** The numerical suites compare device results against the reference LAPACK to a shared tolerance (`test/shared/tolerance.cppm`); they are `REQUIRES_GPU`, so `ctest -LE gpu` excludes them. One host-only suite (`linalg_scaffold_tests`) asserts without a card. |
 
 When you run something, say which of these it touched.
 
@@ -181,7 +186,9 @@ it.
   require in a branch ruleset** — every other name is generated and moves.
 - Both backends are built on the server and run `ctest -LE gpu` — read that as
   **compile-and-link plus whatever CPU-only tests exist**, not as a test of GPU
-  behaviour. Today it is compile-and-link and nothing else.
+  behaviour. Today that is compile-and-link plus the one host-only suite
+  (`linalg_scaffold_tests`); every numerical suite is `REQUIRES_GPU` and excluded,
+  so CI still proves nothing about a kernel's numbers.
 - **What CI cannot do: run a kernel.** Every numerical claim this project makes
   — a factorisation that agrees with the reference LAPACK to a tolerance — needs
   a card, which no hosted runner has. So **`devtools/cpp-tier.sh` on a box with
