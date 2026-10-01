@@ -35,6 +35,10 @@
 #           laqp2_bridge.h (gpu_stream_bridge.h -> selected_backend.h), so like
 #           lacpy it links wwr_backend PRIVATE and reaches the src/ root through
 #           the PUBLIC include dir already set for the other partitions.
+#   :geqp3  geqp3.cppm -- the top-level QR-with-column-pivoting driver (?geqp3),
+#           all-free unblocked path: seeds the column norms vn1/vn2 with one
+#           wwr::nrm2 per column, then runs :laqp2 over all columns at offset 0.
+#           A pure host composition; needs nothing :laqp2 does not already link.
 
 # The downdate device-kernel library -- hand-launched through
 # wwr.extension.parallel_for from laqp2.cu, so it links that INTERFACE library
@@ -58,6 +62,7 @@ calaman_add_cxx_module_library(
   larfg.cppm
   larf.cppm
   laqp2.cppm
+  geqp3.cppm
   LINK_PUBLIC
   wwr.wrappers.blas
   wwr.blas

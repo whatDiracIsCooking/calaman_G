@@ -120,3 +120,34 @@ calaman_add_gtest_suite_tests(
   Laqp2OracleTests
   REQUIRES_GPU
 )
+
+# Oracle suite for calaman.linalg:geqp3 -- the top-level QR-with-column-pivoting
+# driver, all-free unblocked path. REQUIRES_GPU: every case stages A/tau/vn1/
+# vn2/work on the device and runs the reflector + downdate kernels, so `ctest
+# -LE gpu` excludes it. The oracle is LAPACKE_?geqp3 with jpvt = 0; the two
+# test/shared/ modules stage the device buffers and tolerance supplies the
+# factorization bound. geqp3 takes a bare wwrblasHandle_t plus caller-supplied
+# device scratch (seeding vn1/vn2 itself) and allocates nothing.
+calaman_add_gtest_executable(
+  NAME
+  geqp3_tests
+  SOURCES
+  geqp3_tests.cpp
+  LINK
+  calaman.linalg
+  calaman.test.shared.abort_policy
+  calaman.test.shared.device_handle
+  calaman.test.shared.tolerance
+  calaman::lapack_reference
+  wwr.blas
+  wwr.runtime_api
+  wwr.extension.memory_buffer
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  geqp3_tests
+  SUITES
+  Geqp3OracleTests
+  REQUIRES_GPU
+)
