@@ -27,6 +27,27 @@
 #           one ger. Needs wwr.wrappers.blas (gemv, ger), wwr.blas (handle,
 #           status, WWRBLAS_OP_* constants) and calaman.common (kZero/kOne
 #           scalars, the Side enum).
+#   :laqp2  laqp2.cppm -- the level-2 Businger-Golub pivoted-QR panel (?laqp2),
+#           a host composition of larfg/larf plus wwr.wrappers.blas (iamax, swap,
+#           nrm2); its one device stage, the LAWN 176 partial-norm downdate, is
+#           the device library below. The partition's GMF includes
+#           laqp2_bridge.h (gpu_stream_bridge.h -> selected_backend.h), so like
+#           lacpy it links wwr_backend PRIVATE and reaches the src/ root through
+#           the PUBLIC include dir already set for the other partitions.
+
+# The downdate device-kernel library -- hand-launched through
+# wwr.extension.parallel_for from laqp2.cu, so it links that INTERFACE library
+# (which carries wwr.device + the bridge include root) PRIVATE, like
+# WarpWraps's own parallel_for consumers.
+calaman_add_gpu_device_library(
+  NAME
+  calaman.linalg.laqp2.device
+  SOURCES
+  laqp2.cu
+  LINK_PRIVATE
+  wwr.extension.parallel_for
+)
+
 calaman_add_cxx_module_library(
   NAME
   calaman.linalg
@@ -35,12 +56,25 @@ calaman_add_cxx_module_library(
   PARTITIONS
   larfg.cppm
   larf.cppm
+  laqp2.cppm
   LINK_PUBLIC
   wwr.wrappers.blas
   wwr.blas
   wwr.runtime_api
   calaman.common
+  LINK_PRIVATE
+  wwr_backend
   INCLUDE_DIRS_PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+  INCLUDE_DIRS_PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
+)
+
+# Force the device archive members in, or the explicit device::laqp2_downdate<T>
+# instantiations are dropped (the module only names them through lazily-resolved
+# calls) and a consumer fails to link -- the same whole-archive link lacpy needs.
+target_link_libraries(
+  calaman.linalg
+  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.linalg.laqp2.device>"
 )
