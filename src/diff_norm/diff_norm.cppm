@@ -50,16 +50,14 @@ export module calaman.diff_norm;
 import wwr.blas;               // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
 import wwr.runtime_api;        // wwrMemcpy, wwrMemcpyDeviceToHost, wwrSuccess (ell_inf fetch)
 import wwr.wrappers.blas;      // axpy, asum, nrm2, iamax
-import calaman.common;         // kNegativeOne<T> (from the :constants partition)
+import calaman.common;         // kNegativeOne<T> (:constants), Norm (:enums)
 
 namespace calaman {
 
-/// @brief Which norm of the difference diff_norm reports
-export enum class Norm {
-  l1,  ///< ell_1: the sum of magnitudes, sum |y_i - x_i| (BLAS asum)
-  l2,  ///< ell_2: the Euclidean norm, sqrt(sum |y_i - x_i|^2) (BLAS nrm2)
-  inf, ///< ell_inf: the largest magnitude, max |y_i - x_i| (BLAS iamax + a read)
-};
+// Norm (ell_1 / ell_2 / ell_inf) now lives in calaman.common's :enums partition.
+// Re-export it so `import calaman.diff_norm;` alone still names calaman::Norm, as
+// the usage example above relies on.
+export using calaman::Norm;
 
 /// @brief Overwrite y with y - x, then report the chosen norm of the difference
 ///
