@@ -4,3 +4,4 @@
 
 add_subdirectory(diff_norm)
 add_subdirectory(linalg)
+add_subdirectory(orthogonalize)
