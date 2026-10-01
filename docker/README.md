@@ -61,7 +61,7 @@ Four files beside this one, in a diamond:
                  /           \
   Dockerfile.cuda             Dockerfile.hip
             |                       :
-  Dockerfile.combined ..............:  (reuses install-rocm.sh, not the image)
+  Dockerfile.combined ..............:  (reuses the HIP install scripts, not the image)
 ```
 
 `Dockerfile.cuda` is what these services and
@@ -82,8 +82,8 @@ docker/build.sh base        # just the toolchain -> calaman:base
 It takes the tag prefix from `PROJECT_NAME` in `devtools/config.sh`, so
 `calaman:latest` — what `CALAMAN_IMAGE` below defaults to — is always one of the
 two tags the CUDA image gets. Run it from anywhere; the context is always the
-repo root, because the files read `pyproject.toml`, `uv.lock` and
-`docker/install-{cuda,rocm}.sh` relative to it.
+repo root, because the files read `pyproject.toml`, `uv.lock` and the
+`docker/install-*.sh` scripts relative to it.
 
 Anything after the target is passed through to every `docker build` in the
 chain, and any build arg set in the environment is forwarded to the file that
@@ -130,10 +130,13 @@ since `latest` is what `CALAMAN_IMAGE` resolves to and must keep meaning the
 full CUDA dev image. Parents are not pushed because a child image is
 self-contained; publishing `:base` too would upload 1.45GB nothing pulls.
 
-**`ROCM_PRUNE=1` takes the ROCm image from 20.5GB to 7.05GB**, dropping
-Tensile/rocFFT kernel objects, composable-kernel archives, rccl, rocalution and
-hiptensor — none of which a *compile* links. `docker/install-rocm.sh` carries
-the list and the reason each entry is safe.
+**`ROCM_PRUNE=1` drops the bulk of ROCm that only a running kernel needs** —
+Tensile/rocFFT kernel objects, composable-kernel archives and rocalution, none
+of which a *compile* links. rccl and hiptensor are **no longer** on that list:
+`wwr.hip.rccl` and `wwr.hip.hiptensor` link them now, so pruning either would
+fail `find_package` at configure. `docker/install-rocm.sh` carries the measured
+list and the reason each entry is safe; hipCOMP (`docker/install-rocm-ds.sh`) is
+built on top afterwards and is not affected by the prune.
 
 It is an **optimisation**, worth ~13GB less to pull on every CI run and a
 3-minute push instead of many. It is not what makes a HIP job possible: a

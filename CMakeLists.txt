@@ -200,7 +200,13 @@ add_link_options($<$<COMPILE_LANGUAGE:CXX>:-lc++abi>)
 # Keep this list in step with deps/WarpWraps/CMakeLists.txt; a divergence
 # surfaces as a "target not found" at generate time, naming a vendor target.
 if(CALAMAN_GPU_BACKEND STREQUAL "CUDA")
-  find_package(CUDAToolkit REQUIRED)
+  find_package(CUDAToolkit 13.0.0 REQUIRED)
+  # nvCOMP ships its own config package (nvcomp::nvcomp), linked by
+  # wwr.cuda.nvcomp -- not a FindCUDAToolkit component. docker/install-cuda.sh
+  # publishes it under /opt/nvidia/nvcomp. cuTENSOR and NCCL are found by hand
+  # inside WarpWraps's own src/cuda, so they need no find_package here -- only
+  # presence in the image.
+  find_package(nvcomp CONFIG REQUIRED)
 else()
   # Seed GPU_TARGETS from the environment before find_package(hip).
   #
@@ -221,7 +227,8 @@ else()
   endif()
 
   find_package(hip CONFIG REQUIRED)
-  find_package(rocm_smi CONFIG REQUIRED)
+  # rocm_smi is gone on purpose: WarpWraps dropped wwr.hip.rocm_smi, leaving
+  # amd_smi as the sole SMI module, so nothing here finds rocm_smi anymore.
   find_package(amd_smi CONFIG REQUIRED)
   find_package(hiprtc CONFIG REQUIRED)
   find_package(hipblas CONFIG REQUIRED)
@@ -230,6 +237,12 @@ else()
   find_package(hipsparse CONFIG REQUIRED)
   find_package(hipfft CONFIG REQUIRED)
   find_package(hiprand CONFIG REQUIRED)
+  # rccl provides roc::rccl (wwr.hip.rccl); hipcomp provides hipcomp::hipcomp
+  # (wwr.hip.hipcomp), built from source into /opt/rocm-ds by
+  # docker/install-rocm-ds.sh. hipTensor is found by hand inside WarpWraps's
+  # own src/hip, so it needs no find_package here -- only presence in the image.
+  find_package(rccl CONFIG REQUIRED)
+  find_package(hipcomp CONFIG REQUIRED)
 endif()
 
 # ========================================================================
