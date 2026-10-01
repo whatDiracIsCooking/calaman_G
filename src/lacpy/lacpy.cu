@@ -26,20 +26,14 @@ namespace calaman::device {
 
 namespace {
 
-// The integer region contract from lacpy_bridge.h, named for the predicate
-// below and used as the kernel's non-type template argument.
-constexpr unsigned int kRegionFull = 0;
-constexpr unsigned int kRegionUpper = 1;
-constexpr unsigned int kRegionLower = 2;
-
 /// @brief [kernel] Copy column-major A(i,j) -> B(i,j) for the in-region elements
 ///
 /// The row index i comes from the 1-D block laid along x; the column j is
 /// blockIdx.y. The grid is sized so every j is in range, so only i needs a bound.
 ///
-/// @tparam Region the copied triangle (full/upper/lower), a non-type template
-///         argument so the region test below resolves at compile time.
-template<typename T, unsigned int Region>
+/// @tparam R the copied region (Region::U/L/A), a non-type template argument so
+///         the region test below resolves at compile time.
+template<typename T, Region R>
 __global__ void lacpy_kernel(const T *const a, T *const b, const std::size_t m,
                              const std::size_t lda, const std::size_t ldb) {
   // The usual flattened thread index. i and j keep the builtins' unsigned int
@@ -53,13 +47,13 @@ __global__ void lacpy_kernel(const T *const a, T *const b, const std::size_t m,
   }
 
   // Upper is the diagonal and above (row <= col); lower is the diagonal and
-  // below (row >= col). Region is a template argument, so this is an if
-  // constexpr -- each specialization is branchless but for the diagonal, where
-  // neighbouring threads disagree on in_region.
+  // below (row >= col). R is a template argument, so this is an if constexpr --
+  // each specialization is branchless but for the diagonal, where neighbouring
+  // threads disagree on in_region.
   bool in_region = true;
-  if constexpr (Region == kRegionUpper) {
+  if constexpr (R == Region::U) {
     in_region = i <= j;
-  } else if constexpr (Region == kRegionLower) {
+  } else if constexpr (R == Region::L) {
     in_region = i >= j;
   }
 
@@ -71,7 +65,7 @@ __global__ void lacpy_kernel(const T *const a, T *const b, const std::size_t m,
 } // namespace
 
 template<typename T>
-void lacpy(const wwr::wwrStream_t stream, const int region, const std::size_t m,
+void lacpy(const wwr::wwrStream_t stream, const Region region, const std::size_t m,
            const std::size_t n, const T *a, const std::size_t lda, T *b, const std::size_t ldb) {
   if (m < 1 || n < 1) {
     return;
@@ -93,23 +87,23 @@ void lacpy(const wwr::wwrStream_t stream, const int region, const std::size_t m,
 
   // Dispatch the runtime region to the matching compile-time specialization.
   switch (region) {
-  case kRegionUpper:
-    lacpy_kernel<T, kRegionUpper><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
+  case Region::U:
+    lacpy_kernel<T, Region::U><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
     break;
-  case kRegionLower:
-    lacpy_kernel<T, kRegionLower><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
+  case Region::L:
+    lacpy_kernel<T, Region::L><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
     break;
   default:
-    lacpy_kernel<T, kRegionFull><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
+    lacpy_kernel<T, Region::A><<<grid, block, 0, stream>>>(a, b, m, lda, ldb);
     break;
   }
 }
 
 // One per supported type, matching interface.cppm's extern template list and
 // instantiations.cpp's -- all three lists cover the same types.
-template void lacpy<float>(wwr::wwrStream_t, int, std::size_t, std::size_t, const float *,
+template void lacpy<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t, const float *,
                            std::size_t, float *, std::size_t);
-template void lacpy<double>(wwr::wwrStream_t, int, std::size_t, std::size_t, const double *,
+template void lacpy<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t, const double *,
                             std::size_t, double *, std::size_t);
 
 } // namespace calaman::device

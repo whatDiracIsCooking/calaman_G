@@ -19,7 +19,7 @@
  *
  * | DLACPY           | calaman::lacpy                          |
  * |------------------|-----------------------------------------|
- * | CHARACTER UPLO   | copy_region enum (no lsame char)        |
+ * | CHARACTER UPLO   | calaman::Region enum (no lsame char)    |
  * | s/d/c/z variants | one template over T (float, double)     |
  * | INTEGER extents  | std::size_t                             |
  * | LDA / LDB        | kept: column-major leading dimensions   |
@@ -29,12 +29,12 @@
  * body that names the .cu-side launcher declared only in the GMF.
  *
  * Usage:
- *   import calaman.lacpy;
+ *   import calaman.lacpy;      // also re-exports calaman::Region
  *   import wwr.runtime_api;   // wwrStream_t, wwrStreamCreate
  *   wwr::wwrStream_t stream{};
  *   wwr::wwrStreamCreate(&stream);
  *   // d_a, d_b: device matrices, column-major, leading dims lda/ldb
- *   calaman::lacpy(stream, calaman::copy_region::upper, m, n, d_a, lda, d_b, ldb);
+ *   calaman::lacpy(stream, calaman::Region::U, m, n, d_a, lda, d_b, ldb);
  */
 
 module;
@@ -45,18 +45,14 @@ export module calaman.lacpy;
 
 import std;
 import wwr.runtime_api;
+import calaman.common; // Region (:enums) -- the typed replacement for DLACPY UPLO
 
 namespace calaman {
 
-/// @brief Which part of A to copy -- the typed replacement for DLACPY's UPLO
-///
-/// Enumerator values are the integer contract device::lacpy() takes (see
-/// lacpy_bridge.h); keep them in step.
-export enum class copy_region : int {
-  full = 0,  ///< the whole m-by-n matrix
-  upper = 1, ///< the upper triangle/trapezoid (diagonal and above)
-  lower = 2, ///< the lower triangle/trapezoid (diagonal and below)
-};
+// Region (U / L / A) lives in calaman.common's :enums partition, shared with the
+// device .cu through common/enums.h. Re-export it so `import calaman.lacpy;`
+// alone still names calaman::Region, as the usage example and tests expect.
+export using calaman::Region;
 
 // Not an `export namespace` block: an explicit instantiation declaration
 // (`extern template`) cannot be exported, so the template carries its own
@@ -70,7 +66,7 @@ export enum class copy_region : int {
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param stream Stream the copy is enqueued on; A and B live on its device
-/// @param region Which part of A to copy (full, upper, lower)
+/// @param region Which part of A to copy (Region::U, Region::L, Region::A)
 /// @param m Number of rows of A and B
 /// @param n Number of columns of A and B
 /// @param d_a Source device matrix, column-major, leading dimension @p lda
@@ -78,18 +74,18 @@ export enum class copy_region : int {
 /// @param d_b Destination device matrix, column-major, leading dimension @p ldb
 /// @param ldb Leading dimension of B; ldb >= m
 export template<typename T>
-void lacpy(const wwr::wwrStream_t stream, const copy_region region, const std::size_t m,
+void lacpy(const wwr::wwrStream_t stream, const Region region, const std::size_t m,
            const std::size_t n, const T *d_a, const std::size_t lda, T *d_b,
            const std::size_t ldb) {
   if (m == 0 || n == 0) {
     return;
   }
-  device::lacpy(stream, static_cast<int>(region), m, n, d_a, lda, d_b, ldb);
+  device::lacpy(stream, region, m, n, d_a, lda, d_b, ldb);
 }
 
-extern template void lacpy<float>(wwr::wwrStream_t, copy_region, std::size_t, std::size_t,
+extern template void lacpy<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
                                   const float *, std::size_t, float *, std::size_t);
-extern template void lacpy<double>(wwr::wwrStream_t, copy_region, std::size_t, std::size_t,
+extern template void lacpy<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
                                    const double *, std::size_t, double *, std::size_t);
 
 } // namespace calaman

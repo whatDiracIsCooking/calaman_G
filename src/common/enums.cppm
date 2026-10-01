@@ -30,6 +30,7 @@ export namespace calaman {
 
 using calaman::Jobz;
 using calaman::Uplo;
+using calaman::Region;
 using calaman::Trans;
 using calaman::Side;
 using calaman::Diag;
