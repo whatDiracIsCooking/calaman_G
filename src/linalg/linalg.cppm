@@ -32,3 +32,4 @@ export module calaman.linalg;
 // geqp3/laqps); each adds one `export import` line here.
 export import :larfg;
 export import :larf;
+export import :laqp2;

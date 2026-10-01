@@ -89,3 +89,34 @@ calaman_add_gtest_suite_tests(
   LarfOracleTests
   REQUIRES_GPU
 )
+
+# Oracle suite for calaman.linalg:laqp2 -- the level-2 pivoted-QR panel.
+# REQUIRES_GPU: every case stages A/tau/vn1/vn2/work on the device and runs the
+# reflector + downdate kernels, so `ctest -LE gpu` excludes it. LAPACKE ships no
+# ?laqp2 binding, so the oracle is LAPACKE_?geqp3 over the whole matrix; the two
+# test/shared/ modules stage the device buffers and tolerance supplies the
+# factorization bound. laqp2 takes a bare wwrblasHandle_t plus caller-supplied
+# device arrays and allocates nothing.
+calaman_add_gtest_executable(
+  NAME
+  laqp2_tests
+  SOURCES
+  laqp2_tests.cpp
+  LINK
+  calaman.linalg
+  calaman.test.shared.abort_policy
+  calaman.test.shared.device_handle
+  calaman.test.shared.tolerance
+  calaman::lapack_reference
+  wwr.blas
+  wwr.runtime_api
+  wwr.extension.memory_buffer
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  laqp2_tests
+  SUITES
+  Laqp2OracleTests
+  REQUIRES_GPU
+)
