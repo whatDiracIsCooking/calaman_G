@@ -21,7 +21,7 @@ calaman_add_cxx_module_library(
 
 # The concrete device_handle the suites allocate DeviceBufferWrapper against.
 # wwr.extension.handle carries the device_handle ladder this satisfies,
-# wwr.extension.runtime the GpuStreamWrapper / GpuMemPoolWrapper it owns, and
+# wwr.extension.runtime the StreamWrapper / MemPoolWrapper it owns, and
 # wwr.runtime_api wwrDeviceProp / wwrGetDeviceProperties.
 calaman_add_cxx_module_library(
   NAME

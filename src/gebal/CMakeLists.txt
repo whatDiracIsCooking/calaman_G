@@ -12,14 +12,14 @@
 # This is the project's first complex-capable routine: balancing only measures
 # magnitudes (CABS1) and applies real scales, so complex is a genuine path, not
 # the material-difference case larfg/laqp2 defer. gebal.cu therefore pulls in
-# WarpWraps's neutral complex (complex.cuh) via wwr.device.
+# WarpWraps's neutral complex (complex.h) via wwr.device.
 
 # The device-kernel library. gebal.cu seeds scale[] through
 # wwr.extension.parallel_for and launches the rest of its kernels by hand (raw
 # <<<>>>), so it links that INTERFACE library PRIVATE -- which carries
-# parallel_for.cuh plus, transitively, wwr.device (complex.cuh, the backend
-# runtime libs) and wwr.extension.bridge (gpu_stream_bridge.h, pulled in by
-# gebal_bridge.h). Same single link laqp2.device / laqps.device use.
+# parallel_for.cuh plus, transitively, wwr.device: complex.h for the neutral
+# complex types and runtime.h (wwrStream_t, pulled in by gebal_bridge.h), plus
+# the backend runtime libs. Same single link laqp2.device / laqps.device use.
 calaman_add_gpu_device_library(
   NAME
   calaman.gebal.device
@@ -39,10 +39,10 @@ calaman_add_gpu_device_library(
 # wwr.wrappers.common (the usual_fp constraint and ComplexToRealType the scale
 # array's type is spelled with).
 #
-# LINK_PRIVATE wwr_backend is for the gpu_stream_bridge.h that gebal_bridge.h
-# pulls into the global module fragment: a GMF cannot `import`, so wwrStream_t
-# arrives by #include, and selected_backend.h behind it reads
-# WWR_GPU_BACKEND_{CUDA,HIP} with no device pass to read __CUDACC__/__HIP__.
+# LINK_PRIVATE wwr_backend is for the runtime.h that gebal_bridge.h pulls into
+# the global module fragment: a GMF cannot `import`, so wwrStream_t arrives by
+# #include, and selected_backend.h behind it reads WWR_GPU_BACKEND_{CUDA,HIP}
+# with no device pass to read __CUDACC__/__HIP__.
 # INCLUDE_DIRS_PRIVATE is for gebal_bridge.h itself (included from the GMF).
 calaman_add_cxx_module_library(
   NAME

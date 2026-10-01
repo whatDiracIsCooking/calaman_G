@@ -43,7 +43,7 @@ because for a reflector (`larfg`, `laqp2`) the complex case differs *materially*
 measures magnitudes and applies **real** power-of-two scales. Complex magnitudes
 use `CABS1` (`|Re| + |Im|`), matching `CGEBAL`/`ZGEBAL`. So the four-type surface
 is genuine, not a trivial instantiation, and it rides WarpWraps's neutral complex
-(`wwr.complex` on the host, `complex.cuh` in the kernel) with no backend leak.
+(`wwr.complex` on the host, `complex.h` in the kernel) with no backend leak.
 
 ## Mapping from `?gebal`
 

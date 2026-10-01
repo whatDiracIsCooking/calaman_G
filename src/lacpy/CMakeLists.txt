@@ -5,12 +5,10 @@
 # The device-kernel library. The kernel is hand-launched (a 2-D grid of 1-D
 # blocks), so it links the pieces directly rather than riding
 # wwr.extension.parallel_for: wwr.device carries WarpWraps's src include root
-# (runtime.cuh) plus WWR_WARP_SIZE and the runtime libs;
-# wwr.extension.bridge carries the same root for the gpu_stream_bridge.h that
-# lacpy_bridge.h pulls in, named explicitly because that dependency is real;
-# calaman.common exports the src/ root that resolves "common/align_up.h"
-# (idivup, for the x-direction block count). The link is PRIVATE, as every
-# device-library link is.
+# (runtime.h, which lacpy_bridge.h and lacpy.cu pull in for wwrStream_t and
+# WWR_WARP_SIZE) plus the runtime libs; calaman.common exports the src/ root
+# that resolves "common/align_up.h" (idivup, for the x-direction block count).
+# The link is PRIVATE, as every device-library link is.
 calaman_add_gpu_device_library(
   NAME
   calaman.lacpy.device
@@ -18,7 +16,6 @@ calaman_add_gpu_device_library(
   lacpy.cu
   LINK_PRIVATE
   wwr.device
-  wwr.extension.bridge
   calaman.common
 )
 
@@ -27,10 +24,10 @@ calaman_add_gpu_device_library(
 # `extern template` list.
 #
 # INCLUDE_DIRS_PRIVATE is for lacpy_bridge.h, which interface.cppm includes in
-# its global module fragment. LINK_PRIVATE wwr_backend is for the
-# gpu_stream_bridge.h that header pulls in there: a GMF cannot `import`, so
-# wwrStream_t arrives by #include, and selected_backend.h behind it reads
-# WWR_GPU_BACKEND_{CUDA,HIP} with no device pass to read __CUDACC__/__HIP__.
+# its global module fragment. LINK_PRIVATE wwr_backend is for the runtime.h that
+# header pulls in there: a GMF cannot `import`, so wwrStream_t arrives by
+# #include, and selected_backend.h behind it reads WWR_GPU_BACKEND_{CUDA,HIP}
+# with no device pass to read __CUDACC__/__HIP__.
 calaman_add_cxx_module_library(
   NAME
   calaman.lacpy

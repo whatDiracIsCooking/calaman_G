@@ -52,7 +52,7 @@ using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
 template<typename T>
 using HostBuffer = HostBufferWrapper<T, HostAbort, HostAbort>;
 template<typename T>
-using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceHandle, DeviceAbort>;
+using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbort, DeviceHandle>;
 
 template<typename T>
 DeviceBuffer<T> to_device(std::shared_ptr<DeviceHandle> handle, const std::vector<T> &host) {
@@ -111,10 +111,10 @@ template<>
 struct elem<wwr::wwrFloatComplex> {
   using real = float;
   static wwr::wwrFloatComplex make(double re, double im) {
-    return wwr::make_gpuFloatComplex(static_cast<float>(re), static_cast<float>(im));
+    return wwr::make_wwrFloatComplex(static_cast<float>(re), static_cast<float>(im));
   }
   static wwr::wwrFloatComplex scale_by(wwr::wwrFloatComplex x, float s) {
-    return wwr::make_gpuFloatComplex(wwr::wwrCrealf(x) * s, wwr::wwrCimagf(x) * s);
+    return wwr::make_wwrFloatComplex(wwr::wwrCrealf(x) * s, wwr::wwrCimagf(x) * s);
   }
   static bool eq(wwr::wwrFloatComplex a, wwr::wwrFloatComplex b) {
     return wwr::wwrCrealf(a) == wwr::wwrCrealf(b) && wwr::wwrCimagf(a) == wwr::wwrCimagf(b);
@@ -125,10 +125,10 @@ template<>
 struct elem<wwr::wwrDoubleComplex> {
   using real = double;
   static wwr::wwrDoubleComplex make(double re, double im) {
-    return wwr::make_gpuDoubleComplex(re, im);
+    return wwr::make_wwrDoubleComplex(re, im);
   }
   static wwr::wwrDoubleComplex scale_by(wwr::wwrDoubleComplex x, double s) {
-    return wwr::make_gpuDoubleComplex(wwr::wwrCreal(x) * s, wwr::wwrCimag(x) * s);
+    return wwr::make_wwrDoubleComplex(wwr::wwrCreal(x) * s, wwr::wwrCimag(x) * s);
   }
   static bool eq(wwr::wwrDoubleComplex a, wwr::wwrDoubleComplex b) {
     return wwr::wwrCreal(a) == wwr::wwrCreal(b) && wwr::wwrCimag(a) == wwr::wwrCimag(b);
