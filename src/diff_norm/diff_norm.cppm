@@ -49,10 +49,18 @@
  *   if (!s.ok()) { ... report s.name() and s.message() ... }
  */
 
+module;
+
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.diff_norm;
 
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
-import wwr.runtime_api;   // wwrMemcpy, wwrMemcpyDeviceToHost, wwrSuccess (ell_inf fetch)
+import wwr.runtime_api;   // wwrMemcpy, wwrMemcpyDeviceToHost (ell_inf fetch)
 import wwr.wrappers.blas; // axpy, asum, nrm2, iamax
 import calaman.common;    // kNegativeOne<T> (:constants), Norm (:enums)
 
@@ -88,19 +96,16 @@ export using calaman::Norm;
 /// @param y Device vector, updated in place to y - x, stride @p incy
 /// @param incy Stride between elements of y
 /// @param result Host scalar; ||y - x|| in norm @p which is written here (blocks)
-/// @return A calaman::Status: success, or the status of the failing step -- the
+/// @return A Status: success, or the status of the failing step -- the
 ///         BLAS status for axpy/asum/nrm2/iamax, or (for inf) the runtime error
 ///         if the device read failed, each carried in its own domain
 export template<typename T>
-calaman::Status diff_norm(wwr::wwrblasHandle_t handle, const Norm which, const int n, const T *x,
-                          const int incx, T *y, const int incy, T *result) {
+Status diff_norm(wwr::wwrblasHandle_t handle, const Norm which, const int n, const T *x,
+                 const int incx, T *y, const int incy, T *result) {
   if (n == 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
-  const auto status = wwr::axpy<T>(handle, n, &kNegativeOne<T>, x, incx, y, incy);
-  if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return status;
-  }
+  CLM_TRY(wwr::axpy<T>(handle, n, &kNegativeOne<T>, x, incx, y, incy));
 
   // if/else so the function always returns without inventing a status for an
   // out-of-enum value -- l2 is the fallthrough. WarpWraps exposes no neutral
@@ -113,16 +118,11 @@ calaman::Status diff_norm(wwr::wwrblasHandle_t handle, const Norm which, const i
     // value, so read that one element back (host pointer mode has already synced
     // it) and take its magnitude.
     int idx = 0;
-    const auto imax_status = wwr::iamax<T>(handle, n, y, incy, &idx);
-    if (imax_status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return imax_status;
-    }
+    CLM_TRY(wwr::iamax<T>(handle, n, y, incy, &idx));
     T elem{};
-    const auto copy_status =
-        wwr::wwrMemcpy(&elem, y + (idx - 1) * incy, sizeof(T), wwr::wwrMemcpyDeviceToHost);
-    if (copy_status != wwr::wwrSuccess) {
-      return copy_status; // the runtime error, in its own domain -- no masquerade
-    }
+    // the runtime domain's error, if the read fails, is carried as such -- no
+    // masquerade; CLM_TRY tags it ErrorDomain::runtime, not a stand-in BLAS code.
+    CLM_TRY(wwr::wwrMemcpy(&elem, y + (idx - 1) * incy, sizeof(T), wwr::wwrMemcpyDeviceToHost));
     *result = elem < T{0} ? -elem : elem;
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
