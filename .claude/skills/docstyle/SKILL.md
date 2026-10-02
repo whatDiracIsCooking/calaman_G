@@ -151,6 +151,32 @@ Each now carries two lines where the include is, with the account in
 `architecture.md`. Ask of any constraint: *where is the reader standing when
 they are about to get this wrong?* Put it there.
 
+## A body comment earns its place the same way
+
+The budgets above cover headers and declarations; a comment *inside a function*
+gets no line budget, but it gets one test — the same one. **Keep it when a
+plausible, good-faith edit would silently undo a correctness property the code
+does not announce.** The reduction must run after the guard restores the pointer
+mode, so the braces ending the guard's scope are load-bearing — flatten that
+block and it compiles clean and breaks on the device. `d_idx` must be freed
+before any early return, so `iamax` is deliberately *not* wrapped in the
+early-returning macro — `CLM_TRY` it and the failure path leaks. Those are guard
+rails, and the proof they are needed is that both were removed in good faith and
+both broke something.
+
+**Cut it when it narrates the language** (`if constexpr` discards the untaken
+branch — the reader knows) **or restates the control flow already on screen.**
+The sharp form: *would this comment survive the refactor unchanged because it
+only describes what is plainly there?* Then it is fat.
+
+One corollary decides *how* to phrase the keepers: **state the invariant, not
+the current mechanism.** A comment that narrates mechanism — "iamax is not
+CLM_TRY'd" — becomes a silent lie the instant someone changes the mechanism, and
+no compiler catches it. A comment that states the consequence — "d_idx must be
+freed before any return; the early-returning macro would leak it" — stays true
+across the refactor and is still warning the next person. Mechanism comments rot;
+invariant comments hold.
+
 ## The rewrite recipe
 
 For each paragraph in an over-budget header, ask: **is this a constraint on the

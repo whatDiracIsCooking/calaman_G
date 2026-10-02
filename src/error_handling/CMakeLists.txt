@@ -1,7 +1,9 @@
 # calaman.error_handling -- Status, the one return type the three WarpWraps
-# error domains (wwrblasStatus_t, wwrsolverStatus_t, wwrError_t) cast into. A
-# pure-host value type: no device code, no .cu, no implementation unit -- the
-# whole struct is defined inline in the interface, so a consumer that calls
+# error domains (wwrblasStatus_t, wwrsolverStatus_t, wwrError_t) cast into, plus
+# the :pointer_mode_policy partition (pointer_mode_policy.cppm --
+# PointerModeStatus, a recording error policy for ScopedPointerMode). Pure-host
+# value types: no device code, no .cu, no implementation unit -- the whole
+# struct is defined inline in the interface, so a consumer that calls
 # ok()/name()/message() names every module the bodies touch.
 #
 # All links are PUBLIC for that reason (as calaman.diff_norm is): the interface
@@ -23,11 +25,15 @@
 # It is wrapped in $<BUILD_INTERFACE:> so the raw build path does not leak into
 # the install interface, which waits on the install tier (CALAMAN_INSTALL,
 # docs/architecture.md §2).
+# IMPORT_STD: the :pointer_mode_policy partition uses std::source_location (the
+# defaulted argument the error_policy contract carries).
 calaman_add_cxx_module_library(
   NAME
   calaman.error_handling
   PRIMARY_INTERFACE
   error_handling.cppm
+  PARTITIONS
+  pointer_mode_policy.cppm
   LINK_PUBLIC
   wwr.runtime_api
   wwr.extension.common
@@ -35,4 +41,5 @@ calaman_add_cxx_module_library(
   wwr.extension.solver
   INCLUDE_DIRS_PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+  IMPORT_STD
 )
