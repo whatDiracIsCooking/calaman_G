@@ -29,6 +29,7 @@ import wwr.extension.memory_buffer;
 import calaman.complex_cast;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -38,6 +39,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -118,7 +120,7 @@ using RealOf = typename elem<T>::real;
 template<typename T>
 void round_trip() {
   using R = RealOf<T>;
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   auto stream = handle->stream().get();
   const std::size_t n = 7;
 
@@ -170,7 +172,7 @@ void round_trip() {
 template<typename T>
 void set_preserves_other() {
   using R = RealOf<T>;
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   auto stream = handle->stream().get();
   const std::size_t n = 5;
 
@@ -219,7 +221,7 @@ void set_preserves_other() {
 template<typename T>
 void zero_count_noop() {
   using R = RealOf<T>;
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   auto stream = handle->stream().get();
   const std::size_t n = 3;
 

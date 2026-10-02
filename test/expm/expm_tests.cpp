@@ -39,6 +39,7 @@ import wwr.extension.memory_buffer;
 import calaman.expm;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -48,6 +49,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -158,13 +160,6 @@ std::vector<T> from_device(std::shared_ptr<DeviceHandle> handle, const DeviceBuf
     out[i] = host.data()[i];
   }
   return out;
-}
-
-// One device handle per process -- constructing it queries the device and
-// creates a stream + pool, so share it across the cases in the GPU suites.
-std::shared_ptr<DeviceHandle> &shared_handle() {
-  static std::shared_ptr<DeviceHandle> handle = std::make_shared<DeviceHandle>(0);
-  return handle;
 }
 
 // ── host oracle arithmetic, all in compute_t ─────────────────────────────────
@@ -406,7 +401,7 @@ TEST(ExpmArgCheckTests, RejectsBadArgumentsBeforeTouchingTheDevice) {
 
 template<typename T>
 void check_zero_is_identity(int n) {
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   std::vector<T> a(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
   std::vector<T> got(static_cast<std::size_t>(n) * n, traits<T>::make(-7.0, 0.0));
@@ -428,7 +423,7 @@ TEST(ExpmClosedFormTests, ZeroIsIdentityComplexDouble) {
 
 template<typename T>
 void check_diagonal(int n, unsigned seed) {
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   std::mt19937 rng(seed);
   std::uniform_real_distribution<double> dist(-1.0, 1.0);
@@ -463,7 +458,7 @@ void check_nilpotent(int n, unsigned seed) {
   // A strictly upper-triangular N is nilpotent: N^k = 0 for k >= n, so
   // exp(N) = sum_{k=0}^{n-1} N^k / k! terminates. The host sums that finite
   // series (a different path from the device's Pade), giving an exact oracle.
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   std::mt19937 rng(seed);
   std::uniform_real_distribution<double> dist(-0.5, 0.5);
@@ -512,7 +507,7 @@ template<typename T>
 void check_inverse_identity(int n, double target, unsigned seed) {
   // exp(A) exp(-A) = I. Both exponentials come from the device; the host
   // multiplies them (the independent step) and checks the product is I.
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   const auto a = scaled_random<T>(n, target, seed);
   std::vector<compute_t<T>> ac = to_compute(a);
@@ -545,7 +540,7 @@ template<typename T>
 void check_half_squared(int n, double target, unsigned seed) {
   // exp(A) = exp(A/2)^2. exp(A) and exp(A/2) both from the device; the host
   // squares the latter and compares.
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   const auto a = scaled_random<T>(n, target, seed);
   auto half_c = to_compute(a);
@@ -580,7 +575,7 @@ void check_degree_ladder(int n) {
   // scaling, no balancing) and the result must match r_13 evaluated on the same
   // matrix -- a different coefficient table and code path. A wrong coefficient
   // anywhere on the ladder breaks the agreement.
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   const int degrees[5] = {3, 5, 7, 9, 13};
   real_t<T> prev = real_t<T>{0};
@@ -619,7 +614,7 @@ void check_balancing(unsigned seed) {
   // well-conditioned M (whose exp comes from the device too, on a tame matrix).
   const int n = 4;
   const int kexp[4] = {6, 2, -3, -6}; // D = diag(2^6, 2^2, 2^-3, 2^-6), span 2^12
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
 
   // M: modest entries so its norm sits in a low rung.
@@ -672,7 +667,7 @@ template<typename T>
 void check_balance_neutral(int n, double target, unsigned seed) {
   // On a well-scaled matrix gebal cannot lower the 1-norm, so Auto keeps the
   // unbalanced path and agrees with None bit for bit.
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   const auto a = scaled_random<T>(n, target, seed);
 
@@ -704,7 +699,7 @@ TEST(ExpmPaddingTests, PaddedOutputLeadingDimension) {
   using T = double;
   const int n = 5;
   const int lde = n + 3;
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   const auto a = scaled_random<T>(n, 1.5, 60);
 
@@ -736,7 +731,7 @@ TEST(ExpmPaddingTests, PaddedOutputLeadingDimension) {
 TEST(ExpmPointerModeTests, RestoresDevicePointerMode) {
   using T = double;
   const int n = 4;
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
 
   // Put the handle in DEVICE pointer mode; expm must flip to HOST internally and

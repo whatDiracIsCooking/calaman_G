@@ -22,6 +22,7 @@ calaman_add_gtest_executable(
   calaman.columnwise_ell1
   calaman.test.shared.abort_policy
   calaman.test.shared.device_handle
+  calaman.test.utils.shared_device
   calaman::lapack_reference
   wwr.runtime_api
   wwr.extension.memory_buffer

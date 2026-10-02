@@ -27,6 +27,7 @@ import wwr.extension.memory_buffer;
 import calaman.columnwise_ell1;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -36,6 +37,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -69,14 +71,6 @@ std::vector<T> from_device(std::shared_ptr<DeviceHandle> handle, const DeviceBuf
     out[i] = host.data()[i];
   }
   return out;
-}
-
-// One device handle per process -- constructing it queries the device and
-// creates a stream + pool, so share it across the GPU cases. The host-only
-// suite never calls this, so it needs no device.
-std::shared_ptr<DeviceHandle> &shared_handle() {
-  static std::shared_ptr<DeviceHandle> handle = std::make_shared<DeviceHandle>(0);
-  return handle;
 }
 
 // The oracle: cblas_?asum over one column (rows elements, stride 1 within the
@@ -124,11 +118,11 @@ void expect_matches_reference(std::size_t rows, std::size_t cols, std::size_t ld
     oracle[j] = ref_asum(static_cast<int>(rows), a.data() + j * lda);
   }
 
-  auto d_a = to_device(shared_handle(), a);
-  DeviceBuffer<T> d_result(cols, shared_handle());
+  auto d_a = to_device(shared_device(), a);
+  DeviceBuffer<T> d_result(cols, shared_device());
 
-  columnwise_ell1<T>(shared_handle()->stream().get(), rows, cols, d_a.data(), lda, d_result.data());
-  const auto got = from_device(shared_handle(), d_result, cols);
+  columnwise_ell1<T>(shared_device()->stream().get(), rows, cols, d_a.data(), lda, d_result.data());
+  const auto got = from_device(shared_device(), d_result, cols);
 
   for (std::size_t j = 0; j < cols; ++j) {
     EXPECT_NEAR(got[j], oracle[j], norm_tol(oracle[j]))
@@ -174,11 +168,11 @@ TEST(ColumnwiseEll1OracleTests, AllNegativeIsSumOfMagnitudes) {
     oracle[j] = ref_asum(static_cast<int>(rows), a.data() + j * rows);
   }
 
-  auto d_a = to_device(shared_handle(), a);
-  DeviceBuffer<double> d_result(cols, shared_handle());
-  columnwise_ell1<double>(shared_handle()->stream().get(), rows, cols, d_a.data(), rows,
+  auto d_a = to_device(shared_device(), a);
+  DeviceBuffer<double> d_result(cols, shared_device());
+  columnwise_ell1<double>(shared_device()->stream().get(), rows, cols, d_a.data(), rows,
                           d_result.data());
-  const auto got = from_device(shared_handle(), d_result, cols);
+  const auto got = from_device(shared_device(), d_result, cols);
   for (std::size_t j = 0; j < cols; ++j) {
     EXPECT_NEAR(got[j], oracle[j], norm_tol(oracle[j])) << "col " << j;
     EXPECT_GT(got[j], 0.0) << "col " << j << " must be a positive magnitude sum";

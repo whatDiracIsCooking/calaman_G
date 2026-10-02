@@ -35,6 +35,7 @@ import wwr.extension.init_state;
 import calaman.random_unitary;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 import calaman.test.shared.tolerance;
 
 namespace calaman {
@@ -45,6 +46,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 using test::factorization_tol;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
@@ -172,7 +174,7 @@ void expect_unitary(int n, unsigned long long seed) {
   const int lda = n;
   const std::size_t nn = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
 
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const auto got = run_random_unitary<T>(handle, n, seed);
 
   std::vector<Cplx> q(nn);
@@ -211,7 +213,7 @@ void expect_seed_sensitive(int n, unsigned long long seed_a, unsigned long long 
   using Cplx = std::complex<Real>;
   const std::size_t nn = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
 
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const auto a = run_random_unitary<T>(handle, n, seed_a);
   const auto b = run_random_unitary<T>(handle, n, seed_b);
 

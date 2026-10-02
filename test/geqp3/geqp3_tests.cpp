@@ -36,6 +36,7 @@ import wwr.extension.memory_buffer;
 import calaman.geqp3;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 import calaman.test.shared.tolerance;
 
 namespace calaman {
@@ -46,6 +47,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 using test::eps;
 using test::factorization_tol;
 using test::frobenius_norm;
@@ -162,7 +164,7 @@ void expect_matches_reference(int m, int n, unsigned seed,
   ASSERT_EQ(ref_geqp3(m, n, ref_a.data(), lda, ref_jpvt.data(), ref_tau.data()), 0);
 
   // Device geqp3. vn1/vn2 are bare scratch here -- geqp3 seeds them itself.
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
@@ -338,7 +340,7 @@ TEST(Geqp3OracleTests, MultiBlockFloat) {
 // geqp3 short-circuits to success and writes nothing. Driven directly (the
 // oracle harness assumes a nonempty matrix), checking only the return status.
 TEST(Geqp3OracleTests, EmptyMatrices) {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
@@ -403,7 +405,7 @@ void expect_fixed_matches_reference(int m, int n, unsigned seed, std::vector<int
 
   // Device: the 15-arg overload. vn1/vn2/work are scratch; the solver handle
   // shares the blas handle's stream; swork is sized by geqp3_solver_work_size.
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);

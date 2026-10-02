@@ -17,6 +17,7 @@ calaman_add_gtest_executable(
   calaman.complex_cast
   calaman.test.shared.abort_policy
   calaman.test.shared.device_handle
+  calaman.test.utils.shared_device
   wwr.runtime_api
   wwr.complex
   wwr.wrappers.common

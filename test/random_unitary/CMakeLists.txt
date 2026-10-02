@@ -27,6 +27,7 @@ calaman_add_gtest_executable(
   calaman.random_unitary
   calaman.test.shared.abort_policy
   calaman.test.shared.device_handle
+  calaman.test.utils.shared_device
   calaman.test.shared.tolerance
   wwr.solver
   wwr.runtime_api

@@ -48,6 +48,7 @@ import calaman.larf;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
 import calaman.test.shared.tolerance;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -57,6 +58,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 using test::factorization_tol;
 using test::frobenius_norm;
 
@@ -125,7 +127,7 @@ void expect_matches_reference(Side side, int m, int n, T tau) {
   const int wlen = left ? n : m;
   const std::size_t cn = static_cast<std::size_t>(m) * static_cast<std::size_t>(n);
 
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
@@ -202,7 +204,7 @@ TEST(LarfOracleTests, TauZeroIsNoop) {
     const int vlen = side == Side::L ? m : n;
     const int wlen = side == Side::L ? n : m;
 
-    auto handle = std::make_shared<DeviceHandle>(0);
+    auto handle = shared_device();
     wwr::wwrblasHandle_t blas{};
     ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
     ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);

@@ -28,6 +28,7 @@ import wwr.extension.memory_buffer;
 import calaman.diff_norm;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -40,6 +41,7 @@ using wwr::extension::HostBufferWrapper;
 // a concrete device_handle. See test/shared/README.md.
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -128,7 +130,7 @@ void expect_matches_reference(Norm which, int n, int inc) {
   ASSERT_GE(inc, 1);
   const std::size_t total = static_cast<std::size_t>(n) * static_cast<std::size_t>(inc);
 
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   // One stream for the uploads and the BLAS work, so the axpy sees the copies.
@@ -258,7 +260,7 @@ TEST(DiffNormOracleTests, DevicePointerModeDouble) {
 TEST(DiffNormOracleTests, EmptyIsNoopSuccess) {
   // n == 0: diff_norm enqueues nothing, returns success, and leaves result
   // untouched -- so the sentinel must survive.
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);

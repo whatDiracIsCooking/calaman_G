@@ -32,6 +32,7 @@ import calaman.larfg;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
 import calaman.test.shared.tolerance;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -42,6 +43,7 @@ using wwr::extension::HostBufferWrapper;
 using test::AbortPolicy;
 using test::DeviceHandle;
 using test::eps;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -105,7 +107,7 @@ void expect_matches_reference(int n, T alpha0, unsigned seed) {
   ref_larfg(n, &ref_alpha, ref_x.data(), 1, &ref_tau);
   const T ref_beta = ref_alpha; // overwritten in place
 
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
@@ -172,7 +174,7 @@ void expect_zero_tail_is_identity(int n, T alpha0) {
   const int tail = n - 1;
   const std::size_t tn = static_cast<std::size_t>(tail);
 
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
@@ -219,7 +221,7 @@ TEST(LarfgOracleTests, ZeroTailIsIdentity) {
 // larfg must leave alpha as beta and report tau == 0 without touching the tail.
 template<typename T>
 void expect_single_element(T alpha0) {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
@@ -264,7 +266,7 @@ TEST(LarfgOracleTests, SingleElement) {
 TEST(LarfgOracleTests, NonPositiveNIsNoop) {
   // n <= 0: larfg enqueues nothing, returns success, and leaves tau/beta
   // untouched -- the sentinels must survive.
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
