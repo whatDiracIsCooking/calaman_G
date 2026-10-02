@@ -60,12 +60,24 @@ DeviceBuffer<T> to_device(std::shared_ptr<DeviceHandle> handle, const HostBuffer
 
 // The reference oracle: reference CBLAS, dispatched by type, same precision as the
 // device path. cblas_i?amax returns a 0-based index into the difference vector.
-float ref_asum(int n, const float *d) { return cblas_sasum(n, d, 1); }
-double ref_asum(int n, const double *d) { return cblas_dasum(n, d, 1); }
-float ref_nrm2(int n, const float *d) { return cblas_snrm2(n, d, 1); }
-double ref_nrm2(int n, const double *d) { return cblas_dnrm2(n, d, 1); }
-std::size_t ref_iamax(int n, const float *d) { return cblas_isamax(n, d, 1); }
-std::size_t ref_iamax(int n, const double *d) { return cblas_idamax(n, d, 1); }
+float ref_asum(int n, const float *d) {
+  return cblas_sasum(n, d, 1);
+}
+double ref_asum(int n, const double *d) {
+  return cblas_dasum(n, d, 1);
+}
+float ref_nrm2(int n, const float *d) {
+  return cblas_snrm2(n, d, 1);
+}
+double ref_nrm2(int n, const double *d) {
+  return cblas_dnrm2(n, d, 1);
+}
+std::size_t ref_iamax(int n, const float *d) {
+  return cblas_isamax(n, d, 1);
+}
+std::size_t ref_iamax(int n, const double *d) {
+  return cblas_idamax(n, d, 1);
+}
 
 /// @brief ||diff|| in norm @p which, from the reference CBLAS
 template<typename T>
@@ -140,12 +152,11 @@ void expect_matches_reference(Norm which, int n, int inc) {
   auto d_y = to_device(handle, host_y, total);
 
   T got = static_cast<T>(-12345);
-  const auto status =
-      diff_norm<T>(blas, which, n, d_x.data(), inc, d_y.data(), inc, &got);
+  const auto status = diff_norm<T>(blas, which, n, d_x.data(), inc, d_y.data(), inc, &got);
   wwr::wwrblasDestroy(blas);
 
-  EXPECT_EQ(status, wwr::WWRBLAS_STATUS_SUCCESS)
-      << "norm=" << static_cast<int>(which) << " n=" << n << " inc=" << inc;
+  EXPECT_TRUE(status.ok()) << "norm=" << static_cast<int>(which) << " n=" << n << " inc=" << inc
+                           << " status=" << status.name();
   EXPECT_NEAR(got, ref, norm_tol(ref))
       << "norm=" << static_cast<int>(which) << " n=" << n << " inc=" << inc;
 }
@@ -190,7 +201,7 @@ TEST(DiffNormOracleTests, EmptyIsNoopSuccess) {
   const auto status = diff_norm<double>(blas, Norm::l2, 0, d_x.data(), 1, d_y.data(), 1, &got);
   wwr::wwrblasDestroy(blas);
 
-  EXPECT_EQ(status, wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_TRUE(status.ok());
   EXPECT_DOUBLE_EQ(got, -12345.0); // untouched
 }
 

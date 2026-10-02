@@ -7,10 +7,13 @@
 # All links are PUBLIC because diff_norm() is an exported template DEFINED in
 # the interface (no extern-template firewall, unlike calaman.lacpy): a consumer
 # instantiates the body itself, so every module the body names must reach it.
+# calaman.error_handling is additionally re-exported (export import) because it
+# supplies the Status return type, whose member functions a consumer must see.
 #   wwr.wrappers.blas       axpy, asum, nrm2, iamax
 #   wwr.blas                wwrblasHandle_t / wwrblasStatus_t / WWRBLAS_STATUS_*
 #   wwr.runtime_api         wwrMemcpy + wwrSuccess for the ell_inf read
 #   calaman.common          kNegativeOne<T>, the fixed axpy scalar (:constants)
+#   calaman.error_handling  Status, the cross-domain return type
 calaman_add_cxx_module_library(
   NAME
   calaman.diff_norm
@@ -21,4 +24,5 @@ calaman_add_cxx_module_library(
   wwr.blas
   wwr.runtime_api
   calaman.common
+  calaman.error_handling
 )
