@@ -14,6 +14,10 @@ add_subdirectory(horner)
 add_subdirectory(lacpy)
 add_subdirectory(orthogonalize)
 
+# calaman.random_unitary composes calaman.orthogonalize with a Gaussian fill, so
+# it is added after orthogonalize: that module's target must exist to be linked.
+add_subdirectory(random_unitary)
+
 # calaman.reduce_columns is header-only infrastructure consumed by
 # calaman.columnwise_ell1, so it is added before it: its INTERFACE target must
 # exist for columnwise_ell1's device library to link it.
