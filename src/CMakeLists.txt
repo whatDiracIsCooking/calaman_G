@@ -22,6 +22,13 @@ add_subdirectory(error_handling)
 add_subdirectory(elem_ops)
 
 add_subdirectory(complex_cast)
+
+# calaman.set_element is complex_cast's structural twin (per-element functors
+# through parallel_for, |.| through calaman.elem_ops) -- the device-pointer-mode
+# back half of iamax, reading one element of a device array by a device-held
+# index. It links calaman.elem_ops, added above, so it follows it.
+add_subdirectory(set_element)
+
 add_subdirectory(diff_norm)
 add_subdirectory(gebal)
 add_subdirectory(horner)
