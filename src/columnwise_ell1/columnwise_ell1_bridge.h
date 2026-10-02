@@ -9,7 +9,7 @@
  * name gets module linkage and can never bind to a definition compiled in a
  * plain TU, which is what the .cu is.
  *
- * wwrStream_t arrives from the gpu* layer's include-only bridge header rather
+ * wwrStream_t arrives from runtime.h, an include-only header rather
  * than an `import`, since a GMF cannot import. It is the SAME type
  * wwr.runtime_api exports, so the module passes its stream straight through.
  * Reading the backend define selected_backend.h needs is why the module links
@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "extension/bridge/gpu_stream_bridge.h"
+#include "runtime.h"
 
 #include <cstddef>
 

@@ -16,7 +16,7 @@ add_library(calaman.reduce_columns INTERFACE)
 add_library(calaman::reduce_columns ALIAS calaman.reduce_columns)
 
 # src/ itself is the include root: reduce_columns.cuh is reached as
-# "reduce_columns/reduce_columns.cuh" and pulls in the src/-root "runtime.cuh"
+# "reduce_columns/reduce_columns.cuh" and pulls in the src/-root "runtime.h"
 # (via wwr.device) alongside it.
 target_include_directories(
   calaman.reduce_columns
@@ -24,13 +24,12 @@ target_include_directories(
             $<INSTALL_INTERFACE:${CALAMAN_INSTALL_INCLUDEDIR}>
 )
 
-# wwr.device carries runtime.cuh's include path plus WWR_WARP_SIZE and the
+# wwr.device carries runtime.h's include path plus WWR_WARP_SIZE and the
 # runtime-only libs (CUDA::cudart / hip::host, never hip::device). A
 # device-KERNEL consumer of this header links hip::device itself, scoped to its
-# own gpu_device_library -- see src/columnwise_ell1. wwr.extension.bridge
-# carries the same src/ root for the "extension/bridge/gpu_stream_bridge.h"
-# (wwrStream_t) the header includes; named explicitly because that dependency is
-# real.
+# own gpu_device_library -- see src/columnwise_ell1. runtime.h (wwrStream_t) and
+# device_guard.h (device-pass gate) both resolve off that same src/ root, so
+# wwr.device covers the two headers this one includes too.
 target_link_libraries(
-  calaman.reduce_columns INTERFACE wwr.device wwr.extension.bridge
+  calaman.reduce_columns INTERFACE wwr.device
 )
