@@ -19,10 +19,11 @@ add_subdirectory(orthogonalize)
 add_subdirectory(random_unitary)
 
 # calaman.reduce_columns is header-only infrastructure consumed by
-# calaman.columnwise_ell1, so it is added before it: its INTERFACE target must
-# exist for columnwise_ell1's device library to link it.
+# calaman.columnwise_ell1 and calaman.columnwise_ell2, so it is added before
+# them: its INTERFACE target must exist for their device libraries to link it.
 add_subdirectory(reduce_columns)
 add_subdirectory(columnwise_ell1)
+add_subdirectory(columnwise_ell2)
 
 # The dense linear-algebra routines -- the geqp3 column-pivoted-QR call graph,
 # one directory and one module per LAPACK routine. Added in call-graph order so
