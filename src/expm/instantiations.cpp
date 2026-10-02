@@ -5,7 +5,7 @@
  * Implementation unit of calaman.expm. Pairs with the `extern template`
  * declarations in interface.cppm: together they keep every importer from
  * instantiating these bodies again -- each names the device launchers
- * (device::pade_even_odd / pade_split / expand_scale / abs_colsums / max_reduce)
+ * (device::pade_even_odd / pade_split / abs_colsums / max_reduce)
  * declared only in the interface's global module fragment, so they must be
  * instantiated here, inside this library. The device-side work they call is
  * instantiated separately, in expm.cu, as device code.
@@ -30,7 +30,6 @@ import wwr.wrappers.common;
 import wwr.wrappers.blas;
 import wwr.wrappers.solver;
 import calaman.common;
-import calaman.gebal;
 
 namespace calaman {
 
@@ -84,17 +83,17 @@ pade<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr:
 // expm
 template wwr::wwrblasStatus_t expm<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
                                           wwr::wwrStream_t, int, const float *, int, float *, int,
-                                          void *, std::size_t, int *, ExpmInfo *, ExpmOptions);
+                                          void *, std::size_t, int *, ExpmPlan *);
 template wwr::wwrblasStatus_t expm<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
                                            wwr::wwrStream_t, int, const double *, int, double *, int,
-                                           void *, std::size_t, int *, ExpmInfo *, ExpmOptions);
+                                           void *, std::size_t, int *, ExpmPlan *);
 template wwr::wwrblasStatus_t expm<wwr::wwrFloatComplex>(
     wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
     const wwr::wwrFloatComplex *, int, wwr::wwrFloatComplex *, int, void *, std::size_t, int *,
-    ExpmInfo *, ExpmOptions);
+    ExpmPlan *);
 template wwr::wwrblasStatus_t expm<wwr::wwrDoubleComplex>(
     wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
     const wwr::wwrDoubleComplex *, int, wwr::wwrDoubleComplex *, int, void *, std::size_t, int *,
-    ExpmInfo *, ExpmOptions);
+    ExpmPlan *);
 
 } // namespace calaman

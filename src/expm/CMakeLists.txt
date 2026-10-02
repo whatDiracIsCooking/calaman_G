@@ -1,15 +1,15 @@
 # calaman.expm -- the matrix exponential exp(A) by scaling and squaring with a
 # diagonal Pade approximant (Higham's Algorithm 2.3). A shipped src/ module: a
-# host composition over wrapped BLAS (gemm/geam/scal/dgmm), the wrapped LU solve
-# (getrf/getrs) and calaman.gebal, plus five fused device kernels of its own,
+# host composition over wrapped BLAS (gemm/geam) and the wrapped LU solve
+# (getrf/getrs), plus four fused device kernels of its own,
 # written once against WarpWraps's `wwr*` names and built for either backend.
 #
 # The matrix exponential is not a LAPACK routine (LAPACK ships no expm), so it
 # is its own module rather than a calaman.linalg partition, like calaman.horner.
 
-# The device-kernel library: the five genuinely per-element pieces (the fused
-# Pade evaluation, the numerator/denominator split, the balancing-vector
-# widening, and the two halves of the 1-norm). expm.cu launches its own functors
+# The device-kernel library: the four genuinely per-element pieces (the fused
+# Pade evaluation, the numerator/denominator split, and the two halves of the
+# 1-norm). expm.cu launches its own functors
 # through wwr.extension.parallel_for, defers the column sums to
 # calaman.reduce_columns's header, and takes its type-generic scalar arithmetic
 # from calaman.elem_ops's header, so it links all three PRIVATE: parallel_for
@@ -38,8 +38,8 @@ calaman_add_gpu_device_library(
 # memcpy/sync (wwr.runtime_api), the complex element types and their host
 # constructors (wwr.complex), the usual_fp/ComplexToRealType traits
 # (wwr.wrappers.common), the type-safe BLAS and solver wrappers
-# (wwr.wrappers.blas, wwr.wrappers.solver), the WorkspaceBuilder/align_up
-# (calaman.common) and the balancing dependency (calaman.gebal).
+# (wwr.wrappers.blas, wwr.wrappers.solver) and the WorkspaceBuilder/align_up
+# (calaman.common).
 # LINK_PRIVATE wwr_backend is for the runtime.h that expm_bridge.h pulls into
 # the global module fragment: a GMF cannot `import`, so wwrStream_t arrives by
 # #include and selected_backend.h behind it reads WWR_GPU_BACKEND_*.
@@ -60,7 +60,6 @@ calaman_add_cxx_module_library(
   wwr.wrappers.blas
   wwr.wrappers.solver
   calaman.common
-  calaman.gebal
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE

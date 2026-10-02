@@ -128,3 +128,41 @@ extension layer already offers handles, device buffers and an error policy.
 **Consequence.** For each routine, the mapping from LAPACK's signature to this
 project's is a fact worth writing down once, in that module's header — including
 which LAPACK behaviours are deliberately *not* reproduced.
+
+## 5. A routine's result structs earn their place one at a time
+
+**Provisional** — drawn from only two routines so far (`calaman.expm`,
+`calaman.feast`) and expected to be refined as more modules land. Revisit it
+rather than treat it as settled.
+
+**Decision.** The three roles a routine might expose as structs — tuning IN, a
+cost *prediction*, an outcome *report* OUT — are each worth a struct **only when
+it carries data the others cannot derive**; otherwise they collapse. `expm`
+carries a single `ExpmPlan {m, s, num_gemms}`: `expm_plan()` predicts it from the
+1-norm and `expm()` reports the one it executed. `feast` keeps a separate
+`FeastOptions` and `FeastInfo` and no prediction struct. Both are correct under
+the same rule.
+
+**Context.** The reflex is a struct per role, which is how `expm` briefly had an
+`ExpmOptions`, an `ExpmPlan` and an `ExpmInfo`. A struct earns its name only by
+the fields the others lack:
+
+- **Options** — only if real tuning knobs exist. `expm`'s `ExpmOptions` held one
+  enum (`balance`); when balancing moved out of the routine (it is the orthogonal
+  similarity `D exp(D^-1 A D) D^-1`, which composes *around* `expm`), the struct
+  had nothing left and was deleted. `feast`'s `FeastOptions` (`max_iter`, `tol`)
+  is genuine.
+- **A prediction struct** — only where a cost-prediction entry point exists
+  (`expm_plan`). Where the routine is also *deterministic*, that same struct is
+  the honest report: the degree and squarings follow from the 1-norm alone, so
+  what `expm` *will* do equals what it *did*, and a separate `Info` would only
+  restate a subset of the plan.
+- **An outcome report** — only when the routine yields facts no prediction could
+  carry. `FeastInfo` (`iterations`, `max_residual`, `reason`) qualifies: FEAST is
+  iterative and data-dependent, so its outcome is not a function of its inputs,
+  and it has no predictor — the opposite of `expm` on both counts.
+
+**Consequence.** Before adding `XOptions` / `XPlan` / `XInfo` to a new routine,
+ask which fields each holds that the others cannot, and merge or drop the ones
+that fail. A deterministic routine with a predictor needs one struct, not three;
+an iterative, knob-taking one may well need two.

@@ -11,10 +11,7 @@
 //   * the degree ladder -- for a norm inside each rung, expm (which picks the
 //     cheap degree) is compared against pade<T>(13) on the same matrix, an
 //     independent coefficient table and code path, so a wrong coefficient
-//     anywhere on the ladder shows up;
-//   * balancing -- A = D M D^-1 must be balanced back to match D exp(M) D^-1
-//     built from the well-conditioned M, and on a well-scaled matrix Auto and
-//     None agree.
+//     anywhere on the ladder shows up.
 //
 // The host arithmetic is done in std::complex (or the plain real), converting at
 // the device boundary, so the oracle shares none of expm's device code. All four
@@ -257,7 +254,7 @@ void destroy_handles(Handles &h) {
 template<typename T>
 wwr::wwrblasStatus_t run_expm(std::shared_ptr<DeviceHandle> handle, Handles &h, int n,
                               const std::vector<T> &a, int lda, int lde, std::vector<T> &out_seed,
-                              ExpmInfo *info, ExpmOptions opts) {
+                              ExpmPlan *info) {
   auto d_a = to_device(handle, a);
   auto d_e = to_device(handle, out_seed);
 
@@ -267,7 +264,7 @@ wwr::wwrblasStatus_t run_expm(std::shared_ptr<DeviceHandle> handle, Handles &h, 
   DeviceBuffer<int> d_info(2, handle);
 
   const auto status = expm<T>(h.blas, h.solver, handle->stream().get(), n, d_a.data(), lda,
-                              d_e.data(), lde, d_work.data(), bytes, d_info.data(), info, opts);
+                              d_e.data(), lde, d_work.data(), bytes, d_info.data(), info);
   wwr::wwrStreamSynchronize(handle->stream().get());
   out_seed = from_device(handle, d_e, static_cast<std::size_t>(lde) * n);
   return status;
@@ -380,7 +377,7 @@ TEST(ExpmArgCheckTests, RejectsBadArgumentsBeforeTouchingTheDevice) {
 
   auto call = [&](int nn, int lda, int lde, void *w) {
     return expm<double>(null_blas, null_solver, wwr::wwrStream_t{}, nn, a.data(), lda, e.data(), lde,
-                        w, work.size() * sizeof(double), info_dev, nullptr, {});
+                        w, work.size() * sizeof(double), info_dev, nullptr);
   };
   EXPECT_EQ(call(0, n, n, work.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "n < 1";
   EXPECT_EQ(call(n, n - 1, n, work.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "lda < n";
@@ -405,8 +402,8 @@ void check_zero_is_identity(int n) {
   Handles h = make_handles(handle);
   std::vector<T> a(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
   std::vector<T> got(static_cast<std::size_t>(n) * n, traits<T>::make(-7.0, 0.0));
-  ExpmInfo info{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info, {}), wwr::WWRBLAS_STATUS_SUCCESS);
+  ExpmPlan info{};
+  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info), wwr::WWRBLAS_STATUS_SUCCESS);
   const auto oracle = host_identity<compute_t<T>>(n);
   expect_close<T>(got, oracle, n, n, real_t<T>{64}, "exp(0)=I");
   destroy_handles(h);
@@ -443,8 +440,8 @@ void check_diagonal(int n, unsigned seed) {
   }
   auto a = from_compute<T>(ac);
   std::vector<T> got(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
-  ExpmInfo info{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info, {}), wwr::WWRBLAS_STATUS_SUCCESS);
+  ExpmPlan info{};
+  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info), wwr::WWRBLAS_STATUS_SUCCESS);
   expect_close<T>(got, oracle, n, n, real_t<T>{128}, "exp(diag)=diag(exp)");
   destroy_handles(h);
 }
@@ -490,8 +487,8 @@ void check_nilpotent(int n, unsigned seed) {
 
   auto a = from_compute<T>(nc);
   std::vector<T> got(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
-  ExpmInfo info{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info, {}), wwr::WWRBLAS_STATUS_SUCCESS);
+  ExpmPlan info{};
+  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info), wwr::WWRBLAS_STATUS_SUCCESS);
   expect_close<T>(got, oracle, n, n, real_t<T>{128}, "exp(nilpotent)");
   destroy_handles(h);
 }
@@ -519,9 +516,9 @@ void check_inverse_identity(int n, double target, unsigned seed) {
 
   std::vector<T> e1(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
   std::vector<T> e2 = e1;
-  ExpmInfo info{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, e1, &info, {}), wwr::WWRBLAS_STATUS_SUCCESS);
-  ASSERT_EQ(run_expm<T>(handle, h, n, na, n, n, e2, &info, {}), wwr::WWRBLAS_STATUS_SUCCESS);
+  ExpmPlan info{};
+  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, e1, &info), wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_EQ(run_expm<T>(handle, h, n, na, n, n, e2, &info), wwr::WWRBLAS_STATUS_SUCCESS);
 
   const auto prod = host_matmul(n, to_compute(e1), to_compute(e2));
   const auto oracle = host_identity<compute_t<T>>(n);
@@ -551,9 +548,9 @@ void check_half_squared(int n, double target, unsigned seed) {
 
   std::vector<T> ea(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
   std::vector<T> eh = ea;
-  ExpmInfo info{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, ea, &info, {}), wwr::WWRBLAS_STATUS_SUCCESS);
-  ASSERT_EQ(run_expm<T>(handle, h, n, half, n, n, eh, &info, {}), wwr::WWRBLAS_STATUS_SUCCESS);
+  ExpmPlan info{};
+  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, ea, &info), wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_EQ(run_expm<T>(handle, h, n, half, n, n, eh, &info), wwr::WWRBLAS_STATUS_SUCCESS);
 
   const auto sq = host_matmul(n, to_compute(eh), to_compute(eh));
   expect_close<T>(ea, sq, n, n, real_t<T>{256}, "exp(A)=exp(A/2)^2");
@@ -572,9 +569,9 @@ TEST(ExpmIdentityTests, HalfSquaredComplexFloat) {
 template<typename T>
 void check_degree_ladder(int n) {
   // For a norm squarely inside each rung, expm picks that rung's degree (no
-  // scaling, no balancing) and the result must match r_13 evaluated on the same
-  // matrix -- a different coefficient table and code path. A wrong coefficient
-  // anywhere on the ladder breaks the agreement.
+  // scaling) and the result must match r_13 evaluated on the same matrix -- a
+  // different coefficient table and code path. A wrong coefficient anywhere on
+  // the ladder breaks the agreement.
   auto handle = shared_device();
   Handles h = make_handles(handle);
   const int degrees[5] = {3, 5, 7, 9, 13};
@@ -587,8 +584,8 @@ void check_degree_ladder(int n) {
     const auto a = scaled_random<T>(n, target, seed++);
 
     std::vector<T> got(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
-    ExpmInfo info{};
-    ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info, ExpmOptions{ExpmBalance::None}),
+    ExpmPlan info{};
+    ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info),
               wwr::WWRBLAS_STATUS_SUCCESS);
     EXPECT_EQ(info.s, 0) << "rung " << degrees[i] << " must not scale";
     EXPECT_LE(info.m, degrees[i]);
@@ -602,92 +599,6 @@ void check_degree_ladder(int n) {
 TEST(ExpmLadderTests, LadderDouble) { check_degree_ladder<double>(5); }
 TEST(ExpmLadderTests, LadderFloat) { check_degree_ladder<float>(5); }
 TEST(ExpmLadderTests, LadderComplexDouble) { check_degree_ladder<wwr::wwrDoubleComplex>(4); }
-
-// ========================================================================
-// Device: balancing
-// ========================================================================
-
-template<typename T>
-void check_balancing(unsigned seed) {
-  // A = D M D^-1 with D a wide-range power-of-two diagonal makes A badly scaled.
-  // expm(Auto) must balance it back and match D exp(M) D^-1 built from the
-  // well-conditioned M (whose exp comes from the device too, on a tame matrix).
-  const int n = 4;
-  const int kexp[4] = {6, 2, -3, -6}; // D = diag(2^6, 2^2, 2^-3, 2^-6), span 2^12
-  auto handle = shared_device();
-  Handles h = make_handles(handle);
-
-  // M: modest entries so its norm sits in a low rung.
-  const auto m = scaled_random<T>(n, 0.4, seed);
-  const auto mc = to_compute(m);
-
-  // A[i,j] = M[i,j] * 2^(kexp[i]-kexp[j]).
-  std::vector<compute_t<T>> ac(mc.size());
-  for (int j = 0; j < n; ++j) {
-    for (int i = 0; i < n; ++i) {
-      const double f = std::ldexp(1.0, kexp[i] - kexp[j]);
-      ac[static_cast<std::size_t>(j) * n + i] =
-          mc[static_cast<std::size_t>(j) * n + i] * static_cast<real_t<T>>(f);
-    }
-  }
-  const auto a = from_compute<T>(ac);
-
-  // Oracle exp(M) from the device (well-scaled), then host D exp(M) D^-1.
-  std::vector<T> em(mc.size(), traits<T>::make(0.0, 0.0));
-  ExpmInfo minfo{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, m, n, n, em, &minfo, ExpmOptions{ExpmBalance::None}),
-            wwr::WWRBLAS_STATUS_SUCCESS);
-  auto emc = to_compute(em);
-  std::vector<compute_t<T>> oracle(emc.size());
-  for (int j = 0; j < n; ++j) {
-    for (int i = 0; i < n; ++i) {
-      const double f = std::ldexp(1.0, kexp[i] - kexp[j]);
-      oracle[static_cast<std::size_t>(j) * n + i] =
-          emc[static_cast<std::size_t>(j) * n + i] * static_cast<real_t<T>>(f);
-    }
-  }
-
-  std::vector<T> got(ac.size(), traits<T>::make(0.0, 0.0));
-  ExpmInfo info{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info, ExpmOptions{ExpmBalance::Auto}),
-            wwr::WWRBLAS_STATUS_SUCCESS);
-  EXPECT_TRUE(info.balanced) << "a 2^12-span matrix must balance";
-
-  // A tolerance scaled by the LARGE entries of the unbalanced exp(A).
-  expect_close<T>(got, oracle, n, n, real_t<T>{512}, "D exp(M) D^-1");
-  destroy_handles(h);
-}
-
-TEST(ExpmBalanceTests, BalancesWideRangeDouble) { check_balancing<double>(40); }
-TEST(ExpmBalanceTests, BalancesWideRangeComplexDouble) {
-  check_balancing<wwr::wwrDoubleComplex>(41);
-}
-
-template<typename T>
-void check_balance_neutral(int n, double target, unsigned seed) {
-  // On a well-scaled matrix gebal cannot lower the 1-norm, so Auto keeps the
-  // unbalanced path and agrees with None bit for bit.
-  auto handle = shared_device();
-  Handles h = make_handles(handle);
-  const auto a = scaled_random<T>(n, target, seed);
-
-  std::vector<T> e_auto(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
-  std::vector<T> e_none = e_auto;
-  ExpmInfo ia{};
-  ExpmInfo in{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, e_auto, &ia, ExpmOptions{ExpmBalance::Auto}),
-            wwr::WWRBLAS_STATUS_SUCCESS);
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, e_none, &in, ExpmOptions{ExpmBalance::None}),
-            wwr::WWRBLAS_STATUS_SUCCESS);
-  EXPECT_FALSE(ia.balanced) << "a well-scaled matrix should not benefit from balancing";
-  for (std::size_t i = 0; i < e_auto.size(); ++i) {
-    const auto d = std::abs(traits<T>::to(e_auto[i]) - traits<T>::to(e_none[i]));
-    EXPECT_EQ(d, real_t<T>{0}) << "Auto and None must agree at " << i;
-  }
-  destroy_handles(h);
-}
-
-TEST(ExpmBalanceTests, NeutralDouble) { check_balance_neutral<double>(5, 1.0, 50); }
 
 // ========================================================================
 // Device: padded leading dimensions and pointer-mode restoration
@@ -705,8 +616,8 @@ TEST(ExpmPaddingTests, PaddedOutputLeadingDimension) {
 
   const T sentinel = -123.5;
   std::vector<T> buf(static_cast<std::size_t>(lde) * n, sentinel);
-  ExpmInfo info{};
-  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, lde, buf, &info, {}), wwr::WWRBLAS_STATUS_SUCCESS);
+  ExpmPlan info{};
+  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, lde, buf, &info), wwr::WWRBLAS_STATUS_SUCCESS);
 
   // exp(A) exp(-A) = I check, reading only the n-by-n block out of the padded buffer.
   std::vector<T> block(static_cast<std::size_t>(n) * n);
@@ -748,7 +659,7 @@ TEST(ExpmPointerModeTests, RestoresDevicePointerMode) {
   DeviceBuffer<T> d_work(bytes / sizeof(T) + 1, handle);
   DeviceBuffer<int> d_info(2, handle);
   ASSERT_EQ(expm<T>(h.blas, h.solver, handle->stream().get(), n, d_a.data(), n, d_e.data(), n,
-                    d_work.data(), bytes, d_info.data(), nullptr, {}),
+                    d_work.data(), bytes, d_info.data(), nullptr),
             wwr::WWRBLAS_STATUS_SUCCESS);
 
   wwr::wwrblasPointerMode_t mode{};
