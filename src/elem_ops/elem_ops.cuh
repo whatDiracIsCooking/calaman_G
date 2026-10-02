@@ -104,7 +104,7 @@ struct elem_ops {
 // the builder (make_wwrFloatComplex / make_wwrDoubleComplex); wwrCreal##SUF etc.
 // are complex.h's accessors and arithmetic; exp is hand-built from math.cuh's
 // REAL exp/cos/sin, since math.cuh refuses a complex argument.
-#define CALAMAN_DEFINE_COMPLEX_ELEM_OPS(CT, RT, SUF)                                                \
+#define CLM_DEFINE_COMPLEX_ELEM_OPS(CT, RT, SUF)                                                    \
   template<>                                                                                        \
   struct elem_ops<wwr::CT> {                                                                        \
     using real_type = RT;                                                                           \
@@ -143,10 +143,10 @@ struct elem_ops {
     }                                                                                               \
   };
 
-CALAMAN_DEFINE_COMPLEX_ELEM_OPS(wwrFloatComplex, float, f)
-CALAMAN_DEFINE_COMPLEX_ELEM_OPS(wwrDoubleComplex, double, )
+CLM_DEFINE_COMPLEX_ELEM_OPS(wwrFloatComplex, float, f)
+CLM_DEFINE_COMPLEX_ELEM_OPS(wwrDoubleComplex, double, )
 
-#undef CALAMAN_DEFINE_COMPLEX_ELEM_OPS
+#undef CLM_DEFINE_COMPLEX_ELEM_OPS
 
 /// @brief Build a complex value from independent real and imaginary components.
 ///

@@ -12,7 +12,7 @@
  *
  * -- collapses to `CLM_TRY(wwr::axpy<T>(...));` only by #include, pulled into a
  * consumer's global module fragment the same way "common/enums.h" is. This is
- * the shared, cross-domain generalisation of gebal's local CALAMAN_GEBAL_CHECK:
+ * the shared, cross-domain generalisation of gebal's local CLM_GEBAL_CHECK:
  * that macro is hard-wired to one domain (wwrError_t == wwrSuccess), while
  * CLM_TRY routes through @ref calaman::Status, so a blas, solver OR runtime
  * result is judged by its OWN domain's success constant via Status::ok().
@@ -24,7 +24,7 @@
  *   - the enclosing function must return Status (or something Status converts
  *     to); CLM_TRY's bail-out is `return <the Status>`. A routine that returns a
  *     bare wwr* enum instead cannot use CLM_TRY -- it is for the Status
- *     convention, not a drop-in for CALAMAN_GEBAL_CHECK.
+ *     convention, not a drop-in for CLM_GEBAL_CHECK.
  *
  * The cast is the point: @p expr is a wwr* enum (wwrblasStatus_t /
  * wwrsolverStatus_t / wwrError_t), and copy-initialising a Status from it fires
