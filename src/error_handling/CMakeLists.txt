@@ -15,6 +15,14 @@
 # in wwr.blas/wwr.solver -- which is why those extension modules are the
 # dependency rather than the bare neutral layer: importing wwr.blas alone would
 # leave success_code<wwrblasStatus_t>() unspecialised.
+#
+# INCLUDE_DIRS_PUBLIC is the src/ root, exported so a consumer can pull the
+# CLM_TRY macro in via `#include "error_handling/error_macros.h"` from a global
+# module fragment. error_macros.h is a GMF-shared header (a macro cannot ride
+# an `import`), the same shape calaman.common publishes for "common/enums.h".
+# It is wrapped in $<BUILD_INTERFACE:> so the raw build path does not leak into
+# the install interface, which waits on the install tier (CALAMAN_INSTALL,
+# docs/architecture.md §2).
 calaman_add_cxx_module_library(
   NAME
   calaman.error_handling
@@ -25,4 +33,6 @@ calaman_add_cxx_module_library(
   wwr.extension.common
   wwr.extension.blas
   wwr.extension.solver
+  INCLUDE_DIRS_PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
 )
