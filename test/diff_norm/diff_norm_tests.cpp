@@ -168,6 +168,65 @@ void run_all_norms(int n, int inc) {
   expect_matches_reference<T>(Norm::inf, n, inc);
 }
 
+/// @brief Same oracle check, but with the handle in DEVICE pointer mode
+///
+/// The handle is switched to WWRBLAS_POINTER_MODE_DEVICE and `result` is a device
+/// pointer, so diff_norm must force host mode for its axpy, restore device mode,
+/// and land the norm in device memory -- for ell_inf that is the calaman.set_element
+/// path (iamax's device index -> set_element_abs). The reference is identical; only
+/// where the result lives changes, so the device scalar is read back to compare.
+template<typename T>
+void expect_matches_reference_device(Norm which, int n, int inc) {
+  ASSERT_GE(n, 1);
+  ASSERT_GE(inc, 1);
+  const std::size_t total = static_cast<std::size_t>(n) * static_cast<std::size_t>(inc);
+
+  auto handle = std::make_shared<DeviceHandle>(0);
+  wwr::wwrblasHandle_t blas{};
+  ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_EQ(wwr::wwrblasSetPointerMode(blas, wwr::WWRBLAS_POINTER_MODE_DEVICE),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+
+  HostBuffer<T> host_x(total);
+  HostBuffer<T> host_y(total);
+  for (std::size_t i = 0; i < total; ++i) {
+    host_x.data()[i] = x_at<T>(i);
+    host_y.data()[i] = y_at<T>(i);
+  }
+  std::vector<T> diff(static_cast<std::size_t>(n));
+  for (int k = 0; k < n; ++k) {
+    const std::size_t i = static_cast<std::size_t>(k) * static_cast<std::size_t>(inc);
+    diff[static_cast<std::size_t>(k)] = host_y.data()[i] - host_x.data()[i];
+  }
+  const T ref = ref_norm<T>(which, diff);
+
+  auto d_x = to_device(handle, host_x, total);
+  auto d_y = to_device(handle, host_y, total);
+  DeviceBuffer<T> d_result(1, handle);
+
+  const auto status =
+      diff_norm<T>(blas, which, n, d_x.data(), inc, d_y.data(), inc, d_result.data());
+  EXPECT_TRUE(status.ok()) << "device norm=" << static_cast<int>(which) << " n=" << n
+                           << " inc=" << inc << " status=" << status.name();
+
+  // The norm was written to device memory; read it back to compare.
+  HostBuffer<T> host_result(1);
+  wwr::extension::copy(host_result, d_result, handle->stream().get());
+  wwr::wwrStreamSynchronize(handle->stream().get());
+  wwr::wwrblasDestroy(blas);
+
+  EXPECT_NEAR(host_result.data()[0], ref, norm_tol(ref))
+      << "device norm=" << static_cast<int>(which) << " n=" << n << " inc=" << inc;
+}
+
+template<typename T>
+void run_all_norms_device(int n, int inc) {
+  expect_matches_reference_device<T>(Norm::l1, n, inc);
+  expect_matches_reference_device<T>(Norm::l2, n, inc);
+  expect_matches_reference_device<T>(Norm::inf, n, inc);
+}
+
 TEST(DiffNormOracleTests, MatchesReferenceFloat) {
   run_all_norms<float>(1, 1);
   run_all_norms<float>(7, 1);
@@ -180,6 +239,20 @@ TEST(DiffNormOracleTests, MatchesReferenceDouble) {
   run_all_norms<double>(64, 1);
   run_all_norms<double>(1000, 1);
   run_all_norms<double>(500, 3); // strided
+}
+
+TEST(DiffNormOracleTests, DevicePointerModeFloat) {
+  run_all_norms_device<float>(1, 1);
+  run_all_norms_device<float>(7, 1);
+  run_all_norms_device<float>(1000, 1);
+  run_all_norms_device<float>(500, 2); // strided
+}
+
+TEST(DiffNormOracleTests, DevicePointerModeDouble) {
+  run_all_norms_device<double>(1, 1);
+  run_all_norms_device<double>(64, 1);
+  run_all_norms_device<double>(1000, 1);
+  run_all_norms_device<double>(500, 3); // strided
 }
 
 TEST(DiffNormOracleTests, EmptyIsNoopSuccess) {
