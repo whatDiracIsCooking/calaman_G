@@ -204,7 +204,7 @@ std::vector<T> reference_eigenvalues(int n, std::vector<T> a) {
 
 template<typename T>
 struct FeastResult {
-  wwr::wwrblasStatus_t status{};
+  Status status{wwr::WWRBLAS_STATUS_SUCCESS};
   FeastInfo<T> info{};
   std::vector<T> lambda; // m0
   std::vector<T> q;      // n * m0

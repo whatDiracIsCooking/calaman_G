@@ -125,7 +125,7 @@ import wwr.blas;   // wwrblasHandle_t
 
 const std::size_t work_bytes = calaman::paterson_stockmeyer_bufferSize<T>(n, degree);
 
-wwr::wwrblasStatus_t calaman::paterson_stockmeyer<T>(
+calaman::Status calaman::paterson_stockmeyer<T>(
     wwr::wwrblasHandle_t handle, int n,
     const T* d_coeffs, int degree,   // ascending: c_k * A^k
     const T* d_A, int lda,

@@ -148,8 +148,10 @@ std::vector<T> run_random_unitary(std::shared_ptr<DeviceHandle> handle, int n,
   auto d_info_geqrf = to_device(handle, info_init);
   auto d_info_gqr = to_device(handle, info_init);
 
-  random_unitary<T>(solver, n, d_q.data(), d_work.data(), states.data(), lwork,
-                    d_info_geqrf.data(), d_info_gqr.data());
+  const auto status = random_unitary<T>(solver, n, d_q.data(), d_work.data(), states.data(), lwork,
+                                        d_info_geqrf.data(), d_info_gqr.data());
+  EXPECT_TRUE(status.ok()) << "random_unitary status n=" << n << " seed=" << seed
+                           << " status=" << status.name();
 
   const auto got = from_device(handle, d_q, nn);
   const auto info_geqrf = from_device(handle, d_info_geqrf, 1);

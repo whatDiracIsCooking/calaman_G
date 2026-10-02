@@ -88,6 +88,14 @@
  *                          d_vn2, d_work, d_swork, swork_len, d_info);
  */
 
+module;
+
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.geqp3;
 
 import wwr.blas;            // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
@@ -97,7 +105,13 @@ import wwr.wrappers.blas;   // nrm2, wwrblasSideMode_t, wwrblasOperation_t
 import wwr.wrappers.solver; // geqrf, geqrf_bufferSize, ormqr, ormqr_bufferSize
 import calaman.laqp2;       // calaman::laqp2
 import calaman.laqps;       // calaman::laqps
-import std;                // std::min
+import std;                 // std::min
+
+// export import, not a plain import: geqp3 RETURNS calaman::Status, so a consumer
+// of `import calaman.geqp3;` must see Status's member functions, not just its
+// name -- the same re-export diff_norm does. Both solver and runtime failures now
+// flow through it in their own domain, not a BLAS masquerade.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -135,10 +149,10 @@ export inline constexpr std::size_t geqp3_work_size(const int m, const int n) {
   }
   const int nb = std::min(kBlockSize, std::min(m, n));
   const std::size_t nn = static_cast<std::size_t>(n);
-  return nn                                              // larf / laqp2 scratch
-         + nn * static_cast<std::size_t>(nb)             // F
-         + static_cast<std::size_t>(nb)                  // auxv
-         + nn;                                           // flags (ints in T slots)
+  return nn                                  // larf / laqp2 scratch
+         + nn * static_cast<std::size_t>(nb) // F
+         + static_cast<std::size_t>(nb)      // auxv
+         + nn;                               // flags (ints in T slots)
 }
 
 /// @brief Upper bound (in T elements) on the solver workspace the fixed-prefix
@@ -169,8 +183,8 @@ int geqp3_solver_work_size(wwr::wwrsolverDnHandle_t solver, const int m, const i
     return 1;
   }
   if (wwr::ormqr_bufferSize<T>(solver, wwr::WWRBLAS_SIDE_LEFT, wwr::WWRBLAS_OP_T, m, n, mn, nullptr,
-                               m, nullptr, nullptr, m, &ormqr_lwork) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
+                               m, nullptr, nullptr, m,
+                               &ormqr_lwork) != wwr::WWRSOLVER_STATUS_SUCCESS) {
     return 1;
   }
   return std::max(std::max(geqrf_lwork, ormqr_lwork), 1);
@@ -184,10 +198,10 @@ int geqp3_solver_work_size(wwr::wwrsolverDnHandle_t solver, const int m, const i
 /// then factors in laqps blocks of @p nb columns (finishing the tail with
 /// laqp2) when min(m,n) > kCrossoverBlockSize, else as one laqp2 panel.
 ///
-/// Short-circuits: the first failing nrm2 / upload / panel status is returned and
-/// the factorization stops there. Returns success and writes nothing when the
-/// matrix is empty (m <= 0 or n <= 0). On a device-read/write failure that
-/// surfaces no BLAS status returns WWRBLAS_STATUS_NOT_INITIALIZED.
+/// Short-circuits: the first failing step's Status is returned and the
+/// factorization stops there. Returns success and writes nothing when the matrix
+/// is empty (m <= 0 or n <= 0). Each device read/write now returns its OWN
+/// domain's Status (the uploads a runtime one) rather than a BLAS masquerade.
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param handle GPU BLAS handle in host pointer mode; A, tau, vn1, vn2, work live on its device
@@ -202,7 +216,7 @@ int geqp3_solver_work_size(wwr::wwrsolverDnHandle_t solver, const int m, const i
 /// @param work Device workspace, length >= geqp3_work_size(m, n)
 /// @param nb Block width override; 0 (the default) uses kBlockSize. A value past
 ///           min(m,n) forces the single-laqp2 tail -- the crossover fallback
-/// @return The status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
+/// @return The Status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
 namespace detail {
 
 /// @brief Factor the free panel A(start:m, start:n) with Businger-Golub pivoting
@@ -218,9 +232,9 @@ namespace detail {
 /// now sits there); the caller remaps it to true original indices. For the
 /// all-free overload start == 0 and that local permutation IS the answer.
 template<typename T>
-wwr::wwrblasStatus_t factor_free_panel(wwr::wwrblasHandle_t handle, const int m, const int n,
-                                       const int start, T *A, const int lda, int *jpvt, T *tau,
-                                       T *vn1, T *vn2, T *work, const int block) {
+Status factor_free_panel(wwr::wwrblasHandle_t handle, const int m, const int n, const int start,
+                         T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2, T *work,
+                         const int block) {
   const int mn = std::min(m - start, n - start); // pivot steps over the free panel
   if (mn <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
@@ -256,12 +270,9 @@ wwr::wwrblasStatus_t factor_free_panel(wwr::wwrblasHandle_t handle, const int m,
   while (offset < start + mn) {
     const int want = std::min(block, start + mn - offset);
     int kb = 0;
-    const auto s = laqps<T>(handle, m, n - offset, offset, want, &kb,
-                            A + static_cast<std::size_t>(offset) * lda, lda, jpvt + offset,
-                            tau + offset, vn1 + offset, vn2 + offset, F, ldf, auxv, flags);
-    if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return s;
-    }
+    CLM_TRY(laqps<T>(handle, m, n - offset, offset, want, &kb,
+                     A + static_cast<std::size_t>(offset) * lda, lda, jpvt + offset, tau + offset,
+                     vn1 + offset, vn2 + offset, F, ldf, auxv, flags));
     if (kb <= 0) {
       break;
     }
@@ -287,12 +298,8 @@ wwr::wwrblasStatus_t factor_free_panel(wwr::wwrblasHandle_t handle, const int m,
     for (int p = 0; p < tn; ++p) {
       saved[static_cast<std::size_t>(p)] = jpvt[offset + p];
     }
-    const auto s =
-        laqp2<T>(handle, m, tn, offset, A + static_cast<std::size_t>(offset) * lda, lda,
-                 jpvt + offset, tau + offset, vn1 + offset, vn2 + offset, work);
-    if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return s;
-    }
+    CLM_TRY(laqp2<T>(handle, m, tn, offset, A + static_cast<std::size_t>(offset) * lda, lda,
+                     jpvt + offset, tau + offset, vn1 + offset, vn2 + offset, work));
     // jpvt[offset + p] is now a 1-based LOCAL index into the pre-tail columns
     // offset..n-1; translate it back to the panel-local index via `saved`.
     for (int p = 0; p < tn; ++p) {
@@ -309,26 +316,18 @@ wwr::wwrblasStatus_t factor_free_panel(wwr::wwrblasHandle_t handle, const int m,
 /// both partial-norm arrays on @p stream. @p start is the first row the norm
 /// counts (0 for the all-free seed, nfxd for the free tail after ormqr).
 template<typename T>
-wwr::wwrblasStatus_t seed_free_norms(wwr::wwrblasHandle_t handle, wwr::wwrStream_t stream,
-                                     const int m, const int n, const int start, const int c0, T *A,
-                                     const int lda, T *vn1, T *vn2) {
+Status seed_free_norms(wwr::wwrblasHandle_t handle, wwr::wwrStream_t stream, const int m,
+                       const int n, const int start, const int c0, T *A, const int lda, T *vn1,
+                       T *vn2) {
   const int rows = m - start;
   for (int j = c0; j < n; ++j) {
     T norm = T{0};
     if (rows > 0) {
-      const auto s = wwr::nrm2<T>(handle, rows,
-                                  A + static_cast<std::size_t>(j) * lda + start, 1, &norm);
-      if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s;
-      }
+      CLM_TRY(wwr::nrm2<T>(handle, rows, A + static_cast<std::size_t>(j) * lda + start, 1, &norm));
     }
-    if (wwr::wwrMemcpyAsync(vn1 + j, &norm, sizeof(T), wwr::wwrMemcpyHostToDevice, stream) !=
-            wwr::wwrSuccess ||
-        wwr::wwrMemcpyAsync(vn2 + j, &norm, sizeof(T), wwr::wwrMemcpyHostToDevice, stream) !=
-            wwr::wwrSuccess ||
-        wwr::wwrStreamSynchronize(stream) != wwr::wwrSuccess) {
-      return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-    }
+    CLM_TRY(wwr::wwrMemcpyAsync(vn1 + j, &norm, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
+    CLM_TRY(wwr::wwrMemcpyAsync(vn2 + j, &norm, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
+    CLM_TRY(wwr::wwrStreamSynchronize(stream));
   }
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
@@ -336,25 +335,19 @@ wwr::wwrblasStatus_t seed_free_norms(wwr::wwrblasHandle_t handle, wwr::wwrStream
 } // namespace detail
 
 export template<typename T>
-wwr::wwrblasStatus_t geqp3(wwr::wwrblasHandle_t handle, const int m, const int n, T *A,
-                           const int lda, int *jpvt, T *tau, T *vn1, T *vn2, T *work,
-                           const int nb = 0) {
+Status geqp3(wwr::wwrblasHandle_t handle, const int m, const int n, T *A, const int lda, int *jpvt,
+             T *tau, T *vn1, T *vn2, T *work, const int nb = 0) {
   if (m <= 0 || n <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
   wwr::wwrStream_t stream{};
-  if (wwr::wwrblasGetStream(handle, &stream) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_TRY(wwr::wwrblasGetStream(handle, &stream));
 
   // Seed vn1[j] = vn2[j] = ||A(:,j)||_2 for every (free) column, then factor the
   // whole panel at offset 0. With start == 0 the panel-local permutation
   // factor_free_panel returns IS the final jpvt, so no remap is needed.
-  const auto seed = detail::seed_free_norms<T>(handle, stream, m, n, 0, 0, A, lda, vn1, vn2);
-  if (seed != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return seed;
-  }
+  CLM_TRY(detail::seed_free_norms<T>(handle, stream, m, n, 0, 0, A, lda, vn1, vn2));
   const int block = nb > 0 ? nb : kBlockSize;
   return detail::factor_free_panel<T>(handle, m, n, 0, A, lda, jpvt, tau, vn1, vn2, work, block);
 }
@@ -378,10 +371,10 @@ wwr::wwrblasStatus_t geqp3(wwr::wwrblasHandle_t handle, const int m, const int n
 /// straight to the all-free overload.
 ///
 /// Short-circuits on the first failing step. Returns success and writes nothing
-/// for an empty matrix. A geqrf/ormqr status that is not success surfaces as
-/// WWRBLAS_STATUS_NOT_INITIALIZED (the neutral code the rest of the driver uses
-/// for a non-BLAS failure). @p info is the geqrf/ormqr devInfo scratch (0 on a
-/// well-formed QR, which an unpivoted leading block always is).
+/// for an empty matrix. A geqrf/ormqr failure now surfaces as its OWN
+/// solver-domain Status (not a WWRBLAS_STATUS_NOT_INITIALIZED masquerade), so the
+/// caller sees the true solver code. @p info is the geqrf/ormqr devInfo scratch
+/// (0 on a well-formed QR, which an unpivoted leading block always is).
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param handle GPU BLAS handle in host pointer mode; the device arrays live on its stream
@@ -399,19 +392,17 @@ wwr::wwrblasStatus_t geqp3(wwr::wwrblasHandle_t handle, const int m, const int n
 /// @param lwork_solver Length of @p swork in T elements
 /// @param info Device int; the geqrf/ormqr devInfo (0 on success)
 /// @param nb Block width override forwarded to the free-tail factorization
-/// @return The status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
+/// @return The Status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
 export template<typename T>
-wwr::wwrblasStatus_t geqp3(wwr::wwrblasHandle_t handle, wwr::wwrsolverDnHandle_t solver, const int m,
-                           const int n, T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2,
-                           T *work, T *swork, const int lwork_solver, int *info, const int nb = 0) {
+Status geqp3(wwr::wwrblasHandle_t handle, wwr::wwrsolverDnHandle_t solver, const int m, const int n,
+             T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2, T *work, T *swork,
+             const int lwork_solver, int *info, const int nb = 0) {
   if (m <= 0 || n <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
   wwr::wwrStream_t stream{};
-  if (wwr::wwrblasGetStream(handle, &stream) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_TRY(wwr::wwrblasGetStream(handle, &stream));
 
   // origin[k] tracks the true original index (1-based) of the column currently in
   // position k, so after the pre-permute and the free-tail factorization jpvt can
@@ -435,11 +426,8 @@ wwr::wwrblasStatus_t geqp3(wwr::wwrblasHandle_t handle, wwr::wwrsolverDnHandle_t
       continue;
     }
     if (j != nfxd) {
-      const auto s = wwr::swap<T, int>(handle, m, A + static_cast<std::size_t>(nfxd) * lda, 1,
-                                       A + static_cast<std::size_t>(j) * lda, 1);
-      if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s;
-      }
+      CLM_TRY(wwr::swap<T, int>(handle, m, A + static_cast<std::size_t>(nfxd) * lda, 1,
+                                A + static_cast<std::size_t>(j) * lda, 1));
       std::swap(origin[static_cast<std::size_t>(nfxd)], origin[static_cast<std::size_t>(j)]);
       // Positions [0,nfxd) are already-placed fixed columns, so position nfxd
       // holds a FREE column; after the swap the fixed one is at nfxd and the free
@@ -459,21 +447,16 @@ wwr::wwrblasStatus_t geqp3(wwr::wwrblasHandle_t handle, wwr::wwrsolverDnHandle_t
   // Factor the fixed leading block A(:, 0:nfxd) with an ordinary unpivoted QR.
   // geqrf writes tau[0:nfxd] and the reflectors below the diagonal; its workspace
   // is the caller's solver scratch, sized by geqp3_solver_work_size.
-  if (wwr::geqrf<T>(solver, m, nfxd, A, lda, tau, swork, lwork_solver, info) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_TRY(wwr::geqrf<T>(solver, m, nfxd, A, lda, tau, swork, lwork_solver, info));
 
   // Apply Q^T from the fixed block to the free tail: A(:, nfxd:n) := Q^T * A(:,
   // nfxd:n) (side = Left, trans = transpose, k = nfxd reflectors). unmqr is the
   // complex counterpart; float/double take ormqr.
   const int nfree = n - nfxd;
   if (nfree > 0) {
-    if (wwr::ormqr<T>(solver, wwr::WWRBLAS_SIDE_LEFT, wwr::WWRBLAS_OP_T, m, nfree, nfxd, A, lda, tau,
-                      A + static_cast<std::size_t>(nfxd) * lda, lda, swork, lwork_solver, info) !=
-        wwr::WWRSOLVER_STATUS_SUCCESS) {
-      return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-    }
+    CLM_TRY(wwr::ormqr<T>(solver, wwr::WWRBLAS_SIDE_LEFT, wwr::WWRBLAS_OP_T, m, nfree, nfxd, A, lda,
+                          tau, A + static_cast<std::size_t>(nfxd) * lda, lda, swork, lwork_solver,
+                          info));
 
     // Seed the free columns' partial norms from the TRAILING part A(nfxd:m, j)
     // (the ormqr output below the fixed block's R), then pivot-factor the free
@@ -481,18 +464,11 @@ wwr::wwrblasStatus_t geqp3(wwr::wwrblasHandle_t handle, wwr::wwrsolverDnHandle_t
     // offset nfxd keeps the swaps full-length, so the R rows 0:nfxd of the free
     // columns move with their column -- exactly LAPACK's ?laqp2/?laqps at
     // offset = nfxd. jpvt[nfxd:n] comes back as a LOCAL permutation of {1..nfree}.
-    const auto seed =
-        detail::seed_free_norms<T>(handle, stream, m, n, nfxd, nfxd, A, lda, vn1, vn2);
-    if (seed != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return seed;
-    }
+    CLM_TRY(detail::seed_free_norms<T>(handle, stream, m, n, nfxd, nfxd, A, lda, vn1, vn2));
     const int block = nb > 0 ? nb : kBlockSize;
     std::vector<int> local(static_cast<std::size_t>(n), 0);
-    const auto s = detail::factor_free_panel<T>(handle, m, n, nfxd, A, lda, local.data(), tau, vn1,
-                                                vn2, work, block);
-    if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return s;
-    }
+    CLM_TRY(detail::factor_free_panel<T>(handle, m, n, nfxd, A, lda, local.data(), tau, vn1, vn2,
+                                         work, block));
     // Remap the free panel's local permutation to true original indices.
     // local[nfxd + p] (1..nfree) selects the (nfxd + local[..] - 1)-th column of
     // the pre-tail layout, whose true origin is origin[nfxd + local[..] - 1].

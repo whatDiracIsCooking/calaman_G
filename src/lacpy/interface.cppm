@@ -29,7 +29,7 @@
  * body that names the .cu-side launcher declared only in the GMF.
  *
  * Usage:
- *   import calaman.lacpy;      // also re-exports calaman::Region
+ *   import calaman.lacpy;      // also re-exports calaman::Region and Status
  *   import wwr.runtime_api;   // wwrStream_t, wwrStreamCreate
  *   wwr::wwrStream_t stream{};
  *   wwr::wwrStreamCreate(&stream);
@@ -39,6 +39,12 @@
 
 module;
 
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 #include "lacpy_bridge.h"
 
 export module calaman.lacpy;
@@ -46,6 +52,11 @@ export module calaman.lacpy;
 import std;
 import wwr.runtime_api;
 import calaman.common; // Region (:enums) -- the typed replacement for DLACPY UPLO
+
+// export import, not a plain import: lacpy RETURNS calaman::Status, so a consumer
+// of `import calaman.lacpy;` must see Status's member functions, not just its
+// name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -73,19 +84,24 @@ export using calaman::Region;
 /// @param lda Leading dimension of A; lda >= m
 /// @param d_b Destination device matrix, column-major, leading dimension @p ldb
 /// @param ldb Leading dimension of B; ldb >= m
+/// @return Success, or the runtime error the kernel launch reported
 export template<typename T>
-void lacpy(const wwr::wwrStream_t stream, const Region region, const std::size_t m,
-           const std::size_t n, const T *d_a, const std::size_t lda, T *d_b,
-           const std::size_t ldb) {
+Status lacpy(const wwr::wwrStream_t stream, const Region region, const std::size_t m,
+             const std::size_t n, const T *d_a, const std::size_t lda, T *d_b,
+             const std::size_t ldb) {
   if (m == 0 || n == 0) {
-    return;
+    return wwr::wwrSuccess;
   }
   device::lacpy(stream, region, m, n, d_a, lda, d_b, ldb);
+  // The launcher returns void, so the only way to catch a bad launch is the
+  // runtime's sticky error -- checked the moment it is enqueued, as gebal does.
+  CLM_TRY(wwr::wwrGetLastError());
+  return wwr::wwrSuccess;
 }
 
-extern template void lacpy<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
-                                  const float *, std::size_t, float *, std::size_t);
-extern template void lacpy<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
-                                   const double *, std::size_t, double *, std::size_t);
+extern template Status lacpy<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
+                                    const float *, std::size_t, float *, std::size_t);
+extern template Status lacpy<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
+                                     const double *, std::size_t, double *, std::size_t);
 
 } // namespace calaman

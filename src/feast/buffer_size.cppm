@@ -13,29 +13,34 @@
  * double with Ne = 8. Everything else is O(n m0). The QR and eigensolver
  * workspaces are never live at the same time, so they share one region.
  *
- * STATUS TYPE. make_feast_slices / feast_bufferSize report through
- * wwr::wwrblasStatus_t, like every other calaman.feast entry point: the neutral
- * solver enum neutralizes only SUCCESS, so a routine that must surface
- * INVALID_VALUE / ALLOC_FAILED / INTERNAL_ERROR reports through the BLAS enum,
- * and a non-success solver query (orthogonalize/syevd bufferSize) surfaces as
- * WWRBLAS_STATUS_INTERNAL_ERROR -- the convention calaman.expm documents.
+ * STATUS TYPE. make_feast_slices / feast_bufferSize return a @ref calaman::Status,
+ * like every other calaman.feast entry point: an argument fault surfaces as a BLAS
+ * INVALID_VALUE / ALLOC_FAILED, and a non-success solver query (orthogonalize/syevd
+ * bufferSize) flows through CLM_TRY in its own solver domain.
  */
 
 module;
 
 #include "feast_bridge.h"
 
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 #include <cstddef>
 
 export module calaman.feast:buffer_size;
 
 import std;
-import wwr.blas;            // wwrblasStatus_t, WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL_MODE_*
-import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_STATUS_SUCCESS, wwrsolverEigMode_t, WWRSOLVER_EIG_MODE_VECTOR
+import wwr.blas;            // WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL_MODE_*
+import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEigMode_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.wrappers.common; // real_fp, RealToComplexType
 import wwr.wrappers.solver; // syevd_bufferSize
 import calaman.common;      // align_up
 import calaman.orthogonalize; // orthogonalize_bufferSize
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
 
@@ -160,26 +165,19 @@ export namespace calaman {
  */
 template<wwr::real_fp T, std::size_t Ne>
   requires(Ne == 4 || Ne == 8)
-wwr::wwrblasStatus_t make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n,
-                                       const int m0, void *d_work, FeastSlices<T> *slices,
-                                       std::size_t *lwork_bytes) {
+Status make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int m0,
+                         void *d_work, FeastSlices<T> *slices, std::size_t *lwork_bytes) {
   if (n < 1 || m0 < 1 || m0 > n) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 
   int lwork_qr = 0;
-  if (orthogonalize_bufferSize<T>(cusolver_handle, n, m0, &lwork_qr) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(orthogonalize_bufferSize<T>(cusolver_handle, n, m0, &lwork_qr));
 
   int lwork_eig = 0;
-  if (wwr::syevd_bufferSize<T>(cusolver_handle, wwr::WWRSOLVER_EIG_MODE_VECTOR,
-                               wwr::WWRBLAS_FILL_MODE_LOWER, m0, static_cast<T *>(nullptr), m0,
-                               static_cast<T *>(nullptr), &lwork_eig) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::syevd_bufferSize<T>(cusolver_handle, wwr::WWRSOLVER_EIG_MODE_VECTOR,
+                                   wwr::WWRBLAS_FILL_MODE_LOWER, m0, static_cast<T *>(nullptr), m0,
+                                   static_cast<T *>(nullptr), &lwork_eig));
 
   const std::size_t bytes =
       feast_detail::carve<T>(d_work, n, m0, static_cast<int>(Ne), lwork_qr, lwork_eig, slices);
@@ -200,8 +198,8 @@ wwr::wwrblasStatus_t make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle,
  */
 template<wwr::real_fp T, std::size_t Ne = 8>
   requires(Ne == 4 || Ne == 8)
-wwr::wwrblasStatus_t feast_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n,
-                                      const int m0, std::size_t *lwork_bytes) {
+Status feast_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int m0,
+                        std::size_t *lwork_bytes) {
   if (lwork_bytes == nullptr) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }

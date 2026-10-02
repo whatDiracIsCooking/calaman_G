@@ -54,12 +54,25 @@
  *   calaman::larfg(handle, n, d_alpha, d_x, 1, &tau, &beta);
  */
 
+module;
+
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.larfg;
 
-import wwr.blas;               // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
-import wwr.runtime_api;        // wwrMemcpy(Async), wwrMemcpy{Device,Host}To*, wwrSuccess
-import wwr.wrappers.blas;      // nrm2, scal
-import std;                    // std::sqrt, std::abs
+import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
+import wwr.runtime_api;   // wwrMemcpy(Async), wwrMemcpy{Device,Host}To*, wwrSuccess
+import wwr.wrappers.blas; // nrm2, scal
+import std;               // std::sqrt, std::abs
+
+// export import, not a plain import: larfg RETURNS calaman::Status, so a consumer
+// of `import calaman.larfg;` must see Status's member functions, not just its
+// name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -73,11 +86,12 @@ namespace calaman {
 /// 1 / (alpha - beta) to become v_tail. A zero tail yields tau = 0, beta =
 /// alpha, and leaves @p x untouched (the identity reflector).
 ///
-/// Short-circuits: if nrm2 or the tail scal does not succeed its status is
-/// returned and @p tau / @p beta are left unwritten. Returns success and writes
-/// nothing when @p n <= 0. On the device-read/write failures that surface no
-/// BLAS status, returns WWRBLAS_STATUS_NOT_INITIALIZED (the only neutral
-/// non-success code WarpWraps exposes), matching calaman.diff_norm.
+/// Short-circuits: if any step does not succeed its Status is returned and @p tau
+/// / @p beta are left unwritten. Returns success and writes nothing when @p n <=
+/// 0. Because the return type is a cross-domain Status, the device reads/writes
+/// (stream query, the alpha fetch and the beta writeback) now return their OWN
+/// domain's Status -- the stream query a BLAS Status, the copies a runtime one --
+/// rather than the old WWRBLAS_STATUS_NOT_INITIALIZED masquerade.
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param handle GPU BLAS handle in host pointer mode; alpha and x live on its device
@@ -87,10 +101,10 @@ namespace calaman {
 /// @param incx Stride between elements of @p x
 /// @param tau Host scalar; the reflector scalar tau is written here
 /// @param beta Host scalar; the leading result beta is written here
-/// @return The BLAS status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
+/// @return The Status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
 export template<typename T>
-wwr::wwrblasStatus_t larfg(wwr::wwrblasHandle_t handle, const int n, T *alpha, T *x, const int incx,
-                           T *tau, T *beta) {
+Status larfg(wwr::wwrblasHandle_t handle, const int n, T *alpha, T *x, const int incx, T *tau,
+             T *beta) {
   if (n <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
@@ -98,26 +112,18 @@ wwr::wwrblasStatus_t larfg(wwr::wwrblasHandle_t handle, const int n, T *alpha, T
   // Order every scalar read/write on the handle's own stream, so they follow the
   // caller's uploads (enqueued on that same stream) and this routine's BLAS work.
   wwr::wwrStream_t stream{};
-  if (wwr::wwrblasGetStream(handle, &stream) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_TRY(wwr::wwrblasGetStream(handle, &stream));
 
   // Read the leading scalar back and block until it lands; the tail has n - 1
   // elements, so n == 1 means an empty tail and a zero norm.
   T host_alpha{};
-  if (wwr::wwrMemcpyAsync(&host_alpha, alpha, sizeof(T), wwr::wwrMemcpyDeviceToHost, stream) !=
-          wwr::wwrSuccess ||
-      wwr::wwrStreamSynchronize(stream) != wwr::wwrSuccess) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_TRY(wwr::wwrMemcpyAsync(&host_alpha, alpha, sizeof(T), wwr::wwrMemcpyDeviceToHost, stream));
+  CLM_TRY(wwr::wwrStreamSynchronize(stream));
 
   const int tail = n - 1;
   T xnorm = T{0};
   if (tail > 0) {
-    const auto status = wwr::nrm2<T>(handle, tail, x, incx, &xnorm);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return status;
-    }
+    CLM_TRY(wwr::nrm2<T>(handle, tail, x, incx, &xnorm));
   }
 
   // Already [alpha; 0]: the identity reflector. tau = 0, beta = alpha, no scaling.
@@ -137,19 +143,13 @@ wwr::wwrblasStatus_t larfg(wwr::wwrblasHandle_t handle, const int n, T *alpha, T
   // v_tail = x / (alpha - beta); alpha - beta is the larger-magnitude difference
   // under this sign choice, so the scale is well conditioned.
   const T scale = T{1} / (host_alpha - host_beta);
-  const auto status = wwr::scal<T>(handle, tail, &scale, x, incx);
-  if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return status;
-  }
+  CLM_TRY(wwr::scal<T>(handle, tail, &scale, x, incx));
 
   // The device vector must end as [beta; v_tail], so write beta back over alpha
   // on the same stream, after the scal, and block until the write completes --
   // host_beta is a local, so it must not go out of scope before the copy runs.
-  if (wwr::wwrMemcpyAsync(alpha, &host_beta, sizeof(T), wwr::wwrMemcpyHostToDevice, stream) !=
-          wwr::wwrSuccess ||
-      wwr::wwrStreamSynchronize(stream) != wwr::wwrSuccess) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_TRY(wwr::wwrMemcpyAsync(alpha, &host_beta, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
+  CLM_TRY(wwr::wwrStreamSynchronize(stream));
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

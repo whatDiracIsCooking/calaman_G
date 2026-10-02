@@ -23,15 +23,15 @@ import calaman.orthogonalize;        // orthogonalize (+ _bufferSize)
 namespace calaman {
 
 // Function: random_unitary_bufferSize
-template wwr::wwrsolverStatus_t random_unitary_bufferSize<float>(wwr::wwrsolverDnHandle_t, const int, int*);
-template wwr::wwrsolverStatus_t random_unitary_bufferSize<double>(wwr::wwrsolverDnHandle_t, const int, int*);
-template wwr::wwrsolverStatus_t random_unitary_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, int*);
-template wwr::wwrsolverStatus_t random_unitary_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, int*);
+template Status random_unitary_bufferSize<float>(wwr::wwrsolverDnHandle_t, const int, int*);
+template Status random_unitary_bufferSize<double>(wwr::wwrsolverDnHandle_t, const int, int*);
+template Status random_unitary_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, int*);
+template Status random_unitary_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, int*);
 
 // Function: random_unitary
-template void random_unitary<float>(wwr::wwrsolverDnHandle_t, const int, float*, float*, wwr::wwrrandState*, const int, int*, int*);
-template void random_unitary<double>(wwr::wwrsolverDnHandle_t, const int, double*, double*, wwr::wwrrandState*, const int, int*, int*);
-template void random_unitary<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, wwr::wwrFloatComplex*, wwr::wwrFloatComplex*, wwr::wwrrandState*, const int, int*, int*);
-template void random_unitary<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, wwr::wwrDoubleComplex*, wwr::wwrDoubleComplex*, wwr::wwrrandState*, const int, int*, int*);
+template Status random_unitary<float>(wwr::wwrsolverDnHandle_t, const int, float*, float*, wwr::wwrrandState*, const int, int*, int*);
+template Status random_unitary<double>(wwr::wwrsolverDnHandle_t, const int, double*, double*, wwr::wwrrandState*, const int, int*, int*);
+template Status random_unitary<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, wwr::wwrFloatComplex*, wwr::wwrFloatComplex*, wwr::wwrrandState*, const int, int*, int*);
+template Status random_unitary<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, wwr::wwrDoubleComplex*, wwr::wwrDoubleComplex*, wwr::wwrrandState*, const int, int*, int*);
 
 } // namespace calaman

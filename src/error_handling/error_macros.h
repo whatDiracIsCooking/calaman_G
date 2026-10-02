@@ -11,9 +11,9 @@
  *   if (status != wwr::WWRBLAS_STATUS_SUCCESS) { return status; }
  *
  * -- collapses to `CLM_TRY(wwr::axpy<T>(...));` only by #include, pulled into a
- * consumer's global module fragment the same way "common/enums.h" is. This is
- * the shared, cross-domain generalisation of gebal's local CLM_GEBAL_CHECK:
- * that macro is hard-wired to one domain (wwrError_t == wwrSuccess), while
+ * consumer's global module fragment the same way "common/enums.h" is. This
+ * generalised, and has now replaced, gebal's former local CLM_GEBAL_CHECK:
+ * that macro was hard-wired to one domain (wwrError_t == wwrSuccess), while
  * CLM_TRY routes through @ref calaman::Status, so a blas, solver OR runtime
  * result is judged by its OWN domain's success constant via Status::ok().
  *
@@ -24,7 +24,7 @@
  *   - the enclosing function must return Status (or something Status converts
  *     to); CLM_TRY's bail-out is `return <the Status>`. A routine that returns a
  *     bare wwr* enum instead cannot use CLM_TRY -- it is for the Status
- *     convention, not a drop-in for CLM_GEBAL_CHECK.
+ *     convention, and such a routine must spell the check by hand.
  *
  * The cast is the point: @p expr is a wwr* enum (wwrblasStatus_t /
  * wwrsolverStatus_t / wwrError_t), and copy-initialising a Status from it fires
@@ -40,17 +40,24 @@
 
 /// @brief Early-return a WarpWraps result as a Status unless it succeeded
 ///
-/// Evaluates @p expr once, casts the result to ::calaman::Status (the implicit
-/// converting constructor tags its ErrorDomain), and -- if it is not ok() --
-/// returns that Status from the enclosing function. Wrapped in do/while(0) so it
-/// is one statement and the temporary does not leak; the identifier is
-/// uglified to avoid colliding with names in @p expr.
+/// Evaluates the expression once, casts the result to ::calaman::Status (the
+/// implicit converting constructor tags its ErrorDomain), and -- if it is not
+/// ok() -- returns that Status from the enclosing function. Wrapped in
+/// do/while(0) so it is one statement and the temporary does not leak; the
+/// identifier is uglified to avoid colliding with names in the expression.
 ///
-/// @param expr A WarpWraps call returning wwrblasStatus_t, wwrsolverStatus_t or
-///             wwrError_t. Evaluated exactly once.
-#define CLM_TRY(expr)                                                                               \
+/// Variadic on purpose: the whole expression is one logical argument, but a call
+/// like `CLM_TRY(wwr::iamax<T, int>(...))` carries an unparenthesised comma in
+/// its template-argument list, which the preprocessor would otherwise read as an
+/// argument separator. Taking `...` and re-joining with __VA_ARGS__ lets such a
+/// comma pass through untouched, so a two-template-argument WarpWraps call needs
+/// no defensive extra parentheses at the call site.
+///
+/// @param ... A WarpWraps call returning wwrblasStatus_t, wwrsolverStatus_t or
+///            wwrError_t. Evaluated exactly once.
+#define CLM_TRY(...)                                                                                \
   do {                                                                                              \
-    const ::calaman::Status clm_try_status_ = (expr);                                               \
+    const ::calaman::Status clm_try_status_ = (__VA_ARGS__);                                        \
     if (!clm_try_status_.ok()) {                                                                    \
       return clm_try_status_;                                                                       \
     }                                                                                               \

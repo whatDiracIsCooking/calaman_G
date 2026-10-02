@@ -25,10 +25,11 @@ calaman_add_gpu_device_library(
 # which pulls runtime.h -> selected_backend.h; a GMF cannot import, so
 # wwrStream_t arrives by #include and the backend define is read via
 # LINK_PRIVATE wwr_backend -- the calaman.lacpy / calaman.laqp2 arrangement.
-#   wwr.wrappers.blas   iamax, swap, nrm2, gemv, gemm
-#   wwr.blas            handle, status, WWRBLAS_OP_* / WWRBLAS_STATUS_*
-#   wwr.runtime_api     wwrMemcpy(Async), wwrStreamSynchronize, wwrSuccess
-#   calaman.larfg       calaman::larfg
+#   wwr.wrappers.blas       iamax, swap, nrm2, gemv, gemm
+#   wwr.blas                handle, status, WWRBLAS_OP_* / WWRBLAS_STATUS_*
+#   wwr.runtime_api         wwrMemcpy(Async), wwrStreamSynchronize, wwrSuccess
+#   calaman.larfg           calaman::larfg
+#   calaman.error_handling  Status, the cross-domain return type (re-exported)
 calaman_add_cxx_module_library(
   NAME
   calaman.laqps
@@ -39,6 +40,7 @@ calaman_add_cxx_module_library(
   wwr.blas
   wwr.runtime_api
   calaman.larfg
+  calaman.error_handling
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE

@@ -30,11 +30,9 @@ namespace calaman {
 template std::size_t horner_bufferSize<float>(int);
 template std::size_t horner_bufferSize<double>(int);
 
-template wwr::wwrblasStatus_t horner<float>(wwr::wwrblasHandle_t, int, const float *, int,
-                                            const float *, int, float *, int, void *,
-                                            std::size_t);
-template wwr::wwrblasStatus_t horner<double>(wwr::wwrblasHandle_t, int, const double *, int,
-                                             const double *, int, double *, int, void *,
-                                             std::size_t);
+template Status horner<float>(wwr::wwrblasHandle_t, int, const float *, int, const float *, int,
+                              float *, int, void *, std::size_t);
+template Status horner<double>(wwr::wwrblasHandle_t, int, const double *, int, const double *, int,
+                               double *, int, void *, std::size_t);
 
 } // namespace calaman

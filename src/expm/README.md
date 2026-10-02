@@ -139,11 +139,12 @@ on. The option is gone; every matrix product goes through the portable
 matrices are column-major. `d_info` is a device array of **2** ints: `[0]`
 receives the `getrf` info code, `[1]` the `getrs` one.
 
-Every function returns `wwr::wwrblasStatus_t`, following `calaman.geqp3`: the
-BLAS status enum exposes neutral non-success codes (`INVALID_VALUE` for a bad
-argument, `ALLOC_FAILED` for an undersized workspace, `INTERNAL_ERROR` for a
-BLAS or solver failure) where the solver enum neutralizes only `SUCCESS`, so a
-routine that mixes both reports through the BLAS enum.
+Every function returns `calaman::Status`, following `calaman.geqp3`: the one
+cross-domain return type carries each WarpWraps result in its OWN domain, so a
+solver failure (`getrf` / `getrs`) now surfaces as a solver-domain Status and a
+`gebal` runtime failure as a runtime one, instead of the old `INTERNAL_ERROR`
+masquerade through the BLAS enum. A bad argument or an undersized workspace is
+still reported with an explicit BLAS-domain `INVALID_VALUE` / `ALLOC_FAILED`.
 
 ```cpp
 struct ExpmPlan { int m; int s; int num_gemms; };   // both the prediction and the report

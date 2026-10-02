@@ -27,14 +27,21 @@ module;
 
 #include "feast_bridge.h"
 
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.feast:contour_filter;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.blas;            // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_*, wwrblasFillMode_t, wwrblasOperation_t
+import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, wwrblasFillMode_t, wwrblasOperation_t
 import wwr.wrappers.common; // real_fp, RealToComplexType
 import wwr.wrappers.blas;   // getrfBatched, getrsBatched
 import :buffer_size;
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
 
@@ -46,11 +53,10 @@ export namespace calaman {
  * @param s       Workspace, from make_feast_slices with the same n and node count.
  */
 template<wwr::real_fp T>
-wwr::wwrblasStatus_t feast_factor_resolvents(wwr::wwrblasHandle_t cublas_handle,
-                                             wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo,
-                                             const int n, const T *d_A, const int lda,
-                                             const device::FeastContour<T> &contour,
-                                             const FeastSlices<T> &s) {
+Status feast_factor_resolvents(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream,
+                               const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
+                               const int lda, const device::FeastContour<T> &contour,
+                               const FeastSlices<T> &s) {
   using C = wwr::RealToComplexType<T>;
   const bool lower = (uplo == wwr::WWRBLAS_FILL_MODE_LOWER);
 
@@ -58,14 +64,11 @@ wwr::wwrblasStatus_t feast_factor_resolvents(wwr::wwrblasHandle_t cublas_handle,
   device::feast_pointer_array(stream, s.resolvents, s.resolvent_stride, contour.count,
                               s.resolvent_ptrs);
   device::feast_pointer_array(stream, s.rhs, s.rhs_stride, contour.count, s.rhs_ptrs);
-  if (wwr::wwrGetLastError() != wwr::wwrSuccess) {
-    return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
-  }
+  // A kernel-launch failure is a runtime-domain error, carried as such.
+  CLM_TRY(wwr::wwrGetLastError());
 
-  if (wwr::getrfBatched<C>(cublas_handle, n, s.resolvent_ptrs, n, s.ipiv, s.lu_info,
-                           contour.count) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::getrfBatched<C>(cublas_handle, n, s.resolvent_ptrs, n, s.ipiv, s.lu_info,
+                               contour.count));
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
@@ -76,31 +79,26 @@ wwr::wwrblasStatus_t feast_factor_resolvents(wwr::wwrblasHandle_t cublas_handle,
  * @param d_out n x m0, leading dimension n. May not alias @p d_Y's blocks in @p s.
  */
 template<wwr::real_fp T>
-wwr::wwrblasStatus_t feast_apply_filter(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream,
-                                        const int n, const int m0, const T *d_Y,
-                                        const device::FeastContour<T> &contour,
-                                        const FeastSlices<T> &s, T *d_out) {
+Status feast_apply_filter(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream, const int n,
+                          const int m0, const T *d_Y, const device::FeastContour<T> &contour,
+                          const FeastSlices<T> &s, T *d_out) {
   using C = wwr::RealToComplexType<T>;
   const std::size_t nm = static_cast<std::size_t>(n) * static_cast<std::size_t>(m0);
 
   device::feast_broadcast(stream, nm, d_Y, contour.count, s.rhs, s.rhs_stride);
-  if (wwr::wwrGetLastError() != wwr::wwrSuccess) {
-    return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
-  }
+  CLM_TRY(wwr::wwrGetLastError());
 
   // getrsBatched's info is a host int and reports only invalid arguments; the
   // factorization itself is checked through s.lu_info.
   int info = 0;
-  if (wwr::getrsBatched<C>(cublas_handle, wwr::WWRBLAS_OP_N, n, m0, s.resolvent_ptrs, n, s.ipiv,
-                           s.rhs_ptrs, n, &info, contour.count) != wwr::WWRBLAS_STATUS_SUCCESS ||
-      info != 0) {
+  CLM_TRY(wwr::getrsBatched<C>(cublas_handle, wwr::WWRBLAS_OP_N, n, m0, s.resolvent_ptrs, n, s.ipiv,
+                               s.rhs_ptrs, n, &info, contour.count));
+  if (info != 0) {
     return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
   }
 
   device::feast_accumulate(stream, nm, contour, s.rhs, s.rhs_stride, d_out);
-  if (wwr::wwrGetLastError() != wwr::wwrSuccess) {
-    return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
-  }
+  CLM_TRY(wwr::wwrGetLastError());
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

@@ -50,11 +50,13 @@
  * layer), so routing through it would break the backend-neutrality this project
  * is built on. Every matrix product goes through the portable wwr::gemm.
  *
- * STATUS. Returns wwr::wwrblasStatus_t, like calaman.geqp3: the BLAS status enum
- * exposes neutral non-success codes (INVALID_VALUE, ALLOC_FAILED,
- * INTERNAL_ERROR) where the solver enum neutralizes only SUCCESS, so a mixed
- * BLAS+solver routine reports through the BLAS enum and a non-success solver
- * result surfaces as WWRBLAS_STATUS_INTERNAL_ERROR.
+ * STATUS. Returns calaman::Status (calaman.error_handling), via CLM_TRY -- the
+ * cross-domain convention the rest of src/ returns. A failed BLAS or solver call
+ * carries its OWN domain's code (a getrf/getrs failure is a solver-domain status,
+ * not the WWRBLAS_STATUS_INTERNAL_ERROR masquerade this once forced). The
+ * genuinely host-side checks stay BLAS-domain outcome codes: a bad argument is
+ * WWRBLAS_STATUS_INVALID_VALUE and an undersized workspace WWRBLAS_STATUS_ALLOC_FAILED,
+ * both of which convert to Status implicitly.
  *
  * SYNCHRONIZES @p stream once, to read norm_1(A) onto the host (the degree and
  * the scaling exponent drive host-side control flow). Call pade() directly when
@@ -77,18 +79,24 @@
 module;
 
 #include "expm_bridge.h"
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
 
 export module calaman.expm;
 
 import std;
-import wwr.runtime_api;     // wwrStream_t, wwrError_t, wwrSuccess, wwrMemcpyAsync, wwrStreamSynchronize
-import wwr.blas;            // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_*, pointer-mode get/set, GetStream
-import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_STATUS_SUCCESS
-import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex, make_wwr*Complex (host)
-import wwr.wrappers.common; // usual_fp, complex_fp, ComplexToRealType
-import wwr.wrappers.blas;   // gemm, geam
-import wwr.wrappers.solver; // getrf, getrf_bufferSize, getrs (legacy, int-dimensioned)
-import calaman.common;      // WorkspaceBuilder, align_up
+import wwr.runtime_api; // wwrStream_t, wwrError_t, wwrSuccess, wwrMemcpyAsync, wwrStreamSynchronize
+import wwr.blas;    // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_*, pointer-mode get/set, GetStream
+import wwr.solver;  // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_STATUS_SUCCESS
+import wwr.complex; // wwrFloatComplex, wwrDoubleComplex, make_wwr*Complex (host)
+import wwr.wrappers.common;           // usual_fp, complex_fp, ComplexToRealType
+import wwr.wrappers.blas;             // gemm, geam
+import wwr.wrappers.solver;           // getrf, getrf_bufferSize, getrs (legacy, int-dimensioned)
+import calaman.common;                // WorkspaceBuilder, align_up
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -152,8 +160,8 @@ struct PadeWorkspace {
   T *X = nullptr; // m = 13 only; aliases the P[3] slot
   T *V = nullptr;
   T *W = nullptr;
-  T *U = nullptr;    // aliases P[0] -- live only after V and W are formed
-  T *Q = nullptr;    // aliases V    -- live only after the split
+  T *U = nullptr; // aliases P[0] -- live only after V and W are formed
+  T *Q = nullptr; // aliases V    -- live only after the split
   int *ipiv = nullptr;
   T *work_getrf = nullptr;
 
@@ -161,8 +169,7 @@ struct PadeWorkspace {
     PadeWorkspace r;
     auto *p = static_cast<std::byte *>(d_work);
 
-    const std::size_t mat =
-        align_up(static_cast<std::size_t>(n) * n * sizeof(T), std::size_t{256});
+    const std::size_t mat = align_up(static_cast<std::size_t>(n) * n * sizeof(T), std::size_t{256});
 
     const int np = pade_num_powers(m);
     for (int k = 0; k < np; ++k) {
@@ -391,26 +398,23 @@ wwr::ComplexToRealType<T> matrix_norm1(wwr::wwrStream_t stream, const int n, con
  * @param m           Pade degree; one of 3, 5, 7, 9, 13.
  * @param n           Matrix dimension.
  * @param lwork_bytes Output: required workspace in bytes.
- * @return WWRBLAS_STATUS_SUCCESS, WWRBLAS_STATUS_INVALID_VALUE for a bad degree
- *         or dimension, or WWRBLAS_STATUS_INTERNAL_ERROR if the getrf query fails.
+ * @return Status: SUCCESS, WWRBLAS_STATUS_INVALID_VALUE for a bad degree or
+ *         dimension, or the solver-domain status if the getrf query fails.
  */
 export template<wwr::usual_fp T>
-wwr::wwrblasStatus_t pade_bufferSize(wwr::wwrsolverDnHandle_t handle, const int m, const int n,
-                                     std::size_t *lwork_bytes) {
+Status pade_bufferSize(wwr::wwrsolverDnHandle_t handle, const int m, const int n,
+                       std::size_t *lwork_bytes) {
   if (pade_coeffs(m) == nullptr || n < 1) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 
   int lwork_getrf = 0;
-  if (wwr::getrf_bufferSize<T>(handle, n, n, static_cast<T *>(nullptr), n, &lwork_getrf) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::getrf_bufferSize<T>(handle, n, n, static_cast<T *>(nullptr), n, &lwork_getrf));
 
   WorkspaceBuilder ws;
   ws.add_fixed<T>(static_cast<std::size_t>(n) * n, static_cast<std::size_t>(pade_num_blocks(m)));
-  ws.add_fixed<int>(static_cast<std::size_t>(n));            // ipiv
-  ws.add_fixed<T>(static_cast<std::size_t>(lwork_getrf));    // getrf scratch
+  ws.add_fixed<int>(static_cast<std::size_t>(n));         // ipiv
+  ws.add_fixed<T>(static_cast<std::size_t>(lwork_getrf)); // getrf scratch
   *lwork_bytes = ws.total();
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
@@ -427,28 +431,24 @@ wwr::wwrblasStatus_t pade_bufferSize(wwr::wwrsolverDnHandle_t handle, const int 
  * @param lwork_bytes Output: required workspace in bytes.
  */
 export template<wwr::usual_fp T>
-wwr::wwrblasStatus_t expm_bufferSize(wwr::wwrsolverDnHandle_t handle, const int n,
-                                     std::size_t *lwork_bytes) {
+Status expm_bufferSize(wwr::wwrsolverDnHandle_t handle, const int n, std::size_t *lwork_bytes) {
   if (n < 1) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 
   int lwork_getrf = 0;
-  if (wwr::getrf_bufferSize<T>(handle, n, n, static_cast<T *>(nullptr), n, &lwork_getrf) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::getrf_bufferSize<T>(handle, n, n, static_cast<T *>(nullptr), n, &lwork_getrf));
 
   const std::size_t sn = static_cast<std::size_t>(n);
   using RealT = wwr::ComplexToRealType<T>;
 
   WorkspaceBuilder ws;
-  ws.add_fixed<T>(sn * sn);                                 // As (and, later, sq)
-  ws.add_fixed<RealT>(sn);                                  // colsum
+  ws.add_fixed<T>(sn * sn); // As (and, later, sq)
+  ws.add_fixed<RealT>(sn);  // colsum
   // The pade region, sized for the worst degree on the ladder.
   ws.add_fixed<T>(sn * sn, static_cast<std::size_t>(pade_max_blocks()));
-  ws.add_fixed<int>(sn);                                    // ipiv
-  ws.add_fixed<T>(static_cast<std::size_t>(lwork_getrf));   // getrf scratch
+  ws.add_fixed<int>(sn);                                  // ipiv
+  ws.add_fixed<T>(static_cast<std::size_t>(lwork_getrf)); // getrf scratch
 
   *lwork_bytes = ws.total();
   return wwr::WWRBLAS_STATUS_SUCCESS;
@@ -481,8 +481,8 @@ wwr::wwrblasStatus_t expm_bufferSize(wwr::wwrsolverDnHandle_t handle, const int 
  * @param d_work          Device workspace of at least pade_bufferSize<T>(m, n) bytes.
  * @param lwork_bytes     Size of @p d_work in bytes.
  * @param d_info          Device array of 2 ints: [0] getrf info, [1] getrs info.
- * @return WWRBLAS_STATUS_SUCCESS, or the first error; a BLAS/solver failure is
- *         WWRBLAS_STATUS_INTERNAL_ERROR, a bad argument WWRBLAS_STATUS_INVALID_VALUE,
+ * @return Status: SUCCESS, or the first error; a BLAS or solver failure carries
+ *         its own domain's status, a bad argument WWRBLAS_STATUS_INVALID_VALUE,
  *         an undersized workspace WWRBLAS_STATUS_ALLOC_FAILED.
  *
  * @pre @p d_A and @p d_r must not overlap, and neither may overlap @p d_work.
@@ -490,10 +490,9 @@ wwr::wwrblasStatus_t expm_bufferSize(wwr::wwrsolverDnHandle_t handle, const int 
  * @post The pointer mode of @p cublas_handle is left as it was found.
  */
 export template<wwr::usual_fp T>
-wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
-                          wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
-                          const int m, const int n, const T *d_A, const int lda, T *d_r,
-                          const int ldr, void *d_work, const std::size_t lwork_bytes, int *d_info) {
+Status pade(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
+            wwr::wwrStream_t stream, const int m, const int n, const T *d_A, const int lda, T *d_r,
+            const int ldr, void *d_work, const std::size_t lwork_bytes, int *d_info) {
   using RealT = wwr::ComplexToRealType<T>;
 
   const double *b = pade_coeffs(m);
@@ -502,10 +501,7 @@ wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
   }
 
   std::size_t required = 0;
-  const wwr::wwrblasStatus_t qstatus = pade_bufferSize<T>(cusolver_handle, m, n, &required);
-  if (qstatus != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return qstatus;
-  }
+  CLM_TRY(pade_bufferSize<T>(cusolver_handle, m, n, &required));
   if (lwork_bytes < required) {
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
@@ -514,19 +510,24 @@ wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
   const int np = pade_num_powers(m);
 
   // The gemms use host scalars, so the handle must be in HOST pointer mode
-  // regardless of how the caller left it; it is restored on every exit.
-  wwr::wwrblasPointerMode_t mode{};
-  if (wwr::wwrblasGetPointerMode(cublas_handle, &mode) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
-  if (wwr::wwrblasSetPointerMode(cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST) !=
-      wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
-  const auto restore = [&](const wwr::wwrblasStatus_t result) {
-    wwr::wwrblasSetPointerMode(cublas_handle, mode);
-    return result;
+  // regardless of how the caller left it; it is restored on every exit. CLM_TRY's
+  // bail-out is a bare `return`, so the restore cannot live in a trailing lambda:
+  // only a destructor fires on the early returns too, honoring the @post below.
+  struct PointerModeGuard {
+    wwr::wwrblasHandle_t h;
+    wwr::wwrblasPointerMode_t saved;
+    bool active;
+    ~PointerModeGuard() {
+      if (active) {
+        wwr::wwrblasSetPointerMode(h, saved);
+      }
+    }
   };
+
+  wwr::wwrblasPointerMode_t mode{};
+  CLM_TRY(wwr::wwrblasGetPointerMode(cublas_handle, &mode));
+  CLM_TRY(wwr::wwrblasSetPointerMode(cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST));
+  const PointerModeGuard guard{cublas_handle, mode, true};
 
   const T one = as_element<T>(RealT{1});
   const T zero = as_element<T>(RealT{0});
@@ -534,27 +535,25 @@ wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
   // Z = X * Y, and Z += X * Y (the beta = 1 that makes the degree-13 tail free)
   const auto matmul = [&](const T *X, const int ldx, const T *Y, const int ldy, T *Z,
                           const int ldz) {
-    return wwr::gemm<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &one, X, ldx, Y,
-                        ldy, &zero, Z, ldz);
+    return wwr::gemm<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &one, X, ldx,
+                        Y, ldy, &zero, Z, ldz);
   };
   const auto matmul_acc = [&](const T *X, const int ldx, const T *Y, const int ldy, T *Z,
                               const int ldz) {
-    return wwr::gemm<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &one, X, ldx, Y,
-                        ldy, &one, Z, ldz);
+    return wwr::gemm<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &one, X, ldx,
+                        Y, ldy, &one, Z, ldz);
   };
 
   // ── Powers of A: A2, then A4, A6, A8 as far as the degree needs ────
-  if (matmul(d_A, lda, d_A, lda, ws.P[0], n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+  CLM_TRY(matmul(d_A, lda, d_A, lda, ws.P[0], n));
+  if (np >= 2) {
+    CLM_TRY(matmul(ws.P[0], n, ws.P[0], n, ws.P[1], n));
   }
-  if (np >= 2 && matmul(ws.P[0], n, ws.P[0], n, ws.P[1], n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+  if (np >= 3) {
+    CLM_TRY(matmul(ws.P[1], n, ws.P[0], n, ws.P[2], n));
   }
-  if (np >= 3 && matmul(ws.P[1], n, ws.P[0], n, ws.P[2], n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-  }
-  if (np >= 4 && matmul(ws.P[1], n, ws.P[1], n, ws.P[3], n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+  if (np >= 4) {
+    CLM_TRY(matmul(ws.P[1], n, ws.P[1], n, ws.P[3], n));
   }
 
   RealT cv[5] = {};
@@ -581,9 +580,7 @@ wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
     device::pade_even_odd<T, RealT>(stream, n, 3, ws.P[0], ws.P[1], ws.P[2],
                                     static_cast<const T *>(nullptr), cv, cw, ws.X, ws.W);
 
-    if (matmul_acc(ws.P[2], n, ws.X, n, ws.W, n) != wwr::WWRBLAS_STATUS_SUCCESS) { // W += A6 * X
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
+    CLM_TRY(matmul_acc(ws.P[2], n, ws.X, n, ws.W, n)); // W += A6 * X
 
     // ── Even parity, reusing X now that the odd side is finished ───
     cv[0] = RealT{0};
@@ -597,30 +594,21 @@ wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
     device::pade_even_odd<T, RealT>(stream, n, 3, ws.P[0], ws.P[1], ws.P[2],
                                     static_cast<const T *>(nullptr), cv, cw, ws.X, ws.V);
 
-    if (matmul_acc(ws.P[2], n, ws.X, n, ws.V, n) != wwr::WWRBLAS_STATUS_SUCCESS) { // V += A6 * X
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
+    CLM_TRY(matmul_acc(ws.P[2], n, ws.X, n, ws.V, n)); // V += A6 * X
   }
 
   // ── U = A * W. Safe in place of P[0]: the powers are dead from here ─
-  if (matmul(d_A, lda, ws.W, n, ws.U, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-  }
+  CLM_TRY(matmul(d_A, lda, ws.W, n, ws.U, n));
 
   // ── p(A) = V + U into the output, q(A) = V - U over V, in one pass ─
   device::pade_split<T>(stream, n, ws.U, ws.V, d_r, ldr, ws.Q);
 
   // ── Solve q(A) X = p(A) ────────────────────────────────────────────
-  if (wwr::getrf<T>(cusolver_handle, n, n, ws.Q, n, ws.work_getrf, ws.ipiv, d_info) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
-    return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-  }
-  if (wwr::getrs<T>(cusolver_handle, wwr::WWRBLAS_OP_N, n, n, ws.Q, n, ws.ipiv, d_r, ldr,
-                    d_info + 1) != wwr::WWRSOLVER_STATUS_SUCCESS) {
-    return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-  }
+  CLM_TRY(wwr::getrf<T>(cusolver_handle, n, n, ws.Q, n, ws.work_getrf, ws.ipiv, d_info));
+  CLM_TRY(wwr::getrs<T>(cusolver_handle, wwr::WWRBLAS_OP_N, n, n, ws.Q, n, ws.ipiv, d_r, ldr,
+                        d_info + 1));
 
-  return restore(wwr::WWRBLAS_STATUS_SUCCESS);
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -649,9 +637,9 @@ wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
  * @param plan            Optional output: the plan expm executed -- degree,
  *                        squarings and gemm count, the same ExpmPlan expm_plan()
  *                        would have predicted from norm_1(A).
- * @return WWRBLAS_STATUS_SUCCESS, or the first error; a BLAS/solver failure is
- *         WWRBLAS_STATUS_INTERNAL_ERROR, a bad argument (including a 1-norm that
- *         is not finite) WWRBLAS_STATUS_INVALID_VALUE, an undersized workspace
+ * @return Status: SUCCESS, or the first error; a BLAS or solver failure carries
+ *         its own domain's status, a bad argument (including a 1-norm that is not
+ *         finite) WWRBLAS_STATUS_INVALID_VALUE, an undersized workspace
  *         WWRBLAS_STATUS_ALLOC_FAILED.
  *
  * @pre @p d_A and @p d_expA must not overlap.
@@ -660,11 +648,10 @@ wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
  * @warning Synchronizes @p stream (see the file header).
  */
 export template<wwr::usual_fp T>
-wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
-                          wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
-                          const int n, const T *d_A, const int lda, T *d_expA, const int lde,
-                          void *d_work, const std::size_t lwork_bytes, int *d_info,
-                          ExpmPlan *plan = nullptr) {
+Status expm(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
+            wwr::wwrStream_t stream, const int n, const T *d_A, const int lda, T *d_expA,
+            const int lde, void *d_work, const std::size_t lwork_bytes, int *d_info,
+            ExpmPlan *plan = nullptr) {
   using RealT = wwr::ComplexToRealType<T>;
 
   if (n < 1 || n > kMaxDim || lda < n || lde < n || d_work == nullptr) {
@@ -672,28 +659,31 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
   }
 
   std::size_t required = 0;
-  const wwr::wwrblasStatus_t qstatus = expm_bufferSize<T>(cusolver_handle, n, &required);
-  if (qstatus != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return qstatus;
-  }
+  CLM_TRY(expm_bufferSize<T>(cusolver_handle, n, &required));
   if (lwork_bytes < required) {
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
 
   const auto ws = ExpmWorkspace<T>::make(d_work, n);
 
-  wwr::wwrblasPointerMode_t mode{};
-  if (wwr::wwrblasGetPointerMode(cublas_handle, &mode) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
-  if (wwr::wwrblasSetPointerMode(cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST) !=
-      wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
-  const auto restore = [&](const wwr::wwrblasStatus_t result) {
-    wwr::wwrblasSetPointerMode(cublas_handle, mode);
-    return result;
+  // HOST pointer mode for the host-scalar gemms/geams, restored on every exit.
+  // A destructor, not a trailing lambda: CLM_TRY's bail-out is a bare `return`,
+  // so only a guard's ~dtor restores on the early paths too (honoring the @post).
+  struct PointerModeGuard {
+    wwr::wwrblasHandle_t h;
+    wwr::wwrblasPointerMode_t saved;
+    bool active;
+    ~PointerModeGuard() {
+      if (active) {
+        wwr::wwrblasSetPointerMode(h, saved);
+      }
+    }
   };
+
+  wwr::wwrblasPointerMode_t mode{};
+  CLM_TRY(wwr::wwrblasGetPointerMode(cublas_handle, &mode));
+  CLM_TRY(wwr::wwrblasSetPointerMode(cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST));
+  const PointerModeGuard guard{cublas_handle, mode, true};
 
   const T one = as_element<T>(RealT{1});
   const T zero = as_element<T>(RealT{0});
@@ -701,7 +691,7 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
   // ── The norm the whole plan hangs off ──────────────────────────────
   const RealT norm = matrix_norm1<T>(stream, n, d_A, lda, ws.colsum);
   if (!std::isfinite(norm)) {
-    return restore(wwr::WWRBLAS_STATUS_INVALID_VALUE);
+    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 
   const ExpmPlan chosen = expm_plan<T>(norm);
@@ -710,10 +700,7 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
   }
 
   std::size_t pade_bytes = 0;
-  const wwr::wwrblasStatus_t pstatus = pade_bufferSize<T>(cusolver_handle, chosen.m, n, &pade_bytes);
-  if (pstatus != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return restore(pstatus);
-  }
+  CLM_TRY(pade_bufferSize<T>(cusolver_handle, chosen.m, n, &pade_bytes));
 
   // ── Pick what actually gets exponentiated ──────────────────────────
   const T *src = d_A;
@@ -721,20 +708,14 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
 
   if (chosen.s > 0) {
     const T factor = as_element<T>(std::ldexp(RealT{1}, -chosen.s));
-    if (wwr::geam<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &factor, d_A, lda,
-                     &zero, d_A, lda, ws.As, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
+    CLM_TRY(wwr::geam<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &factor, d_A,
+                         lda, &zero, d_A, lda, ws.As, n));
     src = ws.As;
     ld_src = n;
   }
 
-  const wwr::wwrblasStatus_t pade_status =
-      pade<T>(cublas_handle, cusolver_handle, stream, chosen.m, n, src, ld_src, d_expA, lde,
-              ws.pade_base, pade_bytes, d_info);
-  if (pade_status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return restore(pade_status);
-  }
+  CLM_TRY(pade<T>(cublas_handle, cusolver_handle, stream, chosen.m, n, src, ld_src, d_expA, lde,
+                  ws.pade_base, pade_bytes, d_info));
 
   // ── Square s times, ping-ponging between the output and the scratch ─
   //
@@ -748,33 +729,29 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
   int ld_other = n;
 
   for (int k = 0; k < chosen.s; ++k) {
-    if (wwr::gemm<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &one, cur, ld_cur,
-                     cur, ld_cur, &zero, other, ld_other) != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
+    CLM_TRY(wwr::gemm<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &one, cur,
+                         ld_cur, cur, ld_cur, &zero, other, ld_other));
     std::swap(cur, other);
     std::swap(ld_cur, ld_other);
   }
 
   // An odd number of squarings leaves the result in the scratch block.
   if (cur != d_expA) {
-    if (wwr::geam<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &one, cur, ld_cur,
-                     &zero, cur, ld_cur, d_expA, lde) != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
+    CLM_TRY(wwr::geam<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &one, cur,
+                         ld_cur, &zero, cur, ld_cur, d_expA, lde));
   }
 
-  return restore(wwr::WWRBLAS_STATUS_SUCCESS);
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 // Paired with instantiations.cpp: each template is instantiated once inside this
 // library (its body names the .cu-side launchers declared only in the GMF), so
 // an importer never re-instantiates it. pade_theta and expm_plan are trivial
 // constexpr/host helpers and are left to implicit instantiation.
-extern template wwr::ComplexToRealType<float>
-matrix_norm1<float>(wwr::wwrStream_t, int, const float *, int, float *);
-extern template wwr::ComplexToRealType<double>
-matrix_norm1<double>(wwr::wwrStream_t, int, const double *, int, double *);
+extern template wwr::ComplexToRealType<float> matrix_norm1<float>(wwr::wwrStream_t, int,
+                                                                  const float *, int, float *);
+extern template wwr::ComplexToRealType<double> matrix_norm1<double>(wwr::wwrStream_t, int,
+                                                                    const double *, int, double *);
 extern template wwr::ComplexToRealType<wwr::wwrFloatComplex>
 matrix_norm1<wwr::wwrFloatComplex>(wwr::wwrStream_t, int, const wwr::wwrFloatComplex *, int,
                                    float *);
@@ -782,53 +759,52 @@ extern template wwr::ComplexToRealType<wwr::wwrDoubleComplex>
 matrix_norm1<wwr::wwrDoubleComplex>(wwr::wwrStream_t, int, const wwr::wwrDoubleComplex *, int,
                                     double *);
 
-extern template wwr::wwrblasStatus_t pade_bufferSize<float>(wwr::wwrsolverDnHandle_t, int, int,
-                                                            std::size_t *);
-extern template wwr::wwrblasStatus_t pade_bufferSize<double>(wwr::wwrsolverDnHandle_t, int, int,
+extern template Status pade_bufferSize<float>(wwr::wwrsolverDnHandle_t, int, int, std::size_t *);
+extern template Status pade_bufferSize<double>(wwr::wwrsolverDnHandle_t, int, int, std::size_t *);
+extern template Status pade_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, int, int,
                                                              std::size_t *);
-extern template wwr::wwrblasStatus_t
-pade_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, int, int, std::size_t *);
-extern template wwr::wwrblasStatus_t
-pade_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, int, int, std::size_t *);
+extern template Status pade_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, int, int,
+                                                              std::size_t *);
 
-extern template wwr::wwrblasStatus_t expm_bufferSize<float>(wwr::wwrsolverDnHandle_t, int,
-                                                            std::size_t *);
-extern template wwr::wwrblasStatus_t expm_bufferSize<double>(wwr::wwrsolverDnHandle_t, int,
+extern template Status expm_bufferSize<float>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
+extern template Status expm_bufferSize<double>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
+extern template Status expm_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, int,
                                                              std::size_t *);
-extern template wwr::wwrblasStatus_t
-expm_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
-extern template wwr::wwrblasStatus_t
-expm_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
+extern template Status expm_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, int,
+                                                              std::size_t *);
 
-extern template wwr::wwrblasStatus_t pade<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
-                                                 wwr::wwrStream_t, int, int, const float *, int,
-                                                 float *, int, void *, std::size_t, int *);
-extern template wwr::wwrblasStatus_t pade<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
-                                                  wwr::wwrStream_t, int, int, const double *, int,
-                                                  double *, int, void *, std::size_t, int *);
-extern template wwr::wwrblasStatus_t
-pade<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int, int,
-                           const wwr::wwrFloatComplex *, int, wwr::wwrFloatComplex *, int, void *,
-                           std::size_t, int *);
-extern template wwr::wwrblasStatus_t
-pade<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
-                            int, const wwr::wwrDoubleComplex *, int, wwr::wwrDoubleComplex *, int,
-                            void *, std::size_t, int *);
+extern template Status pade<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t,
+                                   int, int, const float *, int, float *, int, void *, std::size_t,
+                                   int *);
+extern template Status pade<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                    wwr::wwrStream_t, int, int, const double *, int, double *, int,
+                                    void *, std::size_t, int *);
+extern template Status pade<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                                  wwr::wwrStream_t, int, int,
+                                                  const wwr::wwrFloatComplex *, int,
+                                                  wwr::wwrFloatComplex *, int, void *, std::size_t,
+                                                  int *);
+extern template Status pade<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                                   wwr::wwrStream_t, int, int,
+                                                   const wwr::wwrDoubleComplex *, int,
+                                                   wwr::wwrDoubleComplex *, int, void *,
+                                                   std::size_t, int *);
 
-extern template wwr::wwrblasStatus_t expm<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
-                                                 wwr::wwrStream_t, int, const float *, int, float *,
-                                                 int, void *, std::size_t, int *, ExpmPlan *);
-extern template wwr::wwrblasStatus_t expm<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
-                                                  wwr::wwrStream_t, int, const double *, int,
-                                                  double *, int, void *, std::size_t, int *,
-                                                  ExpmPlan *);
-extern template wwr::wwrblasStatus_t
-expm<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
-                           const wwr::wwrFloatComplex *, int, wwr::wwrFloatComplex *, int, void *,
-                           std::size_t, int *, ExpmPlan *);
-extern template wwr::wwrblasStatus_t
-expm<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
-                            const wwr::wwrDoubleComplex *, int, wwr::wwrDoubleComplex *, int, void *,
-                            std::size_t, int *, ExpmPlan *);
+extern template Status expm<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t,
+                                   int, const float *, int, float *, int, void *, std::size_t,
+                                   int *, ExpmPlan *);
+extern template Status expm<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                    wwr::wwrStream_t, int, const double *, int, double *, int,
+                                    void *, std::size_t, int *, ExpmPlan *);
+extern template Status expm<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                                  wwr::wwrStream_t, int,
+                                                  const wwr::wwrFloatComplex *, int,
+                                                  wwr::wwrFloatComplex *, int, void *, std::size_t,
+                                                  int *, ExpmPlan *);
+extern template Status expm<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                                   wwr::wwrStream_t, int,
+                                                   const wwr::wwrDoubleComplex *, int,
+                                                   wwr::wwrDoubleComplex *, int, void *,
+                                                   std::size_t, int *, ExpmPlan *);
 
 } // namespace calaman

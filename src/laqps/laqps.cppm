@@ -71,6 +71,11 @@
 module;
 
 #include "laqps_bridge.h"
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
 
 export module calaman.laqps;
 
@@ -79,6 +84,11 @@ import wwr.runtime_api;   // wwrMemcpy(Async), wwrStreamSynchronize, wwrSuccess
 import wwr.wrappers.blas; // iamax, swap, nrm2, gemv, gemm
 import calaman.larfg;     // calaman::larfg
 import std;               // std::sqrt, std::min, std::vector
+
+// export import, not a plain import: laqps RETURNS calaman::Status, so a consumer
+// of `import calaman.laqps;` must see Status's member functions, not just its
+// name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -98,34 +108,27 @@ namespace laqps_detail {
 /// Pivot bookkeeping swaps vn1[k]/vn1[pvt] (and vn2) a scalar at a time; there is
 /// no BLAS swap of length one worth a kernel launch, so this reads both back,
 /// exchanges them on the host, and writes them returned -- blocking, like the
-/// larfg scalar reads. Returns true on success, false on the first failing copy.
+/// larfg scalar reads. Returns the first failing copy's (runtime-domain) Status,
+/// otherwise success.
 template<typename T>
-bool swap_device_scalar(wwr::wwrStream_t stream, T *a, T *b) {
+Status swap_device_scalar(wwr::wwrStream_t stream, T *a, T *b) {
   T ha{};
   T hb{};
-  if (wwr::wwrMemcpyAsync(&ha, a, sizeof(T), wwr::wwrMemcpyDeviceToHost, stream) !=
-          wwr::wwrSuccess ||
-      wwr::wwrMemcpyAsync(&hb, b, sizeof(T), wwr::wwrMemcpyDeviceToHost, stream) !=
-          wwr::wwrSuccess ||
-      wwr::wwrStreamSynchronize(stream) != wwr::wwrSuccess) {
-    return false;
-  }
-  if (wwr::wwrMemcpyAsync(a, &hb, sizeof(T), wwr::wwrMemcpyHostToDevice, stream) !=
-          wwr::wwrSuccess ||
-      wwr::wwrMemcpyAsync(b, &ha, sizeof(T), wwr::wwrMemcpyHostToDevice, stream) !=
-          wwr::wwrSuccess ||
-      wwr::wwrStreamSynchronize(stream) != wwr::wwrSuccess) {
-    return false;
-  }
-  return true;
+  CLM_TRY(wwr::wwrMemcpyAsync(&ha, a, sizeof(T), wwr::wwrMemcpyDeviceToHost, stream));
+  CLM_TRY(wwr::wwrMemcpyAsync(&hb, b, sizeof(T), wwr::wwrMemcpyDeviceToHost, stream));
+  CLM_TRY(wwr::wwrStreamSynchronize(stream));
+  CLM_TRY(wwr::wwrMemcpyAsync(a, &hb, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
+  CLM_TRY(wwr::wwrMemcpyAsync(b, &ha, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
+  CLM_TRY(wwr::wwrStreamSynchronize(stream));
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 /// @brief Write one device scalar from a host value on @p stream, blocking
 template<typename T>
-bool set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &value) {
-  return wwr::wwrMemcpyAsync(dst, &value, sizeof(T), wwr::wwrMemcpyHostToDevice, stream) ==
-             wwr::wwrSuccess &&
-         wwr::wwrStreamSynchronize(stream) == wwr::wwrSuccess;
+Status set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &value) {
+  CLM_TRY(wwr::wwrMemcpyAsync(dst, &value, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
+  CLM_TRY(wwr::wwrStreamSynchronize(stream));
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 } // namespace laqps_detail
@@ -139,10 +142,10 @@ bool set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &value) {
 /// block to the rest of the trailing matrix with ONE deferred gemm. The degraded
 /// trailing columns are recomputed after that gemm via the device mask @p flags.
 ///
-/// Short-circuits: the first failing BLAS / larfg / device-copy status is
-/// returned and the factorization stops there. Returns success with kb = 0 when
-/// the panel is empty. On a device-read/write failure that surfaces no BLAS
-/// status returns WWRBLAS_STATUS_NOT_INITIALIZED, the neutral code the siblings use.
+/// Short-circuits: the first failing step's Status is returned and the
+/// factorization stops there. Returns success with kb = 0 when the panel is
+/// empty. Each device read/write now returns its OWN domain's Status (the copies
+/// a runtime one) rather than masquerading as a BLAS code.
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param handle GPU BLAS handle in host pointer mode; all device pointers live on its device
@@ -161,20 +164,18 @@ bool set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &value) {
 /// @param ldf Leading dimension of F (>= n)
 /// @param auxv Device workspace, length >= nb; the per-step accumulated-F intermediate
 /// @param flags Device int mask, length >= n; the degraded-column flags (written here)
-/// @return The status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
+/// @return The Status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
 export template<typename T>
-wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n, const int offset,
-                           const int nb, int *kb, T *A, const int lda, int *jpvt, T *tau, T *vn1,
-                           T *vn2, T *F, const int ldf, T *auxv, int *flags) {
+Status laqps(wwr::wwrblasHandle_t handle, const int m, const int n, const int offset, const int nb,
+             int *kb, T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2, T *F, const int ldf,
+             T *auxv, int *flags) {
   *kb = 0;
   if (m <= 0 || n <= 0 || nb <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
   wwr::wwrStream_t stream{};
-  if (wwr::wwrblasGetStream(handle, &stream) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_TRY(wwr::wwrblasGetStream(handle, &stream));
 
   // The block factors at most this many columns: nb, but no more than remain in
   // the trailing panel (min(m - offset, n)), and never a column at or below the
@@ -198,39 +199,28 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
 
   int k = 0;
   for (; k < block; ++k) {
-    const int rk = offset + k;   // pivot row in A
-    const int rows = m - rk;     // reflector length / trailing-block rows at/below rk
+    const int rk = offset + k; // pivot row in A
+    const int rows = m - rk;   // reflector length / trailing-block rows at/below rk
 
     // --- 1. Pivot over vn1[k:n] (host pointer mode writes a host int). iamax is
     // 1-based into the tail, so the global pivot column is k + (idx - 1).
     const int tail = n - k;
     int idx = 1;
     if (tail > 1) {
-      const auto s = wwr::iamax<T, int>(handle, tail, vn1 + k, 1, &idx);
-      if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s;
-      }
+      CLM_TRY(wwr::iamax<T, int>(handle, tail, vn1 + k, 1, &idx));
     }
     const int pvt = k + (idx - 1);
 
     if (pvt != k) {
       // Swap the two full m-length columns of A, the two length-k ROWS of F
       // (F(k,0:k) <-> F(pvt,0:k), stride ldf), the vn1/vn2 entries, and jpvt.
-      const auto sc = wwr::swap<T, int>(handle, m, A + static_cast<size_t>(k) * lda, 1,
-                                        A + static_cast<size_t>(pvt) * lda, 1);
-      if (sc != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return sc;
-      }
+      CLM_TRY(wwr::swap<T, int>(handle, m, A + static_cast<size_t>(k) * lda, 1,
+                                A + static_cast<size_t>(pvt) * lda, 1));
       if (k > 0) {
-        const auto sf = wwr::swap<T, int>(handle, k, F + k, ldf, F + pvt, ldf);
-        if (sf != wwr::WWRBLAS_STATUS_SUCCESS) {
-          return sf;
-        }
+        CLM_TRY(wwr::swap<T, int>(handle, k, F + k, ldf, F + pvt, ldf));
       }
-      if (!laqps_detail::swap_device_scalar<T>(stream, vn1 + k, vn1 + pvt) ||
-          !laqps_detail::swap_device_scalar<T>(stream, vn2 + k, vn2 + pvt)) {
-        return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-      }
+      CLM_TRY(laqps_detail::swap_device_scalar<T>(stream, vn1 + k, vn1 + pvt));
+      CLM_TRY(laqps_detail::swap_device_scalar<T>(stream, vn2 + k, vn2 + pvt));
       const int tmp = jpvt[k];
       jpvt[k] = jpvt[pvt];
       jpvt[pvt] = tmp;
@@ -242,32 +232,20 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
     // A(rk:m, k) -= A(rk:m, 0:k) * F(k, 0:k)^T. One gemv, op = N (rows x k), the
     // vector being row k of F (F(k,0), stride ldf).
     if (k > 0) {
-      const auto s = wwr::gemv<T>(handle, wwr::WWRBLAS_OP_N, rows, k, &neg_one,
-                                  A + static_cast<size_t>(rk), lda, F + k, ldf, &one, col, 1);
-      if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s;
-      }
+      CLM_TRY(wwr::gemv<T>(handle, wwr::WWRBLAS_OP_N, rows, k, &neg_one,
+                           A + static_cast<size_t>(rk), lda, F + k, ldf, &one, col, 1));
     }
 
     // --- 3. Reflector on A(rk:m, k). larfg writes tau[k] (host) and beta, and
     // overwrites A(rk,k) with beta, A(rk+1:m, k) with the scaled tail.
     T host_tau{};
     T beta{};
-    {
-      const auto s = larfg<T>(handle, rows, col, col + 1, 1, &host_tau, &beta);
-      if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s;
-      }
-    }
-    if (!laqps_detail::set_device_scalar<T>(stream, tau + k, host_tau)) {
-      return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-    }
+    CLM_TRY(larfg<T>(handle, rows, col, col + 1, 1, &host_tau, &beta));
+    CLM_TRY(laqps_detail::set_device_scalar<T>(stream, tau + k, host_tau));
 
     // Set A(rk,k) = 1 so `col` is the full reflector v with v[0] == 1, the form
     // the F-building gemvs below need. Restored to beta after step 5.
-    if (!laqps_detail::set_device_scalar<T>(stream, col, one)) {
-      return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-    }
+    CLM_TRY(laqps_detail::set_device_scalar<T>(stream, col, one));
 
     const int trail = n - k - 1; // trailing columns k+1:n
 
@@ -278,17 +256,13 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
     // 4b, F(k,k) stays 0). Explicitly zero F(0:k+1, k) first so the accumulate in
     // 4b lands on a clean slate and the deferred gemm reads a well-defined F.
     for (int i = 0; i <= k && trail >= 0; ++i) {
-      if (!laqps_detail::set_device_scalar<T>(stream, F + static_cast<size_t>(k) * ldf + i, zero)) {
-        return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-      }
+      CLM_TRY(
+          laqps_detail::set_device_scalar<T>(stream, F + static_cast<size_t>(k) * ldf + i, zero));
     }
     if (trail > 0) {
-      const auto s = wwr::gemv<T>(handle, wwr::WWRBLAS_OP_T, rows, trail, &host_tau,
-                                  A + static_cast<size_t>(k + 1) * lda + rk, lda, col, 1, &zero,
-                                  F + static_cast<size_t>(k) * ldf + (k + 1), 1);
-      if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s;
-      }
+      CLM_TRY(wwr::gemv<T>(handle, wwr::WWRBLAS_OP_T, rows, trail, &host_tau,
+                           A + static_cast<size_t>(k + 1) * lda + rk, lda, col, 1, &zero,
+                           F + static_cast<size_t>(k) * ldf + (k + 1), 1));
     }
 
     // --- 4b. Fold the accumulated block into F's new column:
@@ -296,16 +270,10 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
     //   F(0:n, k) += F(0:n, 0:k) * auxv(0:k)                (gemv op = N)
     if (k > 0) {
       const T neg_tau = -host_tau;
-      const auto s1 = wwr::gemv<T>(handle, wwr::WWRBLAS_OP_T, rows, k, &neg_tau,
-                                   A + static_cast<size_t>(rk), lda, col, 1, &zero, auxv, 1);
-      if (s1 != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s1;
-      }
-      const auto s2 = wwr::gemv<T>(handle, wwr::WWRBLAS_OP_N, n, k, &one, F, ldf, auxv, 1, &one,
-                                   F + static_cast<size_t>(k) * ldf, 1);
-      if (s2 != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s2;
-      }
+      CLM_TRY(wwr::gemv<T>(handle, wwr::WWRBLAS_OP_T, rows, k, &neg_tau,
+                           A + static_cast<size_t>(rk), lda, col, 1, &zero, auxv, 1));
+      CLM_TRY(wwr::gemv<T>(handle, wwr::WWRBLAS_OP_N, n, k, &one, F, ldf, auxv, 1, &one,
+                           F + static_cast<size_t>(k) * ldf, 1));
     }
 
     // --- 5. Update only the CURRENT row of A, so the next step's iamax over vn1
@@ -314,18 +282,13 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
     // gemv op = N, (trail x (k+1)) matrix F(k+1, 0) (ldf), vector the row A(rk,0)
     // (stride lda), result the row A(rk, k+1) (stride lda).
     if (trail > 0) {
-      const auto s = wwr::gemv<T>(handle, wwr::WWRBLAS_OP_N, trail, k + 1, &neg_one,
-                                  F + (k + 1), ldf, A + static_cast<size_t>(rk), lda, &one,
-                                  A + static_cast<size_t>(k + 1) * lda + rk, lda);
-      if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s;
-      }
+      CLM_TRY(wwr::gemv<T>(handle, wwr::WWRBLAS_OP_N, trail, k + 1, &neg_one, F + (k + 1), ldf,
+                           A + static_cast<size_t>(rk), lda, &one,
+                           A + static_cast<size_t>(k + 1) * lda + rk, lda));
     }
 
     // Restore A(rk,k) = beta (the reflector's leading R entry).
-    if (!laqps_detail::set_device_scalar<T>(stream, col, beta)) {
-      return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-    }
+    CLM_TRY(laqps_detail::set_device_scalar<T>(stream, col, beta));
 
     // --- 6. Deferred downdate of the trailing partial norms. The kernel reads
     // the just-updated row A(rk, k+1:n) and the vn1/vn2 tails, shrinks the cheap
@@ -334,9 +297,9 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
     // there is a sub-diagonal trailing part left to recompute later).
     if (trail > 0 && rk + 1 < m) {
       const size_t count = static_cast<size_t>(trail);
-      device::laqps_downdate<T>(stream, count,
-                                A + static_cast<size_t>(k + 1) * lda + rk, static_cast<size_t>(lda),
-                                vn1 + k + 1, vn2 + k + 1, flags + k + 1, tol3z);
+      device::laqps_downdate<T>(stream, count, A + static_cast<size_t>(k + 1) * lda + rk,
+                                static_cast<size_t>(lda), vn1 + k + 1, vn2 + k + 1, flags + k + 1,
+                                tol3z);
     }
   }
 
@@ -350,12 +313,9 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
   const int grows = m - rk;
   const int gcols = n - kbb;
   if (kbb < mn && grows > 0 && gcols > 0) {
-    const auto s = wwr::gemm<T>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_T, grows, gcols, kbb,
-                                &neg_one, A + static_cast<size_t>(rk), lda, F + kbb, ldf, &one,
-                                A + static_cast<size_t>(kbb) * lda + rk, lda);
-    if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return s;
-    }
+    CLM_TRY(wwr::gemm<T>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_T, grows, gcols, kbb, &neg_one,
+                         A + static_cast<size_t>(rk), lda, F + kbb, ldf, &one,
+                         A + static_cast<size_t>(kbb) * lda + rk, lda));
   }
 
   // --- 8. Recompute the degraded columns exactly, now that the deferred gemm has
@@ -365,11 +325,9 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
   // (Columns 0:kb are R's factored columns; only the still-trailing columns can
   // be flagged, since the downdate only ever touches vn1[k+1:n].)
   std::vector<int> host_flags(static_cast<size_t>(n));
-  if (wwr::wwrMemcpyAsync(host_flags.data(), flags, static_cast<size_t>(n) * sizeof(int),
-                          wwr::wwrMemcpyDeviceToHost, stream) != wwr::wwrSuccess ||
-      wwr::wwrStreamSynchronize(stream) != wwr::wwrSuccess) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_TRY(wwr::wwrMemcpyAsync(host_flags.data(), flags, static_cast<size_t>(n) * sizeof(int),
+                              wwr::wwrMemcpyDeviceToHost, stream));
+  CLM_TRY(wwr::wwrStreamSynchronize(stream));
   std::vector<int> degraded; // compacted flagged column indices
   for (int j = kbb; j < n; ++j) {
     if (host_flags[static_cast<size_t>(j)] != 0) {
@@ -379,15 +337,9 @@ wwr::wwrblasStatus_t laqps(wwr::wwrblasHandle_t handle, const int m, const int n
   if (grows > 0) {
     for (const int j : degraded) {
       T norm = zero;
-      const auto s =
-          wwr::nrm2<T>(handle, grows, A + static_cast<size_t>(j) * lda + rk, 1, &norm);
-      if (s != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return s;
-      }
-      if (!laqps_detail::set_device_scalar<T>(stream, vn1 + j, norm) ||
-          !laqps_detail::set_device_scalar<T>(stream, vn2 + j, norm)) {
-        return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-      }
+      CLM_TRY(wwr::nrm2<T>(handle, grows, A + static_cast<size_t>(j) * lda + rk, 1, &norm));
+      CLM_TRY(laqps_detail::set_device_scalar<T>(stream, vn1 + j, norm));
+      CLM_TRY(laqps_detail::set_device_scalar<T>(stream, vn2 + j, norm));
     }
   }
 

@@ -59,6 +59,12 @@ module;
 
 #include "horner_bridge.h"
 
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.horner;
 
 import std;
@@ -66,6 +72,11 @@ import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_OP_N, WWR
 import wwr.runtime_api;   // wwrStream_t (the type wwrblasGetStream writes)
 import wwr.wrappers.blas; // gemm
 import calaman.common;    // kZero<T> / kOne<T> (:constants), WorkspaceBuilder
+
+// export import, not a plain import: horner RETURNS calaman::Status, so a
+// consumer of `import calaman.horner;` must see Status's member functions, not
+// just its name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -133,19 +144,19 @@ std::size_t horner_bufferSize(const int n) {
 /// @param ldp        Leading dimension of @p d_P; ldp >= n
 /// @param d_work     Device workspace, 256-byte aligned; may be null if degree is 0
 /// @param work_bytes Size of @p d_work; at least horner_bufferSize<T>(n)
-/// @return WWRBLAS_STATUS_SUCCESS, the first failing gemm status, or
-///         WWRBLAS_STATUS_NOT_INITIALIZED for bad dimensions, a null pointer or
-///         an undersized workspace (the only neutral non-success code WarpWraps
-///         exposes, as calaman.diff_norm documents)
+/// @return A successful Status, the first failing gemm status, or a Status
+///         carrying WWRBLAS_STATUS_NOT_INITIALIZED for bad dimensions, a null
+///         pointer or an undersized workspace (the only neutral non-success code
+///         WarpWraps exposes, as calaman.diff_norm documents)
 ///
 /// @pre @p d_A, @p d_P and @p d_work must not overlap -- each Horner step is a
 ///      gemm, which requires its output distinct from both inputs.
 /// @pre The handle is in default (host) pointer mode: the gemm scalars kOne and
 ///      kZero are passed by host address, like calaman.laqps / calaman.geqp3.
 export template<typename T>
-wwr::wwrblasStatus_t horner(wwr::wwrblasHandle_t handle, const int n, const T *d_coeffs,
-                            const int degree, const T *d_A, const int lda, T *d_P, const int ldp,
-                            void *d_work, const std::size_t work_bytes) {
+Status horner(wwr::wwrblasHandle_t handle, const int n, const T *d_coeffs, const int degree,
+              const T *d_A, const int lda, T *d_P, const int ldp, void *d_work,
+              const std::size_t work_bytes) {
   if (n < 1 || degree < 0 || lda < n || ldp < n) {
     return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
   }
@@ -160,10 +171,7 @@ wwr::wwrblasStatus_t horner(wwr::wwrblasHandle_t handle, const int n, const T *d
   // The diagonal-update launchers enqueue on the handle's own stream, the same
   // one the gemms run on, so the whole evaluation stays ordered on one stream.
   wwr::wwrStream_t stream{};
-  const auto stream_status = wwr::wwrblasGetStream(handle, &stream);
-  if (stream_status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return stream_status;
-  }
+  CLM_TRY(wwr::wwrblasGetStream(handle, &stream));
 
   // A gemm cannot write its own input, so the accumulator ping-pongs between the
   // caller's P and the scratch block. Each of the `degree` steps flips buffers,
@@ -175,33 +183,27 @@ wwr::wwrblasStatus_t horner(wwr::wwrblasHandle_t handle, const int n, const T *d
   // P <- c_degree * I
   device::horner_set_scaled_identity(stream, buf[cur], n, ld[cur], d_coeffs + degree);
 
-  wwr::wwrblasStatus_t status = wwr::WWRBLAS_STATUS_SUCCESS;
   for (int k = degree - 1; k >= 0; --k) {
     const int next = 1 - cur;
 
     // P_next <- P_cur * A
-    status = wwr::gemm<T>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>,
-                          buf[cur], ld[cur], d_A, lda, &kZero<T>, buf[next], ld[next]);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      break;
-    }
+    CLM_TRY(wwr::gemm<T>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>, buf[cur],
+                         ld[cur], d_A, lda, &kZero<T>, buf[next], ld[next]));
     cur = next;
 
     // P <- P + c_k * I
     device::horner_add_scaled_identity(stream, buf[cur], n, ld[cur], d_coeffs + k);
   }
 
-  return status;
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 extern template std::size_t horner_bufferSize<float>(int);
 extern template std::size_t horner_bufferSize<double>(int);
 
-extern template wwr::wwrblasStatus_t horner<float>(wwr::wwrblasHandle_t, int, const float *, int,
-                                                   const float *, int, float *, int, void *,
-                                                   std::size_t);
-extern template wwr::wwrblasStatus_t horner<double>(wwr::wwrblasHandle_t, int, const double *,
-                                                    int, const double *, int, double *, int,
-                                                    void *, std::size_t);
+extern template Status horner<float>(wwr::wwrblasHandle_t, int, const float *, int, const float *,
+                                     int, float *, int, void *, std::size_t);
+extern template Status horner<double>(wwr::wwrblasHandle_t, int, const double *, int,
+                                      const double *, int, double *, int, void *, std::size_t);
 
 } // namespace calaman

@@ -55,15 +55,29 @@
  *                                   d_info_geqrf, d_info_gqr);
  */
 
+module;
+
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.random_unitary;
 
 import std;
 import wwr.solver;                   // wwrsolverDnHandle_t, wwrsolverStatus_t, wwrsolverDnGetStream
-import wwr.runtime_api;              // wwrStream_t
+import wwr.runtime_api;              // wwrStream_t, wwrGetLastError, wwrSuccess
 import wwr.rand;                     // wwrrandState
 import wwr.wrappers.common;          // usual_fp + wwrFloatComplex/wwrDoubleComplex
 import wwr.extension.random_normal;  // random_normal (the Gaussian fill)
 import calaman.orthogonalize;        // orthogonalize (+ _bufferSize)
+
+// export import, not a plain import: random_unitary and its _bufferSize RETURN
+// calaman::Status, so a consumer must see Status's member functions, not just
+// its name -- the same re-export diff_norm does. (calaman.orthogonalize already
+// re-exports it, but name this dependency directly, not through that edge.)
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
 
@@ -78,10 +92,10 @@ export namespace calaman {
  * @param handle GPU dense-solver handle
  * @param n Matrix dimension (n-by-n)
  * @param lwork Output: required workspace in elements of T
- * @return The solver status of the failing query, otherwise WWRSOLVER_STATUS_SUCCESS
+ * @return Success, or the first failing Status
  */
 template <wwr::usual_fp T>
-wwr::wwrsolverStatus_t random_unitary_bufferSize(
+Status random_unitary_bufferSize(
     wwr::wwrsolverDnHandle_t handle,
     const int n,
     int* lwork)
@@ -112,9 +126,11 @@ wwr::wwrsolverStatus_t random_unitary_bufferSize(
  * @param lwork Workspace size from random_unitary_bufferSize
  * @param d_info_geqrf Device buffer for geqrf's info output (single int)
  * @param d_info_gqr Device buffer for orgqr/ungqr's info output (single int)
+ * @return Success, or the first failing Status -- the stream query, the fill's
+ *         launch error, or whichever QR step failed
  */
 template <wwr::usual_fp T>
-void random_unitary(
+Status random_unitary(
     wwr::wwrsolverDnHandle_t handle,
     const int n,
     T* d_Q,
@@ -127,30 +143,33 @@ void random_unitary(
     // The fill must land on the handle's own stream so the QR that follows reads
     // it in order; random_normal takes a stream, orthogonalize reads the handle.
     wwr::wwrStream_t stream{};
-    wwr::wwrsolverDnGetStream(handle, &stream);
+    CLM_TRY(wwr::wwrsolverDnGetStream(handle, &stream));
 
     // Step 1: fill with standard normal (default scale 1 -- Q is scale-invariant,
     // so the component scaling that distinguishes unit magnitude is immaterial).
     const std::size_t count = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
     wwr::extension::random_normal<T>(stream, count, states, d_Q);
+    // random_normal's launcher returns void, so the only way to catch a bad
+    // launch is the runtime's sticky error -- checked here, as gebal does.
+    CLM_TRY(wwr::wwrGetLastError());
 
     // Step 2: overwrite with the explicit Q of that Gaussian matrix.
-    orthogonalize<T>(handle, n, n, d_Q, d_work, lwork, d_info_geqrf, d_info_gqr);
+    return orthogonalize<T>(handle, n, n, d_Q, d_work, lwork, d_info_geqrf, d_info_gqr);
 }
 
 // Instantiated once in instantiations.cpp; these keep consumers from
 // re-instantiating the bodies above.
 
 // Function: random_unitary_bufferSize
-extern template wwr::wwrsolverStatus_t random_unitary_bufferSize<float>(wwr::wwrsolverDnHandle_t, const int, int*);
-extern template wwr::wwrsolverStatus_t random_unitary_bufferSize<double>(wwr::wwrsolverDnHandle_t, const int, int*);
-extern template wwr::wwrsolverStatus_t random_unitary_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, int*);
-extern template wwr::wwrsolverStatus_t random_unitary_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, int*);
+extern template Status random_unitary_bufferSize<float>(wwr::wwrsolverDnHandle_t, const int, int*);
+extern template Status random_unitary_bufferSize<double>(wwr::wwrsolverDnHandle_t, const int, int*);
+extern template Status random_unitary_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, int*);
+extern template Status random_unitary_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, int*);
 
 // Function: random_unitary
-extern template void random_unitary<float>(wwr::wwrsolverDnHandle_t, const int, float*, float*, wwr::wwrrandState*, const int, int*, int*);
-extern template void random_unitary<double>(wwr::wwrsolverDnHandle_t, const int, double*, double*, wwr::wwrrandState*, const int, int*, int*);
-extern template void random_unitary<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, wwr::wwrFloatComplex*, wwr::wwrFloatComplex*, wwr::wwrrandState*, const int, int*, int*);
-extern template void random_unitary<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, wwr::wwrDoubleComplex*, wwr::wwrDoubleComplex*, wwr::wwrrandState*, const int, int*, int*);
+extern template Status random_unitary<float>(wwr::wwrsolverDnHandle_t, const int, float*, float*, wwr::wwrrandState*, const int, int*, int*);
+extern template Status random_unitary<double>(wwr::wwrsolverDnHandle_t, const int, double*, double*, wwr::wwrrandState*, const int, int*, int*);
+extern template Status random_unitary<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, wwr::wwrFloatComplex*, wwr::wwrFloatComplex*, wwr::wwrrandState*, const int, int*, int*);
+extern template Status random_unitary<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, wwr::wwrDoubleComplex*, wwr::wwrDoubleComplex*, wwr::wwrrandState*, const int, int*, int*);
 
 } // namespace calaman

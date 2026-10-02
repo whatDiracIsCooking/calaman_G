@@ -38,9 +38,10 @@ calaman_add_gpu_device_library(
 #
 # LINK_PUBLIC carries every module the exported surface names, so an importer
 # sees them: wwr.runtime_api (the stream/error types and the memcpy, memset and
-# sync the driver issues), wwr.complex (the two complex element types) and
+# sync the driver issues), wwr.complex (the two complex element types),
 # wwr.wrappers.common (the usual_fp constraint and ComplexToRealType the scale
-# array's type is spelled with).
+# array's type is spelled with) and calaman.error_handling (gebal re-exports it
+# for Status, its return type).
 #
 # LINK_PRIVATE wwr_backend is for the runtime.h that gebal_bridge.h pulls into
 # the global module fragment: a GMF cannot `import`, so wwrStream_t arrives by
@@ -58,6 +59,7 @@ calaman_add_cxx_module_library(
   wwr.runtime_api
   wwr.complex
   wwr.wrappers.common
+  calaman.error_handling #  Status, the cross-domain return type
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE

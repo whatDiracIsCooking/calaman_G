@@ -26,9 +26,9 @@ import calaman.common; // Region
 
 namespace calaman {
 
-template void lacpy<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t, const float *,
-                           std::size_t, float *, std::size_t);
-template void lacpy<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
-                            const double *, std::size_t, double *, std::size_t);
+template Status lacpy<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t, const float *,
+                             std::size_t, float *, std::size_t);
+template Status lacpy<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
+                              const double *, std::size_t, double *, std::size_t);
 
 } // namespace calaman

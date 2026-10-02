@@ -129,13 +129,14 @@ guarantee.
 
 ## Status type
 
-Every entry point returns `wwr::wwrblasStatus_t`, like `calaman.expm`: the
-neutral solver enum neutralizes only `SUCCESS`, so a routine that must surface
-`INVALID_VALUE` / `ALLOC_FAILED` / `INTERNAL_ERROR` reports through the BLAS
-enum, and a non-success solver result (the `syevd` / `orthogonalize` /
-`getrf`-batched steps) surfaces as `WWRBLAS_STATUS_INTERNAL_ERROR`. A
-`SUCCESS` return covers every outcome the iteration itself reaches, including
-`MaxIterations` and `SubspaceTooSmall`; read `info.reason` to tell them apart.
+Every entry point returns `calaman::Status`, like `calaman.expm`: the one
+cross-domain return type, so a non-success solver result (the `syevd` /
+`orthogonalize` / `getrf`-batched steps) now surfaces in its OWN solver domain
+and a device-copy failure in the runtime domain, instead of the old
+`WWRBLAS_STATUS_INTERNAL_ERROR` masquerade. Genuine host-side outcomes the
+iteration itself reaches still carry an explicit BLAS-domain code deliberately:
+a bad argument is `INVALID_VALUE`, and `info.reason` distinguishes a `SUCCESS`
+return that covers `MaxIterations` / `SubspaceTooSmall`.
 
 ## Usage
 

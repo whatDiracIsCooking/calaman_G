@@ -44,12 +44,25 @@
  *                                  d_info_geqrf, d_info_gqr);
  */
 
+module;
+
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.orthogonalize;
 
 import std;
 import wwr.solver;            // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_STATUS_*
 import wwr.wrappers.solver;   // geqrf/orgqr/ungqr (+ bufferSize); re-exports usual_fp/real_fp + complex types
 import calaman.common;        // align_up (:align_up)
+
+// export import, not a plain import: orthogonalize and its _bufferSize RETURN
+// calaman::Status, so a consumer must see Status's member functions, not just
+// its name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
 
@@ -65,37 +78,34 @@ export namespace calaman {
  * @param m Number of rows (m >= n)
  * @param n Number of columns
  * @param lwork Output: required workspace in elements of T
- * @return The solver status of the failing query, otherwise WWRSOLVER_STATUS_SUCCESS
+ * @return Success, or the first failing Status
  */
 template <wwr::usual_fp T>
-wwr::wwrsolverStatus_t orthogonalize_bufferSize(
+Status orthogonalize_bufferSize(
     wwr::wwrsolverDnHandle_t handle,
     const int m,
     const int n,
     int* lwork)
 {
     int lwork_geqrf = 0, lwork_gqr = 0;
-    wwr::wwrsolverStatus_t status = wwr::WWRSOLVER_STATUS_SUCCESS;
     T* dummy_ptr = static_cast<T*>(nullptr);
 
-    status = wwr::geqrf_bufferSize<T>(handle, m, n, dummy_ptr, m, &lwork_geqrf);
-    if (status != wwr::WWRSOLVER_STATUS_SUCCESS) return status;
+    CLM_TRY(wwr::geqrf_bufferSize<T>(handle, m, n, dummy_ptr, m, &lwork_geqrf));
 
     if constexpr (wwr::real_fp<T>) {
-        status = wwr::orgqr_bufferSize<T>(handle, m, n, n,
-                                          dummy_ptr, m,
-                                          dummy_ptr, &lwork_gqr);
+        CLM_TRY(wwr::orgqr_bufferSize<T>(handle, m, n, n,
+                                         dummy_ptr, m,
+                                         dummy_ptr, &lwork_gqr));
     } else {
-        status = wwr::ungqr_bufferSize<T>(handle, m, n, n,
-                                          dummy_ptr, m,
-                                          dummy_ptr, &lwork_gqr);
+        CLM_TRY(wwr::ungqr_bufferSize<T>(handle, m, n, n,
+                                         dummy_ptr, m,
+                                         dummy_ptr, &lwork_gqr));
     }
-    if (status != wwr::WWRSOLVER_STATUS_SUCCESS) return status;
 
     const int tau_size = align_up(n, 256);
     const int solver_size = std::max(lwork_geqrf, lwork_gqr);
     *lwork = tau_size + solver_size;
-    return status;
+    return wwr::WWRSOLVER_STATUS_SUCCESS;
 }
 
 /**
@@ -118,9 +128,11 @@ wwr::wwrsolverStatus_t orthogonalize_bufferSize(
  * @param lwork Workspace size from orthogonalize_bufferSize
  * @param d_info_geqrf Device buffer for geqrf's info output (single int)
  * @param d_info_gqr Device buffer for orgqr/ungqr's info output (single int)
+ * @return Success, or the first failing Status (the gqr step is not enqueued if
+ *         geqrf failed)
  */
 template <wwr::usual_fp T>
-void orthogonalize(
+Status orthogonalize(
     wwr::wwrsolverDnHandle_t handle,
     const int m,
     const int n,
@@ -130,23 +142,19 @@ void orthogonalize(
     int* d_info_geqrf,
     int* d_info_gqr)
 {
-    // Return on earliest failure.
-    wwr::wwrsolverStatus_t status = wwr::WWRSOLVER_STATUS_SUCCESS;
-
     // d_work layout: [tau: tau_size elems (256-aligned)][solver scratch]
     const int tau_size = align_up(n, 256);
     T* tau         = d_work;
     T* solver_ws   = d_work + tau_size;
 
     // Step 1: QR factorization (in-place; lower triangle becomes Householder vectors)
-    status = wwr::geqrf<T>(handle, m, n, d_Q, m, tau, solver_ws, lwork, d_info_geqrf);
-    if (status != wwr::WWRSOLVER_STATUS_SUCCESS) return;
+    CLM_TRY(wwr::geqrf<T>(handle, m, n, d_Q, m, tau, solver_ws, lwork, d_info_geqrf));
 
     // Step 2: Expand the explicit thin Q from the Householder reflectors
     if constexpr (wwr::real_fp<T>) {
-        wwr::orgqr<T>(handle, m, n, n, d_Q, m, tau, solver_ws, lwork, d_info_gqr);
+        return wwr::orgqr<T>(handle, m, n, n, d_Q, m, tau, solver_ws, lwork, d_info_gqr);
     } else {
-        wwr::ungqr<T>(handle, m, n, n, d_Q, m, tau, solver_ws, lwork, d_info_gqr);
+        return wwr::ungqr<T>(handle, m, n, n, d_Q, m, tau, solver_ws, lwork, d_info_gqr);
     }
 }
 
@@ -154,15 +162,15 @@ void orthogonalize(
 // re-instantiating the bodies above.
 
 // Function: orthogonalize_bufferSize
-extern template wwr::wwrsolverStatus_t orthogonalize_bufferSize<float>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
-extern template wwr::wwrsolverStatus_t orthogonalize_bufferSize<double>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
-extern template wwr::wwrsolverStatus_t orthogonalize_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
-extern template wwr::wwrsolverStatus_t orthogonalize_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
+extern template Status orthogonalize_bufferSize<float>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
+extern template Status orthogonalize_bufferSize<double>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
+extern template Status orthogonalize_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
+extern template Status orthogonalize_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
 
 // Function: orthogonalize
-extern template void orthogonalize<float>(wwr::wwrsolverDnHandle_t, const int, const int, float*, float*, const int, int*, int*);
-extern template void orthogonalize<double>(wwr::wwrsolverDnHandle_t, const int, const int, double*, double*, const int, int*, int*);
-extern template void orthogonalize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, const int, wwr::wwrFloatComplex*, wwr::wwrFloatComplex*, const int, int*, int*);
-extern template void orthogonalize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, const int, wwr::wwrDoubleComplex*, wwr::wwrDoubleComplex*, const int, int*, int*);
+extern template Status orthogonalize<float>(wwr::wwrsolverDnHandle_t, const int, const int, float*, float*, const int, int*, int*);
+extern template Status orthogonalize<double>(wwr::wwrsolverDnHandle_t, const int, const int, double*, double*, const int, int*, int*);
+extern template Status orthogonalize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, const int, wwr::wwrFloatComplex*, wwr::wwrFloatComplex*, const int, int*, int*);
+extern template Status orthogonalize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, const int, wwr::wwrDoubleComplex*, wwr::wwrDoubleComplex*, const int, int*, int*);
 
 } // namespace calaman
