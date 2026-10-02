@@ -14,13 +14,15 @@
  * Reading the backend define selected_backend.h needs is why the module links
  * wwr_backend PRIVATE -- see this directory's CMakeLists.txt.
  *
- * `region` is the integer contract with interface.cppm's copy_region enum:
- * 0 = full, 1 = upper triangle, 2 = lower triangle. A plain int rather than the
- * enum keeps the enum a pure module export (the .cu never imports the module).
+ * `region` is calaman::Region (common/enums.h). It arrives by #include, not
+ * import, for the same reason wwrStream_t does -- and that it is a plain header
+ * enum, not a module export, is exactly what lets the .cu name it directly
+ * across this boundary rather than decoding an int contract.
  */
 
 #pragma once
 
+#include "common/enums.h"
 #include "runtime.h"
 
 #include <cstddef>
@@ -34,9 +36,9 @@ namespace calaman::device {
 /// nothing when m or n is 0.
 ///
 /// @tparam T Element type; instantiated for float, double
-/// @param region 0 = full, 1 = upper triangle, 2 = lower triangle
+/// @param region Which part of A to copy (Region::U, Region::L, Region::A)
 template<typename T>
-void lacpy(wwr::wwrStream_t stream, int region, std::size_t m, std::size_t n, const T *a,
+void lacpy(wwr::wwrStream_t stream, Region region, std::size_t m, std::size_t n, const T *a,
            std::size_t lda, T *b, std::size_t ldb);
 
 } // namespace calaman::device

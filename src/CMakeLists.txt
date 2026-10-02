@@ -7,6 +7,7 @@
 # (docs/architecture.md §4).
 
 add_subdirectory(common)
+add_subdirectory(complex_cast)
 add_subdirectory(diff_norm)
 add_subdirectory(gebal)
 add_subdirectory(horner)

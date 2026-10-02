@@ -28,6 +28,11 @@ calaman_add_gpu_device_library(
 # header pulls in there: a GMF cannot `import`, so wwrStream_t arrives by
 # #include, and selected_backend.h behind it reads WWR_GPU_BACKEND_{CUDA,HIP}
 # with no device pass to read __CUDACC__/__HIP__.
+#
+# calaman.common is PUBLIC: the interface imports it for Region (:enums) and
+# re-exports that name, so a consumer of calaman.lacpy reaches Region through
+# it. It also carries the src/ root that resolves the "common/enums.h" that
+# lacpy_bridge.h now pulls into the global module fragment.
 calaman_add_cxx_module_library(
   NAME
   calaman.lacpy
@@ -37,6 +42,7 @@ calaman_add_cxx_module_library(
   instantiations.cpp
   LINK_PUBLIC
   wwr.runtime_api
+  calaman.common
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE

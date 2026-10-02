@@ -17,15 +17,18 @@ module calaman.lacpy;
 
 // An implementation unit implicitly imports its primary interface, but an
 // import is not re-exported through it -- the names in the signatures below are
-// not visible without these.
+// not visible without these. (Region is re-exported by the interface, so the
+// implicit import would carry it; it is named here anyway for the same
+// signatures-name-their-modules reason.)
 import std;
 import wwr.runtime_api;
+import calaman.common; // Region
 
 namespace calaman {
 
-template void lacpy<float>(wwr::wwrStream_t, copy_region, std::size_t, std::size_t, const float *,
+template void lacpy<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t, const float *,
                            std::size_t, float *, std::size_t);
-template void lacpy<double>(wwr::wwrStream_t, copy_region, std::size_t, std::size_t,
+template void lacpy<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t,
                             const double *, std::size_t, double *, std::size_t);
 
 } // namespace calaman

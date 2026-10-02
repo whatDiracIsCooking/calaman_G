@@ -5,19 +5,26 @@ matrix `A` to `B` on the device. One entry point, templated over `float` and
 `double`:
 
 ```cpp
-import calaman.lacpy;
+import calaman.lacpy;   // also re-exports calaman::Region
 import wwr.runtime_api;
 
 wwr::wwrStream_t stream{};
 wwr::wwrStreamCreate(&stream);
 // d_a, d_b: device matrices, column-major, leading dimensions lda / ldb
-calaman::lacpy(stream, calaman::copy_region::upper, m, n, d_a, lda, d_b, ldb);
+calaman::lacpy(stream, calaman::Region::U, m, n, d_a, lda, d_b, ldb);
 ```
 
-`copy_region` selects the part copied — `full`, `upper` (diagonal and above), or
-`lower` (diagonal and below). Elements of `B` outside the copied region are left
-untouched. The copy is enqueued on `stream` and returns without synchronizing,
-like a BLAS call; the caller synchronizes when it needs `B`.
+`Region` selects the part copied — `A` (all of the matrix), `U` (the upper
+triangle, diagonal and above), or `L` (the lower triangle, diagonal and below).
+Elements of `B` outside the copied region are left untouched. The copy is
+enqueued on `stream` and returns without synchronizing, like a BLAS call; the
+caller synchronizes when it needs `B`.
+
+`Region` lives in `calaman.common` (its `:enums` partition, shared with the
+device `.cu` through `common/enums.h`) and is re-exported by `calaman.lacpy`, so
+`import calaman.lacpy;` alone names it. It is kept distinct from `Uplo` — which
+is strictly `U`/`L` for the symmetric routines — because `?lacpy`/`?laset`
+overload `uplo` with the third "all of the matrix" case.
 
 A stream and not a device handle, because this routine allocates nothing: it
 needs neither a device index nor a memory pool. That also keeps a concrete handle
@@ -31,9 +38,9 @@ surface, matching `calaman.diff_norm`'s bare `wwrblasHandle_t`. See
 Kept: the name, and the leading dimensions `lda`/`ldb` — those are a fact of
 column-major storage, not a Fortran accommodation. Changed, per
 `docs/architecture.md` §4: the `CHARACTER*1 UPLO` becomes the typed
-`copy_region` enum, the `s/d/c/z` variants become one template over `T`, and the
-`INTEGER` extents become `std::size_t`. There is no `INFO` — `?lacpy` is an
-auxiliary routine that reports none.
+`calaman::Region` enum (`common/enums.h`), the `s/d/c/z` variants become one
+template over `T`, and the `INTEGER` extents become `std::size_t`. There is no
+`INFO` — `?lacpy` is an auxiliary routine that reports none.
 
 Complex (`c`/`z`) is a straightforward extension: add the type to the three
 lists that must stay in step — `interface.cppm`'s `extern template`,
@@ -41,10 +48,11 @@ lists that must stay in step — `interface.cppm`'s `extern template`,
 
 ## Shape
 
-`interface.cppm` is the host wrapper and the `copy_region` enum; `lacpy.cu` is
-the device half; `lacpy_bridge.h` carries the launcher declaration across the
-host/device boundary (a global module fragment cannot `import`).
-`instantiations.cpp` explicitly instantiates the wrapper for each type.
+`interface.cppm` is the host wrapper (it re-exports `Region` from
+`calaman.common`); `lacpy.cu` is the device half; `lacpy_bridge.h` carries the
+launcher declaration across the host/device boundary (a global module fragment
+cannot `import`) and passes `Region` across it by `#include`. `instantiations.cpp`
+explicitly instantiates the wrapper for each type.
 
 The copy is one hand-launched kernel: a 2-D grid of 1-D blocks, each block
 `4*WWR_WARP_SIZE` threads along the rows (x), with `blockIdx.y` naming the
