@@ -24,17 +24,16 @@ import wwr.blas;
 import wwr.runtime_api;
 import wwr.wrappers.blas;
 import calaman.common;
+import calaman.error_handling; // calaman::Status -- horner()'s return type
 
 namespace calaman {
 
 template std::size_t horner_bufferSize<float>(int);
 template std::size_t horner_bufferSize<double>(int);
 
-template wwr::wwrblasStatus_t horner<float>(wwr::wwrblasHandle_t, int, const float *, int,
-                                            const float *, int, float *, int, void *,
-                                            std::size_t);
-template wwr::wwrblasStatus_t horner<double>(wwr::wwrblasHandle_t, int, const double *, int,
-                                             const double *, int, double *, int, void *,
-                                             std::size_t);
+template calaman::Status horner<float>(wwr::wwrblasHandle_t, int, const float *, int, const float *,
+                                       int, float *, int, void *, std::size_t);
+template calaman::Status horner<double>(wwr::wwrblasHandle_t, int, const double *, int,
+                                        const double *, int, double *, int, void *, std::size_t);
 
 } // namespace calaman

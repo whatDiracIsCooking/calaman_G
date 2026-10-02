@@ -7,6 +7,8 @@
 #   :enums              enums.cppm + enums.h -- the LAPACK selector enums
 #   :workspace_builder  workspace_builder.cppm -- byte sizing for a device
 #                       scratch buffer (WorkspaceBuilder); pure host arithmetic
+#   :validation         validation.cppm -- argument-checking predicates
+#                       (all_nonnull); pure, constexpr, header-less
 #
 # The :constants, :align_up and :enums partitions have no device code and no
 # implementation unit: each is a header-plus-partition pair whose values,
@@ -17,8 +19,8 @@
 # "common/<name>.h", so the include root that resolves that spelling must be
 # EXPORTED, not PRIVATE (CLAUDE.md, Conventions). These are the first shared
 # headers in src/ -- the lacpy bridge is internal, so it kept its root PRIVATE.
-# :workspace_builder has no header -- nothing device-side needs it -- so it is
-# just the .cppm.
+# :workspace_builder and :validation have no header -- nothing device-side needs
+# them -- so each is just the .cppm.
 #
 # INCLUDE_DIRS_PUBLIC is the src/ root, wrapped in $<BUILD_INTERFACE:> so the
 # raw build path does not leak into the install interface; the install-interface
@@ -37,6 +39,7 @@ calaman_add_cxx_module_library(
   align_up.cppm
   enums.cppm
   workspace_builder.cppm
+  validation.cppm
   INCLUDE_DIRS_PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
   IMPORT_STD
