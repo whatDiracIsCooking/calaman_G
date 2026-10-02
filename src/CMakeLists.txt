@@ -34,3 +34,9 @@ add_subdirectory(larf)
 add_subdirectory(laqp2)
 add_subdirectory(laqps)
 add_subdirectory(geqp3)
+
+# calaman.expm -- the matrix exponential by scaling and squaring. A host
+# composition over wrapped BLAS + the LU solve + calaman.gebal, plus its own
+# fused kernels. Added after its calaman dependencies (common, gebal,
+# reduce_columns) so their targets exist when it links them.
+add_subdirectory(expm)

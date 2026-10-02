@@ -1,0 +1,76 @@
+# calaman.expm -- the matrix exponential exp(A) by scaling and squaring with a
+# diagonal Pade approximant (Higham's Algorithm 2.3). A shipped src/ module: a
+# host composition over wrapped BLAS (gemm/geam/scal/dgmm), the wrapped LU solve
+# (getrf/getrs) and calaman.gebal, plus five fused device kernels of its own,
+# written once against WarpWraps's `wwr*` names and built for either backend.
+#
+# The matrix exponential is not a LAPACK routine (LAPACK ships no expm), so it
+# is its own module rather than a calaman.linalg partition, like calaman.horner.
+
+# The device-kernel library: the five genuinely per-element pieces (the fused
+# Pade evaluation, the numerator/denominator split, the balancing-vector
+# widening, and the two halves of the 1-norm). expm.cu launches its own functors
+# through wwr.extension.parallel_for AND defers the column sums to
+# calaman.reduce_columns's header, so it links BOTH PRIVATE: the first carries
+# parallel_for.cuh (plus, transitively, wwr.device for complex.h); the second,
+# the src/ include root for reduce_columns.cuh plus its own wwr.device dep. The
+# link is PRIVATE, as every device-library link is.
+calaman_add_gpu_device_library(
+  NAME
+  calaman.expm.device
+  SOURCES
+  expm.cu
+  LINK_PRIVATE
+  wwr.extension.parallel_for
+  calaman.reduce_columns
+)
+
+# The module itself: ordinary host C++23, no device code. instantiations.cpp is
+# the explicit-instantiation implementation unit paired with interface.cppm's
+# `extern template` list.
+#
+# LINK_PUBLIC is the union of what the exported surface names: the BLAS and
+# solver handle/status/enum layers (wwr.blas, wwr.solver), the wwrStream_t and
+# memcpy/sync (wwr.runtime_api), the complex element types and their host
+# constructors (wwr.complex), the usual_fp/ComplexToRealType traits
+# (wwr.wrappers.common), the type-safe BLAS and solver wrappers
+# (wwr.wrappers.blas, wwr.wrappers.solver), the WorkspaceBuilder/align_up
+# (calaman.common) and the balancing dependency (calaman.gebal).
+# LINK_PRIVATE wwr_backend is for the runtime.h that expm_bridge.h pulls into
+# the global module fragment: a GMF cannot `import`, so wwrStream_t arrives by
+# #include and selected_backend.h behind it reads WWR_GPU_BACKEND_*.
+# INCLUDE_DIRS_PRIVATE is the source dir for expm_bridge.h itself.
+calaman_add_cxx_module_library(
+  NAME
+  calaman.expm
+  PRIMARY_INTERFACE
+  interface.cppm
+  IMPLEMENTATION
+  instantiations.cpp
+  LINK_PUBLIC
+  wwr.blas
+  wwr.solver
+  wwr.runtime_api
+  wwr.complex
+  wwr.wrappers.common
+  wwr.wrappers.blas
+  wwr.wrappers.solver
+  calaman.common
+  calaman.gebal
+  LINK_PRIVATE
+  wwr_backend
+  INCLUDE_DIRS_PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  IMPORT_STD
+)
+
+# Force the device archive members in, or the explicit device::* launcher
+# instantiations are dropped (the module only names them through lazily-resolved
+# calls) and a consumer fails to link -- the same whole-archive link lacpy,
+# horner and columnwise_ell1 need. The install-interface spelling waits on the
+# install tier (CALAMAN_INSTALL, docs/architecture.md §2); this build-interface
+# link is what the tests need meanwhile.
+target_link_libraries(
+  calaman.expm
+  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.expm.device>"
+)
