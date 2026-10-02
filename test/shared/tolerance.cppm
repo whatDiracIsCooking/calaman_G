@@ -2,8 +2,9 @@
  * @file tolerance.cppm
  * @brief Shared numerical tolerance for the linalg oracle suites
  *
- * One place for the tolerance convention every factorization test under
- * test/test/linalg/ checks against, so the constant lives once rather than
+ * One place for the tolerance convention every factorization test
+ * (larfg/larf/laqp2/laqps/geqp3 and the linalg scaffold) checks against, so the
+ * constant lives once rather than
  * drifting per suite: O(eps * ||A|| * min(m,n)) -- the first-order bound on the
  * error a backward-stable factorization of an m-by-n matrix of norm ||A||
  * accumulates, with a modest factor (kTolFactor) absorbing the big-O constant.

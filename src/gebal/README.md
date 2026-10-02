@@ -102,7 +102,7 @@ point: undoing it reproduces the input bit for bit.
 
 ## Tested
 
-`test/test/gebal/gebal_tests.cpp` (`GebalSpecTests`, `REQUIRES_GPU`), run for all
+`test/gebal/gebal_tests.cpp` (`GebalSpecTests`, `REQUIRES_GPU`), run for all
 four element types. The suite is **spec-based**, not an oracle diff: because the
 1-norm convention can differ from a current reference LAPACK by a radix step, it
 asserts the specification instead and needs no reference LAPACK.

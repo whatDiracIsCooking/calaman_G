@@ -195,7 +195,7 @@ in `instantiations.cpp` (host) and `paterson_stockmeyer.cu` (device).
 
 ## Tests
 
-`test/test/paterson_stockmeyer/paterson_stockmeyer_tests.cpp`, run by
+`test/paterson_stockmeyer/paterson_stockmeyer_tests.cpp`, run by
 `paterson_stockmeyer_tests`. The oracle is an independent host accumulation of
 the power series via reference CBLAS gemm — a different algorithm from the
 blocked scheme, so agreement is real evidence — guarded on
