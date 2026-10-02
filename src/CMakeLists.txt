@@ -7,6 +7,13 @@
 # (docs/architecture.md §4).
 
 add_subdirectory(common)
+
+# calaman.elem_ops is header-only device infrastructure (per-element scalar
+# arithmetic over float/double/complex), consumed by other modules' .cu TUs, so
+# it is added early -- before any consumer's device library links its INTERFACE
+# target. Like calaman.reduce_columns, it is not a module.
+add_subdirectory(elem_ops)
+
 add_subdirectory(complex_cast)
 add_subdirectory(diff_norm)
 add_subdirectory(gebal)

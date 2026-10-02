@@ -9,20 +9,21 @@
 // calaman.reduce_columns's segmented reduce, the raw <<<>>> launch syntax and
 // the complex types/accessors (through complex.h) are all available directly.
 //
-// NEUTRAL COMPLEX, NEVER .x/.y. cuFloatComplex is an operator-less float2 whose
-// components are reached as .x/.y, but hipFloatComplex is a class -- so raw
-// field access is not portable. The real/imag components are read through
-// complex.h's wwrCreal*/wwrCimag* accessors, the true modulus through
-// wwrCabs*/wwrCabsf, and a new value built with make_wwr*Complex; the
-// per-precision spelling lives in the elem_ops specializations below, matching
-// gebal.cu's elem_ops and complex_cast.cu's complex_ops.
+// NEUTRAL COMPLEX, NEVER .x/.y. Per-element scalar arithmetic goes through
+// calaman::device::elem_ops<T> (elem_ops/elem_ops.cuh): the primary template is
+// the native operators for real T, the complex specializations route through
+// complex.h's wwrCreal*/wwrCimag* accessors, wwrCabs* modulus and make_wwr*Complex
+// builder. This .cu used to carry its own three elem_ops specializations (as
+// gebal.cu and complex_cast.cu still do); they are now the one shared header.
 //
-// The Pade coefficients are REAL even when the matrix is complex, so the only
-// mixed operation the fused kernels need is "accumulate a real multiple of an
-// element" (fma_r) and "add a real to the diagonal" (add_r).
+// The Pade coefficients are REAL even when the matrix is complex, so the fused
+// kernels need two mixed ops the core does not carry: "accumulate a real multiple
+// of an element" and "add a real to the diagonal". Both layer on as free helpers
+// over elem_ops (fma_real / add_real below) rather than bloating the shared trait.
 #include "expm_bridge.h"
 
 #include "complex.h"
+#include "elem_ops/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 #include "reduce_columns/reduce_columns.cuh"
 
@@ -33,65 +34,31 @@
 namespace calaman::device {
 
 // complex.h puts the neutral complex types in namespace wwr; pull the two type
-// names in so the elem_ops specializations and the explicit instantiations below
-// can spell them bare. The accessor / constructor calls stay wwr::-qualified.
+// names in so the explicit instantiations below can spell them bare. The
+// accessor / constructor calls stay wwr::-qualified.
 using wwr::wwrDoubleComplex;
 using wwr::wwrFloatComplex;
 
 namespace {
 
-// ── element operations, one per expm element type ───────────────────────────
+// ── mixed real/element ops the Pade kernels need, over the shared elem_ops ────
 //
-// Primary template covers the real types (float, double); the two complex
-// specializations route every component access through the wwrC* accessors.
+// The coefficients are real, so these are the two operations that fall outside
+// the type-generic core: a real-coefficient fused multiply-add and adding a real
+// to the diagonal. They are expm-specific, so they live here as free helpers
+// rather than members of elem_ops; each is one line over the core.
 
-template<typename T>
-struct elem_ops {
-  using real_type = T;
-  static __device__ T zero() { return T(0); }
-  static __device__ T from_r(T c) { return c; }
-  static __device__ T fma_r(T c, T x, T acc) { return acc + c * x; }
-  static __device__ T add_r(T a, T c) { return a + c; }
-  static __device__ T add(T a, T b) { return a + b; }
-  static __device__ T sub(T a, T b) { return a - b; }
-  static __device__ T modulus(T a) { return a < T(0) ? -a : a; }
-};
+/// acc + c*x, with c real and x, acc of element type T.
+template<typename T, typename R>
+__device__ __forceinline__ T fma_real(const R c, const T x, const T acc) {
+  return elem_ops<T>::add(acc, elem_ops<T>::scale(x, c));
+}
 
-template<>
-struct elem_ops<wwrFloatComplex> {
-  using T = wwrFloatComplex;
-  using real_type = float;
-  static __device__ T zero() { return wwr::make_wwrFloatComplex(0.0f, 0.0f); }
-  static __device__ T from_r(float c) { return wwr::make_wwrFloatComplex(c, 0.0f); }
-  static __device__ T fma_r(float c, T x, T acc) {
-    return wwr::make_wwrFloatComplex(wwr::wwrCrealf(acc) + c * wwr::wwrCrealf(x),
-                                     wwr::wwrCimagf(acc) + c * wwr::wwrCimagf(x));
-  }
-  static __device__ T add_r(T a, float c) {
-    return wwr::make_wwrFloatComplex(wwr::wwrCrealf(a) + c, wwr::wwrCimagf(a));
-  }
-  static __device__ T add(T a, T b) { return wwr::wwrCaddf(a, b); }
-  static __device__ T sub(T a, T b) { return wwr::wwrCsubf(a, b); }
-  static __device__ float modulus(T a) { return wwr::wwrCabsf(a); }
-};
-
-template<>
-struct elem_ops<wwrDoubleComplex> {
-  using T = wwrDoubleComplex;
-  using real_type = double;
-  static __device__ T zero() { return wwr::make_wwrDoubleComplex(0.0, 0.0); }
-  static __device__ T from_r(double c) { return wwr::make_wwrDoubleComplex(c, 0.0); }
-  static __device__ T fma_r(double c, T x, T acc) {
-    return wwr::make_wwrDoubleComplex(wwr::wwrCreal(acc) + c * wwr::wwrCreal(x),
-                                      wwr::wwrCimag(acc) + c * wwr::wwrCimag(x));
-  }
-  static __device__ T add_r(T a, double c) {
-    return wwr::make_wwrDoubleComplex(wwr::wwrCreal(a) + c, wwr::wwrCimag(a));
-  }
-  static __device__ T add(T a, T b) { return wwr::wwrCadd(a, b); }
-  static __device__ T sub(T a, T b) { return wwr::wwrCsub(a, b); }
-  static __device__ double modulus(T a) { return wwr::wwrCabs(a); }
-};
+/// a + c, adding the real c to a's real component only.
+template<typename T, typename R>
+__device__ __forceinline__ T add_real(const T a, const R c) {
+  return elem_ops<T>::add(a, elem_ops<T>::from_real(c));
+}
 
 // ── V = cv[0]*I + sum_k cv[k+1]*P_k,  W = cw[0]*I + sum_k cw[k+1]*P_k ─────────
 //
@@ -125,13 +92,13 @@ struct PadeEvenOddFunctor {
 #pragma unroll
     for (int k = 0; k < NP; ++k) {
       const T x = d_P_[k][idx];
-      v = ops::fma_r(cv_[k + 1], x, v);
-      w = ops::fma_r(cw_[k + 1], x, w);
+      v = fma_real(cv_[k + 1], x, v);
+      w = fma_real(cw_[k + 1], x, w);
     }
 
     if (idx % diag_stride_ == 0) {
-      v = ops::add_r(v, cv_[0]);
-      w = ops::add_r(w, cw_[0]);
+      v = add_real(v, cv_[0]);
+      w = add_real(w, cw_[0]);
     }
 
     d_V_[idx] = v;
@@ -204,9 +171,9 @@ struct ExpandScaleFunctor {
 
   __device__ void operator()(const int idx) const {
     const R d = d_scale_[idx];
-    d_diag_[idx] = ops::from_r(d);
+    d_diag_[idx] = ops::from_real(d);
     // gebal only ever reports powers of two, so this division is exact.
-    d_inv_[idx] = ops::from_r(R(1) / d);
+    d_inv_[idx] = ops::from_real(R(1) / d);
   }
 };
 

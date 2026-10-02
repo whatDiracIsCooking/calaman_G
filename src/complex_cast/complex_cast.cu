@@ -11,13 +11,15 @@
 //
 // NEUTRAL COMPLEX, NEVER .x/.y. cuFloatComplex is an operator-less float2 whose
 // components are reached as .x/.y, but hipFloatComplex is a class -- so raw
-// field access is not portable. The real/imag components are read through
-// complex.h's wwrCreal*/wwrCimag* accessors and a new value is built with
-// make_wwr*Complex; the per-precision spelling lives in the complex_ops
-// specializations below, matching gebal.cu's elem_ops.
+// field access is not portable. Component reads go through
+// calaman::device::elem_ops<T>::real_part / imag_part and a new value is built
+// with make_complex (elem_ops/elem_ops.cuh), which is where the precision-
+// divergent wwrC* accessors and make_wwr*Complex are spelled once. This .cu used
+// to carry its own complex_ops struct for exactly that; it is now the shared header.
 #include "complex_cast_bridge.h"
 
 #include "complex.h"
+#include "elem_ops/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 
 #include <cstddef>
@@ -25,38 +27,12 @@
 namespace calaman::device {
 
 // complex.h puts the neutral complex types in namespace wwr; pull the two type
-// names in so the complex_ops specializations and the explicit instantiations
-// below can spell them bare. The accessor / constructor calls stay wwr::-qualified.
+// names in so the explicit instantiations below can spell them bare. The
+// accessor / constructor calls stay wwr::-qualified.
 using wwr::wwrDoubleComplex;
 using wwr::wwrFloatComplex;
 
 namespace {
-
-/// @brief Per-precision component access for a neutral complex type
-///
-/// The one place the cu*/hip*-divergent accessor names are selected by precision
-/// (wwrCrealf vs wwrCreal, make_wwrFloatComplex vs make_wwrDoubleComplex), so the
-/// four functors stay generic. Mirrors gebal.cu's elem_ops.
-template<typename ComplexT>
-struct complex_ops;
-
-template<>
-struct complex_ops<wwrFloatComplex> {
-  static __device__ float real(const wwrFloatComplex z) { return wwr::wwrCrealf(z); }
-  static __device__ float imag(const wwrFloatComplex z) { return wwr::wwrCimagf(z); }
-  static __device__ wwrFloatComplex make(const float re, const float im) {
-    return wwr::make_wwrFloatComplex(re, im);
-  }
-};
-
-template<>
-struct complex_ops<wwrDoubleComplex> {
-  static __device__ double real(const wwrDoubleComplex z) { return wwr::wwrCreal(z); }
-  static __device__ double imag(const wwrDoubleComplex z) { return wwr::wwrCimag(z); }
-  static __device__ wwrDoubleComplex make(const double re, const double im) {
-    return wwr::make_wwrDoubleComplex(re, im);
-  }
-};
 
 // The four functors. All members are const scalar (pointer) members, as
 // device_functor requires: trivially copyable, and the const deletes the
@@ -72,7 +48,7 @@ struct SetRealPartFunctor {
   __device__ void operator()(const std::size_t i) const {
     // Rebuild to keep the imaginary component -- there is no portable "set only
     // the real field" accessor.
-    output_[i] = complex_ops<ComplexT>::make(input_[i], complex_ops<ComplexT>::imag(output_[i]));
+    output_[i] = make_complex(input_[i], elem_ops<ComplexT>::imag_part(output_[i]));
   }
 };
 
@@ -82,7 +58,7 @@ struct SetImagPartFunctor {
   const RealT *const input_;
 
   __device__ void operator()(const std::size_t i) const {
-    output_[i] = complex_ops<ComplexT>::make(complex_ops<ComplexT>::real(output_[i]), input_[i]);
+    output_[i] = make_complex(elem_ops<ComplexT>::real_part(output_[i]), input_[i]);
   }
 };
 
@@ -92,7 +68,7 @@ struct GetRealPartFunctor {
   const ComplexT *const input_;
 
   __device__ void operator()(const std::size_t i) const {
-    output_[i] = complex_ops<ComplexT>::real(input_[i]);
+    output_[i] = elem_ops<ComplexT>::real_part(input_[i]);
   }
 };
 
@@ -102,7 +78,7 @@ struct GetImagPartFunctor {
   const ComplexT *const input_;
 
   __device__ void operator()(const std::size_t i) const {
-    output_[i] = complex_ops<ComplexT>::imag(input_[i]);
+    output_[i] = elem_ops<ComplexT>::imag_part(input_[i]);
   }
 };
 

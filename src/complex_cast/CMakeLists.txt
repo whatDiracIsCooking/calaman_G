@@ -14,8 +14,10 @@
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which
 # carries parallel_for.cuh plus, transitively, wwr.device: complex.h for the
 # neutral complex types and runtime.h (wwrStream_t, pulled in by
-# complex_cast_bridge.h), plus the backend runtime libs. Same single link
-# gebal.device / laqp2.device use.
+# complex_cast_bridge.h), plus the backend runtime libs. It reads/writes complex
+# components through calaman.elem_ops's real_part/imag_part/make_complex, so it
+# links that INTERFACE library too, for the src/ root that resolves
+# "elem_ops/elem_ops.cuh".
 calaman_add_gpu_device_library(
   NAME
   calaman.complex_cast.device
@@ -23,6 +25,7 @@ calaman_add_gpu_device_library(
   complex_cast.cu
   LINK_PRIVATE
   wwr.extension.parallel_for
+  calaman.elem_ops
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries
