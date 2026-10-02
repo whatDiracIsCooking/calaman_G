@@ -5,11 +5,12 @@
 # dependencies -- structurally wwr.extension.parallel_for, not a calaman module.
 #
 # It is NOT declared through calaman_add_interface_library: that macro roots the
-# include path at this directory, which would spell the header "reduce_columns.cuh"
-# from here only. A cross-directory consumer (src/columnwise_ell1/columnwise_ell1.cu)
-# must reach it ROOT-RELATIVE as "reduce_columns/reduce_columns.cuh" (CLAUDE.md,
-# #include style), so the root is ${CMAKE_SOURCE_DIR}/src -- the same hand-written
-# shape WarpWraps' parallel_for uses for exactly this reason.
+# include path at this directory, which would spell the header
+# "reduce_columns.cuh" from here only. A cross-directory consumer
+# (src/columnwise_ell1/columnwise_ell1.cu) must reach it ROOT-RELATIVE as
+# "reduce_columns/reduce_columns.cuh" (CLAUDE.md, #include style), so the root
+# is ${CMAKE_SOURCE_DIR}/src -- the same hand-written shape WarpWraps'
+# parallel_for uses for exactly this reason.
 
 add_library(calaman.reduce_columns INTERFACE)
 add_library(calaman::reduce_columns ALIAS calaman.reduce_columns)
@@ -24,11 +25,12 @@ target_include_directories(
 )
 
 # wwr.device carries runtime.cuh's include path plus WWR_WARP_SIZE and the
-# runtime-only libs (CUDA::cudart / hip::host, never hip::device). A device-KERNEL
-# consumer of this header links hip::device itself, scoped to its own
-# gpu_device_library -- see src/columnwise_ell1. wwr.extension.bridge carries the
-# same src/ root for the "extension/bridge/gpu_stream_bridge.h" (wwrStream_t) the
-# header includes; named explicitly because that dependency is real.
+# runtime-only libs (CUDA::cudart / hip::host, never hip::device). A
+# device-KERNEL consumer of this header links hip::device itself, scoped to its
+# own gpu_device_library -- see src/columnwise_ell1. wwr.extension.bridge
+# carries the same src/ root for the "extension/bridge/gpu_stream_bridge.h"
+# (wwrStream_t) the header includes; named explicitly because that dependency is
+# real.
 target_link_libraries(
   calaman.reduce_columns INTERFACE wwr.device wwr.extension.bridge
 )

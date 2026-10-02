@@ -27,9 +27,10 @@ calaman_add_gtest_executable(
   wwr.extension.memory_buffer
 )
 
-# Two registrations for one target (the drift guard unions them): the empty-input
-# contract is a pure host call -- columnwise_ell1 returns before touching the
-# stream or a device pointer, so it takes a null stream and host dummy pointers
+# Two registrations for one target (the drift guard unions them): the
+# empty-input contract is a pure host call -- columnwise_ell1 returns before
+# touching the stream or a device pointer, so it takes a null stream and host
+# dummy pointers
 # and runs on a card-less runner. The oracle suite stages A on the device and
 # runs the reduction kernel, so it is REQUIRES_GPU (labeled `gpu`, excluded by
 # ctest -LE gpu).

@@ -11,10 +11,10 @@
 # columnwise_ell1.cu owns no kernel itself -- it #includes
 # calaman.reduce_columns's header (reduce_columns/reduce_columns.cuh) and
 # launches that. Linking calaman.reduce_columns PRIVATE carries the src/ include
-# root for that header plus its own device deps (wwr.device, wwr.extension.bridge
-# -- runtime.cuh, WWR_WARP_SIZE, and the gpu_stream_bridge.h that
-# columnwise_ell1_bridge.h also pulls in). The link is PRIVATE, as every
-# device-library link is.
+# root for that header plus its own device deps (wwr.device and
+# wwr.extension.bridge -- runtime.cuh, WWR_WARP_SIZE, and the
+# gpu_stream_bridge.h that columnwise_ell1_bridge.h also pulls in). The link is
+# PRIVATE, as every device-library link is.
 calaman_add_gpu_device_library(
   NAME
   calaman.columnwise_ell1.device
@@ -50,10 +50,11 @@ calaman_add_cxx_module_library(
   IMPORT_STD
 )
 
-# Force the device archive members in, or the explicit device::columnwise_ell1<T>
-# instantiations are dropped (the module only names them through lazily-resolved
-# calls) and a consumer fails to link -- the same whole-archive link lacpy and
-# horner need. The install-interface spelling waits on the install tier
+# Force the device archive members in, or the explicit
+# device::columnwise_ell1<T> instantiations are dropped (the module only names
+# them through lazily-resolved calls) and a consumer fails to link -- the same
+# whole-archive link lacpy and horner need. The install-interface spelling waits
+# on the install tier
 # (CALAMAN_INSTALL, docs/architecture.md §2); this build-interface link is what
 # the tests need meanwhile.
 target_link_libraries(
