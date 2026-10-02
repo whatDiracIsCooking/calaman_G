@@ -11,8 +11,8 @@
 /// `#include`d directly into a .cu (CUDA) or `-x hip` device-compiled (HIP)
 /// translation unit, exactly like wwr.extension.parallel_for's parallel_for.cuh
 /// -- there is no module at the point of use, so it reaches the backend through
-/// the gpu* layer's runtime.cuh rather than gpu_backend.h. Link
-/// calaman.reduce_columns (which carries wwr.device + wwr.extension.bridge).
+/// runtime.h (and device_guard.h for the device-pass gate) rather than
+/// gpu_backend.h. Link calaman.reduce_columns (which carries wwr.device).
 ///
 /// Thrust is deliberately NOT used. WarpWraps' parallel_for.cuh documents why a
 /// hand-written kernel replaced the Thrust path (its algorithms break under
@@ -31,12 +31,12 @@
 #include <cstddef>
 #include <type_traits>
 
-// WWR_WARP_SIZE (the block-size base) and wwrStream_t for the launcher
-// signature. runtime.cuh is also the device-pass gate: it #errors outside a
-// CUDA or HIP device compile, so this header carries no guard of its own, like
-// parallel_for.cuh.
-#include "extension/bridge/gpu_stream_bridge.h"
-#include "runtime.cuh"
+// WWR_WARP_SIZE (the block-size base) and wwrStream_t for the launcher signature
+// come from runtime.h; device_guard.h is the device-pass gate -- it #errors
+// outside a CUDA or HIP device compile, so this header carries no guard of its
+// own, like parallel_for.cuh.
+#include "device_guard.h"
+#include "runtime.h"
 
 namespace calaman::device {
 

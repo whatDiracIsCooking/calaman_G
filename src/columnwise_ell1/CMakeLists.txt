@@ -11,9 +11,9 @@
 # columnwise_ell1.cu owns no kernel itself -- it #includes
 # calaman.reduce_columns's header (reduce_columns/reduce_columns.cuh) and
 # launches that. Linking calaman.reduce_columns PRIVATE carries the src/ include
-# root for that header plus its own device deps (wwr.device and
-# wwr.extension.bridge -- runtime.cuh, WWR_WARP_SIZE, and the
-# gpu_stream_bridge.h that columnwise_ell1_bridge.h also pulls in). The link is
+# root for that header plus its own device deps -- wwr.device, which provides
+# runtime.h (WWR_WARP_SIZE and the wwrStream_t that columnwise_ell1_bridge.h
+# also pulls in) plus the runtime libs. The link is
 # PRIVATE, as every device-library link is.
 calaman_add_gpu_device_library(
   NAME
@@ -30,7 +30,7 @@ calaman_add_gpu_device_library(
 #
 # INCLUDE_DIRS_PRIVATE is for columnwise_ell1_bridge.h, which interface.cppm
 # includes in its global module fragment. LINK_PRIVATE wwr_backend is for the
-# gpu_stream_bridge.h that header pulls in there: a GMF cannot `import`, so
+# runtime.h that header pulls in there: a GMF cannot `import`, so
 # wwrStream_t arrives by #include, and selected_backend.h behind it reads
 # WWR_GPU_BACKEND_{CUDA,HIP} with no device pass to read __CUDACC__/__HIP__.
 # LINK_PUBLIC wwr.runtime_api is the wwrStream_t the exported signature names.
