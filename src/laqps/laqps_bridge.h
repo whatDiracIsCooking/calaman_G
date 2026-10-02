@@ -19,7 +19,7 @@
  * norms exactly with wwr::nrm2. This is the device mask/flag array the issue asks
  * for in place of the reference's serial LSTICC linked list.
  *
- * wwrStream_t arrives from the gpu* layer's include-only bridge header, since a
+ * wwrStream_t arrives from runtime.h, an include-only header, since a
  * GMF cannot import; it is the SAME type wwr.runtime_api exports, so the module
  * passes its handle's stream straight through. Reading the backend define that
  * header needs is why the module links wwr_backend PRIVATE -- see this
@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include "extension/bridge/gpu_stream_bridge.h"
+#include "runtime.h"
 
 #include <cstddef>
 

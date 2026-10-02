@@ -14,17 +14,18 @@
  * wwrFloatComplex / wwrDoubleComplex, and both walls that block them are real:
  *
  *   1. The types are reachable only from `import wwr.complex` (a module, which a
- *      GMF cannot import) or from complex.cuh -- and complex.cuh is device-only:
- *      it includes device_guard.h, which #errors outside a __CUDACC__/__HIP__
- *      pass, so a host compile of constants.cppm cannot pull it in.
+ *      GMF cannot import) or from complex.h. complex.h is host-safe and can be
+ *      included here, but its complex *constructors* are gated behind a device
+ *      pass (__CUDACC__/__HIP__), so a host compile of constants.cppm would see
+ *      the types with no usable way to build a value.
  *   2. Even past that, there is no portable `constexpr` spelling of a complex
  *      literal: cuFloatComplex is a brace-initialisable float2 but hipFloatComplex
  *      is a class, so `{1.0f, 0.0f}` compiles on CUDA and breaks on HIP, and the
- *      portable make_gpu*Complex is __device__ __forceinline__ -- not usable in a
- *      host constexpr. WarpWraps documents this in complex.cuh's header.
+ *      portable make_wwr*Complex is __device__ __forceinline__ -- not usable in a
+ *      host constexpr. WarpWraps documents this in complex.h's header.
  *
  * So complex is the same deliberate later extension it is for lacpy and vec_diff:
- * it belongs in a device-compiled `.cuh` reached through the backend switch, not
+ * it belongs in a device-compiled `.cu` reached through the backend switch, not
  * as a constexpr specialization here.
  *
  * Consumers include this by its root-relative path, `"common/constants.h"`; the

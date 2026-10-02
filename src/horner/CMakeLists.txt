@@ -11,7 +11,7 @@
 # (P := c_d I to seed it, P(i,i) += c_k to close each step). Both are
 # hand-written functors launched through wwr.extension.parallel_for from
 # horner.cu, so it links that INTERFACE library (which carries wwr.device + the
-# bridge include root for the gpu_stream_bridge.h that horner_bridge.h pulls in)
+# bridge include root for the runtime.h that horner_bridge.h pulls in)
 # PRIVATE, like calaman.linalg's downdate libraries and WarpWraps's own
 # parallel_for consumers.
 calaman_add_gpu_device_library(
@@ -31,7 +31,7 @@ calaman_add_gpu_device_library(
 # wrapper (wwr.wrappers.blas), the handle/status/op-constant/GetStream layer
 # (wwr.blas), the wwrStream_t type the body hands to the launchers
 # (wwr.runtime_api) and calaman.common (kZero/kOne scalars, WorkspaceBuilder).
-# LINK_PRIVATE wwr_backend is for the gpu_stream_bridge.h that horner_bridge.h
+# LINK_PRIVATE wwr_backend is for the runtime.h that horner_bridge.h
 # pulls into the global module fragment: a GMF cannot `import`, so wwrStream_t
 # arrives by #include and selected_backend.h behind it reads WWR_GPU_BACKEND_*.
 # INCLUDE_DIRS_PRIVATE is the source dir for horner_bridge.h itself.

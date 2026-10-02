@@ -52,7 +52,7 @@ using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
 template<typename T>
 using HostBuffer = HostBufferWrapper<T, HostAbort, HostAbort>;
 template<typename T>
-using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceHandle, DeviceAbort>;
+using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbort, DeviceHandle>;
 
 template<typename T>
 DeviceBuffer<T> to_device(std::shared_ptr<DeviceHandle> handle, const std::vector<T> &host) {
@@ -99,9 +99,9 @@ T from_std(std::complex<real_t<T>> z) {
   if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>) {
     return z.real();
   } else if constexpr (std::is_same_v<T, wwr::wwrFloatComplex>) {
-    return wwr::make_gpuFloatComplex(z.real(), z.imag());
+    return wwr::make_wwrFloatComplex(z.real(), z.imag());
   } else {
-    return wwr::make_gpuDoubleComplex(z.real(), z.imag());
+    return wwr::make_wwrDoubleComplex(z.real(), z.imag());
   }
 }
 

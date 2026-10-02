@@ -66,7 +66,7 @@ using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
 template<typename T>
 using HostBuffer = HostBufferWrapper<T, HostAbort, HostAbort>;
 template<typename T>
-using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceHandle, DeviceAbort>;
+using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbort, DeviceHandle>;
 
 /// @brief Upload `host` to a fresh device buffer on `handle`'s stream
 template<typename T>

@@ -55,5 +55,23 @@ ENV GPU_TARGETS=${GPU_TARGETS} \
     ROCM_PATH=/opt/rocm \
     PATH=/opt/rocm/bin:${PATH}
 
+# The HIP side's unpackaged library, by the same reuse-the-script route as
+# install-rocm.sh above: this file cannot inherit from Dockerfile.hip, so it
+# re-runs what that file runs. THIRD ARG TO BUMP IN TWO PLACES, after
+# ROCM_VERSION and GPU_TARGETS.
+#
+# The CUDA half of every pair -- cuTENSOR, nvCOMP, cuGraph -- is inherited from
+# the parent image and needs nothing here. Note the asymmetry that leaves: this
+# image has cuGraph and no HIP counterpart, because rocGRAPH/hipGRAPH cannot be
+# compiled for an RDNA GPU_TARGETS (issue #126).
+ARG HIPCOMP_VERSION=v2.2.0
+RUN --mount=type=bind,source=docker/install-rocm-ds.sh,target=/tmp/install-rocm-ds.sh \
+    HIPCOMP_VERSION="${HIPCOMP_VERSION}" GPU_TARGETS="${GPU_TARGETS}" \
+    bash /tmp/install-rocm-ds.sh
+
+# Appended, not replaced: the CUDA prefixes come from the parent image's ENV
+# and both backends are findable in this image by design.
+ENV CMAKE_PREFIX_PATH=/opt/rocm-ds:${CMAKE_PREFIX_PATH}
+
 USER ubuntu
 RUN nvcc --version | grep release && hipconfig --version

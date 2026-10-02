@@ -8,13 +8,14 @@
 # its own module, like calaman.horner. Structurally the twin of calaman.gebal's
 # kernel half: four hand-written per-element functors launched through
 # wwr.extension.parallel_for, reading/writing complex components through
-# complex.cuh's neutral accessors (never .x/.y, which hipComplex lacks).
+# complex.h's neutral accessors (never .x/.y, which hipComplex lacks).
 
 # The device-kernel library. complex_cast.cu launches its four functors through
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which
-# carries parallel_for.cuh plus, transitively, wwr.device (complex.cuh, the
-# backend runtime libs) and wwr.extension.bridge (gpu_stream_bridge.h, pulled in
-# by complex_cast_bridge.h). Same single link gebal.device / laqp2.device use.
+# carries parallel_for.cuh plus, transitively, wwr.device: complex.h for the
+# neutral complex types and runtime.h (wwrStream_t, pulled in by
+# complex_cast_bridge.h), plus the backend runtime libs. Same single link
+# gebal.device / laqp2.device use.
 calaman_add_gpu_device_library(
   NAME
   calaman.complex_cast.device
@@ -33,7 +34,7 @@ calaman_add_gpu_device_library(
 # (the two complex element types) and wwr.wrappers.common (the complex_fp
 # constraint and the ComplexToRealType the real arrays are spelled with).
 #
-# LINK_PRIVATE wwr_backend is for the gpu_stream_bridge.h that
+# LINK_PRIVATE wwr_backend is for the runtime.h that
 # complex_cast_bridge.h pulls into the global module fragment: a GMF cannot
 # `import`, so wwrStream_t arrives by #include, and selected_backend.h behind it
 # reads WWR_GPU_BACKEND_{CUDA,HIP}. INCLUDE_DIRS_PRIVATE is for

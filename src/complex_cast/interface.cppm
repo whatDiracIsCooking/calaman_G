@@ -18,7 +18,7 @@
  *
  * COMPLEX is the whole point here, not the deferred extension it is for larfg /
  * horner: there are no gemm scalars to spell constexpr, only component reads and
- * writes, which complex.cuh's accessors do portably. So the surface is the two
+ * writes, which complex.h's accessors do portably. So the surface is the two
  * complex types ONLY (constrained by wwr::complex_fp) -- a real-to-real cast is
  * the identity and has no place. The real component type is spelled
  * wwr::ComplexToRealType<ComplexT>: float for wwrFloatComplex, double for

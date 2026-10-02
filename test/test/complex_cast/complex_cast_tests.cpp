@@ -45,7 +45,7 @@ using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
 template<typename T>
 using HostBuffer = HostBufferWrapper<T, HostAbort, HostAbort>;
 template<typename T>
-using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceHandle, DeviceAbort>;
+using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbort, DeviceHandle>;
 
 template<typename T>
 DeviceBuffer<T> to_device(std::shared_ptr<DeviceHandle> handle, const std::vector<T> &host) {
@@ -86,7 +86,7 @@ template<>
 struct elem<wwr::wwrFloatComplex> {
   using real = float;
   static wwr::wwrFloatComplex make(double re, double im) {
-    return wwr::make_gpuFloatComplex(static_cast<float>(re), static_cast<float>(im));
+    return wwr::make_wwrFloatComplex(static_cast<float>(re), static_cast<float>(im));
   }
   static float re(wwr::wwrFloatComplex z) { return wwr::wwrCrealf(z); }
   static float im(wwr::wwrFloatComplex z) { return wwr::wwrCimagf(z); }
@@ -99,7 +99,7 @@ template<>
 struct elem<wwr::wwrDoubleComplex> {
   using real = double;
   static wwr::wwrDoubleComplex make(double re, double im) {
-    return wwr::make_gpuDoubleComplex(re, im);
+    return wwr::make_wwrDoubleComplex(re, im);
   }
   static double re(wwr::wwrDoubleComplex z) { return wwr::wwrCreal(z); }
   static double im(wwr::wwrDoubleComplex z) { return wwr::wwrCimag(z); }

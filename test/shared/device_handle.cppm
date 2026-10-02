@@ -29,7 +29,7 @@ export module calaman.test.shared.device_handle;
 
 // Re-exported, because they are in this class's PUBLIC interface and an import
 // is not transitive: props() returns wwr::wwrDeviceProp, and stream() / pool()
-// return GpuStreamWrapper / GpuMemPoolWrapper. A consumer that can name
+// return StreamWrapper / MemPoolWrapper. A consumer that can name
 // DeviceHandle can therefore use everything it returns.
 export import wwr.runtime_api;
 export import wwr.extension.runtime;
@@ -55,8 +55,8 @@ class DeviceHandle {
   // stream_ and pool_ bind all three policy slots (create, destroy,
   // device-access) to abort-on-failure.
   using Abort = AbortPolicy<wwr::wwrError_t>;
-  using Stream = wwr::extension::GpuStreamWrapper<Abort, Abort, Abort>;
-  using Pool = wwr::extension::GpuMemPoolWrapper<Abort, Abort, Abort>;
+  using Stream = wwr::extension::StreamWrapper<Abort, Abort, Abort>;
+  using Pool = wwr::extension::MemPoolWrapper<Abort, Abort, Abort>;
 
 public:
   explicit DeviceHandle(int index = 0,

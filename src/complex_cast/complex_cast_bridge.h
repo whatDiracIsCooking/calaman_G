@@ -10,23 +10,24 @@
  * the plain .cu translation unit.
  *
  * COMPLEX TYPES DO NOT APPEAR HERE. This header is parsed in two contexts that
- * have no common complex header -- wwr.complex is a module (interface.cppm's GMF
- * cannot import) and complex.cuh is device-only (the host GMF cannot include
- * it). So every launcher is generic in the complex element type @c ComplexT and
+ * have no common complex builder -- wwr.complex is a module (interface.cppm's
+ * GMF cannot import) and complex.h's complex constructors are gated to a device
+ * pass (the host GMF parse does not get them). So every launcher is generic in
+ * the complex element type @c ComplexT and
  * in its real component type @c RealT, which the caller spells as
  * wwr::ComplexToRealType<ComplexT>. The .cu names the concrete wwrFloatComplex /
  * wwrDoubleComplex only in its explicit instantiations, in device context.
  *
- * wwrStream_t arrives from the gpu* layer's include-only bridge header, since a
- * GMF cannot import; it is the SAME type wwr.runtime_api exports, so the module
- * passes its handle's stream straight through. Reading the backend define that
+ * wwrStream_t arrives from runtime.h, an include-only header, since a GMF cannot
+ * import; it is the SAME type wwr.runtime_api exports, so the module passes its
+ * handle's stream straight through. Reading the backend define that
  * header needs is why the module links wwr_backend PRIVATE -- see this
  * directory's CMakeLists.txt.
  */
 
 #pragma once
 
-#include "extension/bridge/gpu_stream_bridge.h"
+#include "runtime.h"
 
 #include <cstddef>
 

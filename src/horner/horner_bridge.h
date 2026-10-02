@@ -20,7 +20,7 @@
  * independent of the BLAS handle's pointer mode -- the kernels read device
  * memory directly, while the gemm scalars are the host constants kOne/kZero.
  *
- * wwrStream_t arrives from the gpu* layer's include-only bridge header rather
+ * wwrStream_t arrives from runtime.h, an include-only header rather
  * than an `import`, since a GMF cannot import; it is the SAME type
  * wwr.runtime_api exports, so the module passes its handle's stream straight
  * through. Reading the backend define that header needs is why the module links
@@ -33,7 +33,7 @@
 
 #pragma once
 
-#include "extension/bridge/gpu_stream_bridge.h"
+#include "runtime.h"
 
 #include <cstddef>
 

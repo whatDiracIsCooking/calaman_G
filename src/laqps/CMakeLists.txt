@@ -22,7 +22,7 @@ calaman_add_gpu_device_library(
 # the interface (like calaman.diff_norm): a consumer instantiates the body, so
 # every module the body names (calaman.larfg, the wrapped BLAS) must reach it.
 # laqps.cppm's GMF includes laqps_bridge.h (INCLUDE_DIRS_PRIVATE, this dir),
-# which pulls gpu_stream_bridge.h -> selected_backend.h; a GMF cannot import, so
+# which pulls runtime.h -> selected_backend.h; a GMF cannot import, so
 # wwrStream_t arrives by #include and the backend define is read via
 # LINK_PRIVATE wwr_backend -- the calaman.lacpy / calaman.laqp2 arrangement.
 #   wwr.wrappers.blas   iamax, swap, nrm2, gemv, gemm

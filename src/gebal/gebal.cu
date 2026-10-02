@@ -7,7 +7,7 @@
 // between these launches. Shared unchanged between both backends, like lacpy.cu:
 // a .cu is compiled by the backend compiler, so the raw <<<>>> launch syntax and
 // the device intrinsics (__syncthreads, atomicMax/Min, isfinite) are available
-// directly, and the complex types/accessors arrive through complex.cuh.
+// directly, and the complex types/accessors arrive through complex.h.
 //
 // Permutation stage (full-grid): mark_nonzero flags the window's off-diagonal
 // non-zeros, a pick reduction chooses the row/column that isolates an eigenvalue,
@@ -22,7 +22,7 @@
 // n where balancing is worth doing.
 #include "gebal_bridge.h"
 
-#include "complex.cuh"
+#include "complex.h"
 #include "extension/parallel_for/parallel_for.cuh"
 
 #include <cmath>
@@ -30,7 +30,7 @@
 
 namespace calaman::device {
 
-// complex.cuh puts the neutral complex types in namespace wwr; pull the two type
+// complex.h puts the neutral complex types in namespace wwr; pull the two type
 // names in so the elem_ops specializations and the explicit instantiations below
 // can spell them bare. The accessor / constructor calls stay wwr::-qualified.
 using wwr::wwrDoubleComplex;
@@ -75,7 +75,7 @@ struct elem_ops<wwrFloatComplex> {
     return wwr::wwrCrealf(x) == 0.0f && wwr::wwrCimagf(x) == 0.0f;
   }
   static __device__ wwrFloatComplex scal(const wwrFloatComplex x, const float s) {
-    return wwr::make_gpuFloatComplex(wwr::wwrCrealf(x) * s, wwr::wwrCimagf(x) * s);
+    return wwr::make_wwrFloatComplex(wwr::wwrCrealf(x) * s, wwr::wwrCimagf(x) * s);
   }
 };
 
@@ -89,7 +89,7 @@ struct elem_ops<wwrDoubleComplex> {
     return wwr::wwrCreal(x) == 0.0 && wwr::wwrCimag(x) == 0.0;
   }
   static __device__ wwrDoubleComplex scal(const wwrDoubleComplex x, const double s) {
-    return wwr::make_gpuDoubleComplex(wwr::wwrCreal(x) * s, wwr::wwrCimag(x) * s);
+    return wwr::make_wwrDoubleComplex(wwr::wwrCreal(x) * s, wwr::wwrCimag(x) * s);
   }
 };
 

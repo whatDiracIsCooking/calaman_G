@@ -23,8 +23,8 @@ Supported element types: `wwrFloatComplex`, `wwrDoubleComplex` (constrained by
 
 Unlike `larfg` / `horner`, complex is the whole point here, not a deferred
 extension: there are no `gemm` scalars to spell `constexpr`, only component reads
-and writes — which `complex.cuh`'s accessors (`wwrCreal*`/`wwrCimag*`,
-`make_gpu*Complex`) do portably. Raw `.x`/`.y` field access is **not** used:
+and writes — which `complex.h`'s accessors (`wwrCreal*`/`wwrCimag*`,
+`make_wwr*Complex`) do portably. Raw `.x`/`.y` field access is **not** used:
 `cuFloatComplex` is a `float2` but `hipFloatComplex` is a class, so field access
 is not portable.
 
@@ -67,7 +67,7 @@ responsibility.
 
 - **`set_*` is read-modify-write.** There is no portable "set only one field"
   accessor, so each thread reads the element, rebuilds it with the other
-  component preserved (`make_gpu*Complex`), and stores it back. The target
+  component preserved (`make_wwr*Complex`), and stores it back. The target
   `output` elements must therefore hold valid values on entry if the untouched
   component matters.
 - **No bounds, stride or leading-dimension handling.** These are flat `count`

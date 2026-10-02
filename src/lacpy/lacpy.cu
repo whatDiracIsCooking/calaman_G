@@ -18,7 +18,7 @@
 #include "lacpy_bridge.h"
 
 #include "common/align_up.h"
-#include "runtime.cuh"
+#include "runtime.h"
 
 #include <cstddef>
 
@@ -71,7 +71,7 @@ void lacpy(const wwr::wwrStream_t stream, const Region region, const std::size_t
     return;
   }
 
-  // 4 warps per block, laid along the rows. WWR_WARP_SIZE (runtime.cuh, carried
+  // 4 warps per block, laid along the rows. WWR_WARP_SIZE (runtime.h, carried
   // as a define by wwr.device) is a configure-time value -- 32 by default, so
   // 128 unless a CDNA build sets 64 and makes it 256. unsigned int is dim3's
   // own field type.

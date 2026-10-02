@@ -27,10 +27,12 @@ FROM ${PARENT_IMAGE}
 
 ARG ROCM_VERSION=7.2.4
 
-# Drop the ~12.9GB of ROCm that only a RUNNING kernel needs -- the Tensile and
-# rocFFT kernel objects, composable-kernel's static archives, rccl, rocalution,
-# hiptensor. See install-rocm.sh for the measured list and why nothing on it is
-# a link-time dependency. OFF here: this is the dev image and it runs kernels.
+# Drop the ~12.1GB of ROCm that only a RUNNING kernel needs -- the Tensile and
+# rocFFT kernel objects, composable-kernel's static archives, and rocalution.
+# rccl and hiptensor are NOT dropped anymore: wwr.hip.rccl and wwr.hip.hiptensor
+# link them, so pruning either would fail find_package at configure. See
+# install-rocm.sh for the measured list and why nothing on it is a link-time
+# dependency. OFF here: this is the dev image and it runs kernels.
 # .github/workflows/images.yml sets it to 1 for the :hip-ci tag, whose only job
 # is to answer "does the other backend still compile" on a GitHub-hosted runner
 # that has neither an AMD card nor 20GB of free disk.
@@ -53,11 +55,34 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # GPU_TARGETS / AMDGPU_TARGETS so a HIP CMake build has a default to read.
 # gfx1200 is RDNA4 (Radeon RX 9060 XT); override for another card:
 #   --build-arg GPU_TARGETS=gfx1100
+#
+# It is declared BEFORE the ROCm-DS layer below because that layer compiles
+# kernels and has to be told what for -- and because hipCOMP takes ONE
+# wave-size flag for the whole library, this single value is load-bearing there
+# in a way it is not for the rest of the image. install-rocm-ds.sh has the
+# detail, including why a multi-target list is rejected outright.
 ARG GPU_TARGETS=gfx1200
 ENV GPU_TARGETS=${GPU_TARGETS} \
     AMDGPU_TARGETS=${GPU_TARGETS} \
     ROCM_PATH=/opt/rocm \
     PATH=/opt/rocm/bin:${PATH}
+
+# hipCOMP: the one library this image needs that AMD does not package. Built
+# from source into /opt/rocm-ds -- see install-rocm-ds.sh for why there is no
+# apt name to use instead, and for why rocGRAPH and hipGRAPH are NOT here
+# (they cannot be compiled for an RDNA target in usable time; issue #126).
+#
+# Dockerfile.combined declares this same arg and runs the same script, because
+# it cannot inherit from this file. Bump them together, as with ROCM_VERSION
+# and GPU_TARGETS.
+ARG HIPCOMP_VERSION=v2.2.0
+RUN --mount=type=bind,source=docker/install-rocm-ds.sh,target=/tmp/install-rocm-ds.sh \
+    HIPCOMP_VERSION="${HIPCOMP_VERSION}" GPU_TARGETS="${GPU_TARGETS}" \
+    bash /tmp/install-rocm-ds.sh
+
+# /opt/rocm-ds is a second prefix beside /opt/rocm, so CMake has to be told
+# about it; ROCm's own tree is already found through ROCM_PATH and hipcc.
+ENV CMAKE_PREFIX_PATH=/opt/rocm-ds
 
 USER ubuntu
 RUN hipconfig --version

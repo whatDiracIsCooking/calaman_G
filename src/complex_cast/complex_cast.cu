@@ -12,19 +12,19 @@
 // NEUTRAL COMPLEX, NEVER .x/.y. cuFloatComplex is an operator-less float2 whose
 // components are reached as .x/.y, but hipFloatComplex is a class -- so raw
 // field access is not portable. The real/imag components are read through
-// complex.cuh's wwrCreal*/wwrCimag* accessors and a new value is built with
-// make_gpu*Complex; the per-precision spelling lives in the complex_ops
+// complex.h's wwrCreal*/wwrCimag* accessors and a new value is built with
+// make_wwr*Complex; the per-precision spelling lives in the complex_ops
 // specializations below, matching gebal.cu's elem_ops.
 #include "complex_cast_bridge.h"
 
-#include "complex.cuh"
+#include "complex.h"
 #include "extension/parallel_for/parallel_for.cuh"
 
 #include <cstddef>
 
 namespace calaman::device {
 
-// complex.cuh puts the neutral complex types in namespace wwr; pull the two type
+// complex.h puts the neutral complex types in namespace wwr; pull the two type
 // names in so the complex_ops specializations and the explicit instantiations
 // below can spell them bare. The accessor / constructor calls stay wwr::-qualified.
 using wwr::wwrDoubleComplex;
@@ -35,7 +35,7 @@ namespace {
 /// @brief Per-precision component access for a neutral complex type
 ///
 /// The one place the cu*/hip*-divergent accessor names are selected by precision
-/// (wwrCrealf vs wwrCreal, make_gpuFloatComplex vs make_gpuDoubleComplex), so the
+/// (wwrCrealf vs wwrCreal, make_wwrFloatComplex vs make_wwrDoubleComplex), so the
 /// four functors stay generic. Mirrors gebal.cu's elem_ops.
 template<typename ComplexT>
 struct complex_ops;
@@ -45,7 +45,7 @@ struct complex_ops<wwrFloatComplex> {
   static __device__ float real(const wwrFloatComplex z) { return wwr::wwrCrealf(z); }
   static __device__ float imag(const wwrFloatComplex z) { return wwr::wwrCimagf(z); }
   static __device__ wwrFloatComplex make(const float re, const float im) {
-    return wwr::make_gpuFloatComplex(re, im);
+    return wwr::make_wwrFloatComplex(re, im);
   }
 };
 
@@ -54,7 +54,7 @@ struct complex_ops<wwrDoubleComplex> {
   static __device__ double real(const wwrDoubleComplex z) { return wwr::wwrCreal(z); }
   static __device__ double imag(const wwrDoubleComplex z) { return wwr::wwrCimag(z); }
   static __device__ wwrDoubleComplex make(const double re, const double im) {
-    return wwr::make_gpuDoubleComplex(re, im);
+    return wwr::make_wwrDoubleComplex(re, im);
   }
 };
 

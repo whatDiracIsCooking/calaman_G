@@ -21,9 +21,12 @@
 # refuse to start under `--gpus all` with
 #   nvidia-container-cli: requirement error: unsatisfied condition: cuda>=X.Y
 # `nvidia-smi` reports the driver's ceiling as "CUDA Version:". Note also that
-# CUDA 13 dropped Maxwell/Pascal/Volta -- its nvcc floor is compute_75, so a
-# pre-Turing card needs a 12.x toolkit, which also means dropping the `volta`
-# preset from CMakePresets.json.
+# CUDA 13 dropped Maxwell/Pascal/Volta -- its nvcc floor is compute_75. The
+# WarpWraps dependency's floor is higher still: sm_80 (Ampere), enforced at
+# configure in deps/WarpWraps/CMakeLists.txt (it wraps and tests bf16 WMMA) and
+# so inherited by this project's build. A pre-Ampere card is unsupported
+# regardless of toolkit, which is why the `volta` preset stays dropped from
+# CMakePresets.json.
 ARG PROJECT_NAME=calaman
 ARG PARENT_IMAGE=${PROJECT_NAME}:base
 FROM ${PARENT_IMAGE}
@@ -56,15 +59,41 @@ ENV CUDAToolkit_ROOT=/usr/local/cuda \
     PATH=/usr/local/cuda/bin:${PATH} \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
 
+# cuGraph, which is NOT in the CUDA repo the layer above installs from -- it is
+# RAPIDS, and ships as a wheel. install-cugraph.sh has why that is acceptable
+# here and why it is deliberately not a pyproject.toml dependency.
+#
+# The two versions differ because RAPIDS releases libcuvs on its own cadence;
+# they are separate args so a bump does not have to move both. This is the
+# heaviest single addition to this image (~770MB of wheels), so it is also the
+# first thing to look at if :cuda-ci pull time becomes the CI bottleneck.
+ARG CUGRAPH_VERSION=26.8.0
+ARG CUVS_VERSION=26.8.1
+RUN --mount=type=bind,source=docker/install-cugraph.sh,target=/tmp/install-cugraph.sh \
+    CUDA_VERSION="${CUDA_VERSION}" CUGRAPH_VERSION="${CUGRAPH_VERSION}" \
+    CUVS_VERSION="${CUVS_VERSION}" bash /tmp/install-cugraph.sh
+
+# The three libraries added on top of the toolkit -- cuTENSOR, nvCOMP, cuGraph
+# -- all install OFF the default search paths, so this is what makes
+# find_package/find_path see them. /opt/nvidia/* are the fixed-name prefixes
+# install-cuda.sh builds by discovery; /opt/rapids/* are the wheel directories.
+#
+# NOTE for anything that configures with an explicit -DCMAKE_PREFIX_PATH: a
+# -D cache entry SHADOWS this variable rather than extending it
+# (devtools/install-check.sh passes one), so such a caller has to append these
+# itself once the build depends on them.
+ENV CMAKE_PREFIX_PATH=/opt/nvidia/cutensor:/opt/nvidia/nvcomp:/opt/rapids/libcugraph:/opt/rapids/libraft:/opt/rapids/librmm:/opt/rapids/libcuvs
+
 # The target architecture, as a build arg so a cluster build can widen it:
 #   --build-arg CUDA_ARCH="80;86;90"
 # 86 is Ampere consumer (RTX 30xx). CUDAARCHS is what CMake reads when a preset
 # does not set CMAKE_CUDA_ARCHITECTURES; the `default` preset sets it to
 # `native`, which compiles only for the card in the build machine -- use the
 # ci-cuda preset, which pins 86, when the build host has no card. Keep this at
-# 75 or above: this toolkit's floor is compute_75 (see the CUDA_VERSION note at
-# the top of this file), and a lower value fails at CONFIGURE time, not at
-# build. There are no per-architecture presets; devtools/config.sh has why.
+# 80 or above: the WarpWraps dependency's sm_80 (Ampere) floor (see the
+# CUDA_VERSION note at the top of this file) fails at CONFIGURE time, well
+# before the toolkit's own compute_75 floor is reached. There are no
+# per-architecture presets; devtools/config.sh has why.
 ARG CUDA_ARCH=86
 ENV CUDA_ARCH=${CUDA_ARCH} \
     CUDAARCHS=${CUDA_ARCH}
