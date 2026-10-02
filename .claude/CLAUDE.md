@@ -21,9 +21,9 @@ enabled at all, and forwarded to WarpWraps as `WWR_GPU_BACKEND` from
 ROCm.
 
 The C++ and CMake identity is `calaman`: namespace `calaman`, modules
-`calaman.*`, macros and CMake options `CALAMAN_*`, CMake helpers `calaman_*`,
-CMake targets `calaman.*` aliased to `calaman::*`, and the installed package
-would be `find_package(calaman)`. The repo and the GitHub project are
+`calaman.*`, C++ preprocessor macros `CLM_*`, CMake options `CALAMAN_*`, CMake
+helpers `calaman_*`, CMake targets `calaman.*` aliased to `calaman::*`, and the
+installed package would be `find_package(calaman)`. The repo and the GitHub project are
 `calaman_G`; docker images, volumes and the devcontainer are `calaman`
 (`PROJECT_NAME` in `devtools/config.sh`), because a docker repository name
 cannot carry a capital. `doctor.sh` warns when `PROJECT_NAME` and any
