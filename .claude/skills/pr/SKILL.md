@@ -71,7 +71,7 @@ The harness's PR-body footer rules apply.
 
 ```bash
 gh pr merge <number> --squash
-git push origin --delete <branch>     # remote branch cleanup
+# the remote branch is auto-deleted on merge (see below) -- nothing to run here
 ```
 
 - **Wait for CI.** `.github/workflows/ci.yml` runs lint, the Python tier, the
@@ -85,8 +85,14 @@ git push origin --delete <branch>     # remote branch cleanup
   bypass list makes the server refuse it anyway, but do not lean on that: the
   bypass list is a setting someone can widen, and this rule is the intent.
 - **Never pass `--delete-branch`**: it attempts a local `git checkout main`,
-  which fails when `main` is held by another worktree. Delete the remote branch
-  with `git push origin --delete` instead, as above.
+  which fails when `main` is held by another worktree. The remote branch is
+  reclaimed automatically instead (next bullet).
+- **Remote branch cleanup is automatic.** This repo has GitHub's "Automatically
+  delete head branches" setting on, so the head branch is deleted when the PR
+  merges. Do **not** run `git push origin --delete` — the ref is already gone, so
+  it only errors, and the auto-mode classifier blocks it as destructive anyway.
+  Confirm with `git ls-remote --heads origin <branch>` (empty output = gone). The
+  *local* branch is still yours to delete in step 6.
 - If GitHub reports the PR as not yet mergeable, wait a moment and re-check
   with `gh pr view <number> --json mergeable,mergeStateStatus` before retrying
   — do not force.
