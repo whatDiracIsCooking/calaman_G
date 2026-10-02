@@ -346,11 +346,17 @@ include(cmake/calaman_install.cmake)
 # ========================================================================
 # AddressSanitizer (host code only)
 # ========================================================================
-# Set at the top level, so it reaches WarpWraps's targets too.
-option(ENABLE_ASAN
+# CALAMAN_ENABLE_ASAN, not a bare ENABLE_ASAN: WarpWraps renamed its own option
+# to WWR_ENABLE_ASAN (its #129) and still honours a bare ENABLE_ASAN with a
+# deprecation warning, so sharing that name turned its own ASAN on too and
+# double-applied the flags. The add_compile_options below is set at the top
+# level, before add_subdirectory(deps), so it already reaches WarpWraps's
+# targets -- we deliberately do NOT set WWR_ENABLE_ASAN, which would add
+# -fsanitize=address a second time.
+option(CALAMAN_ENABLE_ASAN
        "Enable AddressSanitizer instrumentation for host (CXX) code" OFF
 )
-if(ENABLE_ASAN)
+if(CALAMAN_ENABLE_ASAN)
   message(STATUS "AddressSanitizer enabled (host code only)")
   add_compile_options(
     $<$<COMPILE_LANGUAGE:CXX>:-fsanitize=address>

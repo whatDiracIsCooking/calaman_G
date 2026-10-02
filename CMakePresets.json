@@ -50,7 +50,7 @@
       "inherits": "debug",
       "binaryDir": "${sourceDir}/build-asan",
       "cacheVariables": {
-        "ENABLE_ASAN": "ON"
+        "CALAMAN_ENABLE_ASAN": "ON"
       }
     },
     {
