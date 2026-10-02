@@ -20,7 +20,8 @@ module calaman.expm;
 
 // An implementation unit implicitly imports its primary interface, but an import
 // is not re-exported through it -- the names in the signatures below are not
-// visible without these.
+// visible without these. Status is the exception: it arrives through the
+// interface's `export import calaman.error_handling`, so no import of it here.
 import std;
 import wwr.runtime_api;
 import wwr.blas;
@@ -34,8 +35,8 @@ import calaman.common;
 namespace calaman {
 
 // matrix_norm1
-template wwr::ComplexToRealType<float> matrix_norm1<float>(wwr::wwrStream_t, int, const float *, int,
-                                                           float *);
+template wwr::ComplexToRealType<float> matrix_norm1<float>(wwr::wwrStream_t, int, const float *,
+                                                           int, float *);
 template wwr::ComplexToRealType<double> matrix_norm1<double>(wwr::wwrStream_t, int, const double *,
                                                              int, double *);
 template wwr::ComplexToRealType<wwr::wwrFloatComplex>
@@ -46,54 +47,49 @@ matrix_norm1<wwr::wwrDoubleComplex>(wwr::wwrStream_t, int, const wwr::wwrDoubleC
                                     double *);
 
 // pade_bufferSize
-template wwr::wwrblasStatus_t pade_bufferSize<float>(wwr::wwrsolverDnHandle_t, int, int,
-                                                     std::size_t *);
-template wwr::wwrblasStatus_t pade_bufferSize<double>(wwr::wwrsolverDnHandle_t, int, int,
+template Status pade_bufferSize<float>(wwr::wwrsolverDnHandle_t, int, int, std::size_t *);
+template Status pade_bufferSize<double>(wwr::wwrsolverDnHandle_t, int, int, std::size_t *);
+template Status pade_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, int, int,
                                                       std::size_t *);
-template wwr::wwrblasStatus_t pade_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, int,
-                                                                    int, std::size_t *);
-template wwr::wwrblasStatus_t pade_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, int,
-                                                                     int, std::size_t *);
+template Status pade_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, int, int,
+                                                       std::size_t *);
 
 // expm_bufferSize
-template wwr::wwrblasStatus_t expm_bufferSize<float>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
-template wwr::wwrblasStatus_t expm_bufferSize<double>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
-template wwr::wwrblasStatus_t expm_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, int,
-                                                                    std::size_t *);
-template wwr::wwrblasStatus_t expm_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, int,
-                                                                     std::size_t *);
+template Status expm_bufferSize<float>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
+template Status expm_bufferSize<double>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
+template Status expm_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, int, std::size_t *);
+template Status expm_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, int,
+                                                       std::size_t *);
 
 // pade
-template wwr::wwrblasStatus_t pade<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
-                                          wwr::wwrStream_t, int, int, const float *, int, float *,
-                                          int, void *, std::size_t, int *);
-template wwr::wwrblasStatus_t pade<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
-                                           wwr::wwrStream_t, int, int, const double *, int, double *,
-                                           int, void *, std::size_t, int *);
-template wwr::wwrblasStatus_t pade<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t,
-                                                         wwr::wwrsolverDnHandle_t, wwr::wwrStream_t,
-                                                         int, int, const wwr::wwrFloatComplex *, int,
-                                                         wwr::wwrFloatComplex *, int, void *,
-                                                         std::size_t, int *);
-template wwr::wwrblasStatus_t
-pade<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
-                            int, const wwr::wwrDoubleComplex *, int, wwr::wwrDoubleComplex *, int,
-                            void *, std::size_t, int *);
+template Status pade<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
+                            int, const float *, int, float *, int, void *, std::size_t, int *);
+template Status pade<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
+                             int, const double *, int, double *, int, void *, std::size_t, int *);
+template Status pade<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                           wwr::wwrStream_t, int, int, const wwr::wwrFloatComplex *,
+                                           int, wwr::wwrFloatComplex *, int, void *, std::size_t,
+                                           int *);
+template Status pade<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                            wwr::wwrStream_t, int, int,
+                                            const wwr::wwrDoubleComplex *, int,
+                                            wwr::wwrDoubleComplex *, int, void *, std::size_t,
+                                            int *);
 
 // expm
-template wwr::wwrblasStatus_t expm<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
-                                          wwr::wwrStream_t, int, const float *, int, float *, int,
-                                          void *, std::size_t, int *, ExpmPlan *);
-template wwr::wwrblasStatus_t expm<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
-                                           wwr::wwrStream_t, int, const double *, int, double *, int,
-                                           void *, std::size_t, int *, ExpmPlan *);
-template wwr::wwrblasStatus_t expm<wwr::wwrFloatComplex>(
-    wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
-    const wwr::wwrFloatComplex *, int, wwr::wwrFloatComplex *, int, void *, std::size_t, int *,
-    ExpmPlan *);
-template wwr::wwrblasStatus_t expm<wwr::wwrDoubleComplex>(
-    wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
-    const wwr::wwrDoubleComplex *, int, wwr::wwrDoubleComplex *, int, void *, std::size_t, int *,
-    ExpmPlan *);
+template Status expm<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
+                            const float *, int, float *, int, void *, std::size_t, int *,
+                            ExpmPlan *);
+template Status expm<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
+                             const double *, int, double *, int, void *, std::size_t, int *,
+                             ExpmPlan *);
+template Status expm<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                           wwr::wwrStream_t, int, const wwr::wwrFloatComplex *, int,
+                                           wwr::wwrFloatComplex *, int, void *, std::size_t, int *,
+                                           ExpmPlan *);
+template Status expm<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                            wwr::wwrStream_t, int, const wwr::wwrDoubleComplex *,
+                                            int, wwr::wwrDoubleComplex *, int, void *, std::size_t,
+                                            int *, ExpmPlan *);
 
 } // namespace calaman

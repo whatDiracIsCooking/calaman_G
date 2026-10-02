@@ -141,9 +141,9 @@ T poly_tol(const std::vector<T> &a, const std::vector<T> &c, int degree, int n) 
 // the call's status. @p s_requested is forwarded to both the size query and the
 // evaluation, as the contract requires.
 template<typename T>
-wwr::wwrblasStatus_t run_ps(std::shared_ptr<DeviceHandle> handle, int n, const std::vector<T> &c,
-                            int degree, const std::vector<T> &a, int lda, int ldp,
-                            std::vector<T> &p_inout, int s_requested = 0) {
+Status run_ps(std::shared_ptr<DeviceHandle> handle, int n, const std::vector<T> &c, int degree,
+              const std::vector<T> &a, int lda, int ldp, std::vector<T> &p_inout,
+              int s_requested = 0) {
   wwr::wwrblasHandle_t blas{};
   EXPECT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   EXPECT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);
@@ -167,9 +167,8 @@ wwr::wwrblasStatus_t run_ps(std::shared_ptr<DeviceHandle> handle, int n, const s
 
 // Run calaman.horner() on the device -- the cross-check oracle in MatchesHorner.
 template<typename T>
-wwr::wwrblasStatus_t run_horner(std::shared_ptr<DeviceHandle> handle, int n,
-                                const std::vector<T> &c, int degree, const std::vector<T> &a,
-                                int lda, int ldp, std::vector<T> &p_inout) {
+Status run_horner(std::shared_ptr<DeviceHandle> handle, int n, const std::vector<T> &c, int degree,
+                  const std::vector<T> &a, int lda, int ldp, std::vector<T> &p_inout) {
   wwr::wwrblasHandle_t blas{};
   EXPECT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   EXPECT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);

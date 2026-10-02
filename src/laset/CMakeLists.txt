@@ -33,6 +33,10 @@ calaman_add_gpu_device_library(
 # re-exports that name, so a consumer of calaman.laset reaches Region through
 # it. It also carries the src/ root that resolves the "common/enums.h" that
 # laset_bridge.h now pulls into the global module fragment.
+# calaman.error_handling is also PUBLIC: the interface re-exports it (export
+# import) for the Status return type, and its src/ root resolves the
+# "error_handling/error_macros.h" interface.cppm pulls into the GMF for CLM_TRY.
+#   calaman.error_handling  Status, the cross-domain return type
 calaman_add_cxx_module_library(
   NAME
   calaman.laset
@@ -43,6 +47,7 @@ calaman_add_cxx_module_library(
   LINK_PUBLIC
   wwr.runtime_api
   calaman.common
+  calaman.error_handling
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE

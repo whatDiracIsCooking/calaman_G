@@ -21,15 +21,15 @@ import calaman.common;        // align_up
 namespace calaman {
 
 // Function: orthogonalize_bufferSize
-template wwr::wwrsolverStatus_t orthogonalize_bufferSize<float>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
-template wwr::wwrsolverStatus_t orthogonalize_bufferSize<double>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
-template wwr::wwrsolverStatus_t orthogonalize_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
-template wwr::wwrsolverStatus_t orthogonalize_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
+template Status orthogonalize_bufferSize<float>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
+template Status orthogonalize_bufferSize<double>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
+template Status orthogonalize_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
+template Status orthogonalize_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, const int, int*);
 
 // Function: orthogonalize
-template void orthogonalize<float>(wwr::wwrsolverDnHandle_t, const int, const int, float*, float*, const int, int*, int*);
-template void orthogonalize<double>(wwr::wwrsolverDnHandle_t, const int, const int, double*, double*, const int, int*, int*);
-template void orthogonalize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, const int, wwr::wwrFloatComplex*, wwr::wwrFloatComplex*, const int, int*, int*);
-template void orthogonalize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, const int, wwr::wwrDoubleComplex*, wwr::wwrDoubleComplex*, const int, int*, int*);
+template Status orthogonalize<float>(wwr::wwrsolverDnHandle_t, const int, const int, float*, float*, const int, int*, int*);
+template Status orthogonalize<double>(wwr::wwrsolverDnHandle_t, const int, const int, double*, double*, const int, int*, int*);
+template Status orthogonalize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t, const int, const int, wwr::wwrFloatComplex*, wwr::wwrFloatComplex*, const int, int*, int*);
+template Status orthogonalize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t, const int, const int, wwr::wwrDoubleComplex*, wwr::wwrDoubleComplex*, const int, int*, int*);
 
 } // namespace calaman

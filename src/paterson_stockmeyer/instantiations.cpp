@@ -34,11 +34,11 @@ template std::size_t paterson_stockmeyer_bufferSize<double>(int, int, int);
 template std::size_t paterson_stockmeyer_power_stride<float>(int);
 template std::size_t paterson_stockmeyer_power_stride<double>(int);
 
-template wwr::wwrblasStatus_t paterson_stockmeyer<float>(wwr::wwrblasHandle_t, int, const float *,
-                                                         int, const float *, int, float *, int,
-                                                         void *, std::size_t, int);
-template wwr::wwrblasStatus_t paterson_stockmeyer<double>(wwr::wwrblasHandle_t, int, const double *,
-                                                          int, const double *, int, double *, int,
-                                                          void *, std::size_t, int);
+template Status paterson_stockmeyer<float>(wwr::wwrblasHandle_t, int, const float *, int,
+                                           const float *, int, float *, int, void *, std::size_t,
+                                           int);
+template Status paterson_stockmeyer<double>(wwr::wwrblasHandle_t, int, const double *, int,
+                                            const double *, int, double *, int, void *, std::size_t,
+                                            int);
 
 } // namespace calaman

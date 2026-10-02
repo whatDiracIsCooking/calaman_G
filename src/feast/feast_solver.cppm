@@ -30,17 +30,24 @@ module;
 
 #include "feast_bridge.h"
 
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.feast:feast_solver;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize, wwrMemcpyDeviceToHost, wwrSuccess
-import wwr.blas;            // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_*, wwrblasFillMode_t
+import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, wwrblasFillMode_t
 import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.wrappers.common; // real_fp
 import :buffer_size;
 import :compute_quadrature;
 import :contour_filter;
 import :rayleigh_ritz;
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
 
@@ -106,11 +113,11 @@ struct FeastInfo {
  * @param opts            Tuning.
  * @param info            Host out, may be null.
  *
- * @return WWRBLAS_STATUS_SUCCESS whenever the iteration reached one of its own
+ * @return A Status: success whenever the iteration reached one of its own
  *         stopping conditions -- including MaxIterations and SubspaceTooSmall,
  *         which are outcomes rather than errors; read @p info to tell them apart.
  *         INVALID_VALUE for bad arguments, ALLOC_FAILED for a short workspace, and
- *         any other failure status with reason NumericalFailure.
+ *         any other failing step's own-domain status with reason NumericalFailure.
  *
  * Convergence is declared only once m has been seen twice running, so a solve
  * takes at least two iterations. From a random start a Ritz value that has not
@@ -123,14 +130,13 @@ struct FeastInfo {
  */
 template<wwr::real_fp T, std::size_t Ne = 8>
   requires(Ne == 4 || Ne == 8)
-wwr::wwrblasStatus_t feast_solver(wwr::wwrblasHandle_t cublas_handle,
-                                  wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
-                                  const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
-                                  const int lda, const T Emin, const T Emax, const int m0,
-                                  T *d_lambda, T *d_Q, void *d_work, const std::size_t lwork_bytes,
-                                  const FeastOptions<T> &opts = {}, FeastInfo<T> *info = nullptr) {
+Status feast_solver(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
+                    wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
+                    const T *d_A, const int lda, const T Emin, const T Emax, const int m0,
+                    T *d_lambda, T *d_Q, void *d_work, const std::size_t lwork_bytes,
+                    const FeastOptions<T> &opts = {}, FeastInfo<T> *info = nullptr) {
   FeastInfo<T> local{};
-  const auto publish = [&](const FeastStopReason reason, const wwr::wwrblasStatus_t st) {
+  const auto publish = [&](const FeastStopReason reason, const Status st) {
     local.reason = reason;
     if (info != nullptr) {
       *info = local;
@@ -153,11 +159,7 @@ wwr::wwrblasStatus_t feast_solver(wwr::wwrblasHandle_t cublas_handle,
 
   FeastSlices<T> s;
   std::size_t required = 0;
-  wwr::wwrblasStatus_t status =
-      make_feast_slices<T, Ne>(cusolver_handle, n, m0, d_work, &s, &required);
-  if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return status;
-  }
+  CLM_TRY(make_feast_slices<T, Ne>(cusolver_handle, n, m0, d_work, &s, &required));
   if (lwork_bytes < required) {
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
@@ -165,13 +167,15 @@ wwr::wwrblasStatus_t feast_solver(wwr::wwrblasHandle_t cublas_handle,
   const device::FeastContour<T> contour = make_feast_contour<T, Ne>(Emin, Emax);
 
   // ── once per solve: factor the resolvents, and ||A||_1 ──────────────────
-  status = feast_factor_resolvents<T>(cublas_handle, stream, uplo, n, d_A, lda, contour, s);
-  if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
+  // NumericalFailure steps publish the reason before returning the step's own
+  // Status, so they keep the check-and-publish shape rather than a bare CLM_TRY.
+  Status status = feast_factor_resolvents<T>(cublas_handle, stream, uplo, n, d_A, lda, contour, s);
+  if (!status.ok()) {
     return publish(FeastStopReason::NumericalFailure, status);
   }
 
   status = feast_matrix_norm<T>(stream, uplo, n, d_A, lda, s);
-  if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
+  if (!status.ok()) {
     return publish(FeastStopReason::NumericalFailure, status);
   }
 
@@ -180,26 +184,30 @@ wwr::wwrblasStatus_t feast_solver(wwr::wwrblasHandle_t cublas_handle,
 
   for (int k = 0; k < opts.max_iter; ++k) {
     status = feast_apply_filter<T>(cublas_handle, stream, n, m0, d_Q, contour, s, s.basis);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    if (!status.ok()) {
       return publish(FeastStopReason::NumericalFailure, status);
     }
 
     status = feast_rayleigh_ritz<T>(cublas_handle, cusolver_handle, stream, uplo, n, d_A, lda, m0,
                                     Emin, Emax, s, d_lambda, d_Q);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    if (!status.ok()) {
       return publish(FeastStopReason::NumericalFailure, status);
     }
 
     status = feast_residuals<T>(stream, n, m0, d_Q, d_lambda, s);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    if (!status.ok()) {
       return publish(FeastStopReason::NumericalFailure, status);
     }
 
-    // The loop's one synchronization: everything the host decides on.
-    if (wwr::wwrMemcpyAsync(&h, s.status, sizeof(h), wwr::wwrMemcpyDeviceToHost, stream) !=
-            wwr::wwrSuccess ||
-        wwr::wwrStreamSynchronize(stream) != wwr::wwrSuccess) {
-      return publish(FeastStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
+    // The loop's one synchronization: everything the host decides on. A failed
+    // copy or sync is published with its own runtime-domain Status.
+    if (const Status copy = wwr::wwrMemcpyAsync(&h, s.status, sizeof(h),
+                                                wwr::wwrMemcpyDeviceToHost, stream);
+        !copy.ok()) {
+      return publish(FeastStopReason::NumericalFailure, copy);
+    }
+    if (const Status sync = wwr::wwrStreamSynchronize(stream); !sync.ok()) {
+      return publish(FeastStopReason::NumericalFailure, sync);
     }
 
     local.iterations = k + 1;

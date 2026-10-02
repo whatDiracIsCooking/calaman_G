@@ -177,8 +177,10 @@ void expect_orthonormal(int m, int n, unsigned seed) {
   auto d_info_geqrf = to_device(handle, info_init);
   auto d_info_gqr = to_device(handle, info_init);
 
-  orthogonalize<T>(solver, m, n, d_q.data(), d_work.data(), lwork, d_info_geqrf.data(),
-                   d_info_gqr.data());
+  const auto status = orthogonalize<T>(solver, m, n, d_q.data(), d_work.data(), lwork,
+                                        d_info_geqrf.data(), d_info_gqr.data());
+  EXPECT_TRUE(status.ok()) << "orthogonalize status m=" << m << " n=" << n << " seed=" << seed
+                           << " status=" << status.name();
 
   const auto got = from_device(handle, d_q, mn);
   const auto info_geqrf = from_device(handle, d_info_geqrf, 1);

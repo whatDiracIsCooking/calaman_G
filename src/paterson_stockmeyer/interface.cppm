@@ -74,6 +74,12 @@ module;
 
 #include "paterson_stockmeyer_bridge.h"
 
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.paterson_stockmeyer;
 
 import std;
@@ -81,6 +87,11 @@ import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_OP_N, WWR
 import wwr.runtime_api;   // wwrStream_t (the type wwrblasGetStream writes)
 import wwr.wrappers.blas; // gemm
 import calaman.common;    // kZero<T> / kOne<T> (:constants), WorkspaceBuilder, align_up
+
+// export import, not a plain import: paterson_stockmeyer RETURNS calaman::Status,
+// so a consumer of `import calaman.paterson_stockmeyer;` must see Status's member
+// functions, not just its name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -282,20 +293,19 @@ std::size_t paterson_stockmeyer_power_stride(const int n) {
 ///                    paterson_stockmeyer_bufferSize<T>(n, degree, s_requested)
 /// @param s_requested Block size to force, or 0 for the cost-minimizing choice.
 ///                    Must match the value passed to the size query.
-/// @return WWRBLAS_STATUS_SUCCESS, the first failing gemm status, or
-///         WWRBLAS_STATUS_NOT_INITIALIZED for bad dimensions, a null pointer or
-///         an undersized workspace (the only neutral non-success code WarpWraps
-///         exposes, as calaman.diff_norm documents)
+/// @return A successful Status, the first failing gemm status, or a Status
+///         carrying WWRBLAS_STATUS_NOT_INITIALIZED for bad dimensions, a null
+///         pointer or an undersized workspace (the only neutral non-success code
+///         WarpWraps exposes, as calaman.diff_norm documents)
 ///
 /// @pre @p d_A, @p d_P and @p d_work must not overlap -- each step is a gemm,
 ///      which requires its output distinct from both inputs.
 /// @pre The handle is in default (host) pointer mode: the gemm scalars kOne and
 ///      kZero are passed by host address, like calaman.horner / calaman.laqps.
 export template<typename T>
-wwr::wwrblasStatus_t paterson_stockmeyer(wwr::wwrblasHandle_t handle, const int n,
-                                         const T *d_coeffs, const int degree, const T *d_A,
-                                         const int lda, T *d_P, const int ldp, void *d_work,
-                                         const std::size_t work_bytes, const int s_requested = 0) {
+Status paterson_stockmeyer(wwr::wwrblasHandle_t handle, const int n, const T *d_coeffs,
+                           const int degree, const T *d_A, const int lda, T *d_P, const int ldp,
+                           void *d_work, const std::size_t work_bytes, const int s_requested = 0) {
   if (n < 1 || degree < 0 || lda < n || ldp < n || s_requested < 0) {
     return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
   }
@@ -313,10 +323,7 @@ wwr::wwrblasStatus_t paterson_stockmeyer(wwr::wwrblasHandle_t handle, const int 
   // The block-build launcher enqueues on the handle's own stream, the same one
   // the gemms run on, so the whole evaluation stays ordered on one stream.
   wwr::wwrStream_t stream{};
-  const auto stream_status = wwr::wwrblasGetStream(handle, &stream);
-  if (stream_status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return stream_status;
-  }
+  CLM_TRY(wwr::wwrblasGetStream(handle, &stream));
 
   const std::size_t stride = paterson_stockmeyer_power_stride<T>(n);
 
@@ -331,17 +338,13 @@ wwr::wwrblasStatus_t paterson_stockmeyer(wwr::wwrblasHandle_t handle, const int 
   // -- Build the power bank: A^k = A^(k-1) * A --------------------------------
   //
   // The first product reads A twice; the rest chain off the previous power.
-  wwr::wwrblasStatus_t status = wwr::WWRBLAS_STATUS_SUCCESS;
   for (int k = 2; k <= plan.num_powers + 1; ++k) {
     const T *left = (k == 2) ? d_A : powers + static_cast<std::size_t>(k - 3) * stride;
     const int ld_left = (k == 2) ? lda : n;
     T *out = powers + static_cast<std::size_t>(k - 2) * stride;
 
-    status = wwr::gemm<T>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>, left,
-                          ld_left, d_A, lda, &kZero<T>, out, n);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return status;
-    }
+    CLM_TRY(wwr::gemm<T>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>, left,
+                         ld_left, d_A, lda, &kZero<T>, out, n));
   }
 
   // X = A^s, the matrix the outer Horner runs over. For s == 1 that is A itself,
@@ -383,16 +386,13 @@ wwr::wwrblasStatus_t paterson_stockmeyer(wwr::wwrblasHandle_t handle, const int 
                                             d_coeffs + static_cast<std::size_t>(j) * plan.s,
                                             terms_in_block(j));
 
-    status = wwr::gemm<T>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>, buf[cur],
-                          ld[cur], d_X, ld_X, &kOne<T>, buf[next], ld[next]);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      break;
-    }
+    CLM_TRY(wwr::gemm<T>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>, buf[cur],
+                         ld[cur], d_X, ld_X, &kOne<T>, buf[next], ld[next]));
 
     cur = next;
   }
 
-  return status;
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 extern template std::size_t paterson_stockmeyer_bufferSize<float>(int, int, int);
@@ -401,13 +401,11 @@ extern template std::size_t paterson_stockmeyer_bufferSize<double>(int, int, int
 extern template std::size_t paterson_stockmeyer_power_stride<float>(int);
 extern template std::size_t paterson_stockmeyer_power_stride<double>(int);
 
-extern template wwr::wwrblasStatus_t paterson_stockmeyer<float>(wwr::wwrblasHandle_t, int,
-                                                                const float *, int, const float *,
-                                                                int, float *, int, void *,
-                                                                std::size_t, int);
-extern template wwr::wwrblasStatus_t paterson_stockmeyer<double>(wwr::wwrblasHandle_t, int,
-                                                                 const double *, int,
-                                                                 const double *, int, double *, int,
-                                                                 void *, std::size_t, int);
+extern template Status paterson_stockmeyer<float>(wwr::wwrblasHandle_t, int, const float *, int,
+                                                  const float *, int, float *, int, void *,
+                                                  std::size_t, int);
+extern template Status paterson_stockmeyer<double>(wwr::wwrblasHandle_t, int, const double *, int,
+                                                   const double *, int, double *, int, void *,
+                                                   std::size_t, int);
 
 } // namespace calaman
