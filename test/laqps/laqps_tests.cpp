@@ -36,6 +36,7 @@ import wwr.extension.memory_buffer;
 import calaman.laqps;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 import calaman.test.shared.tolerance;
 
 namespace calaman {
@@ -46,6 +47,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 using test::eps;
 using test::factorization_tol;
 using test::frobenius_norm;
@@ -223,7 +225,7 @@ void expect_matches_reference(int m, int n, unsigned seed,
   std::vector<T> ref_tau(static_cast<std::size_t>(k));
   ASSERT_EQ(ref_geqp3(m, n, ref_a.data(), lda, ref_jpvt.data(), ref_tau.data()), 0);
 
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   std::vector<T> got_a;
   std::vector<T> got_tau;
   std::vector<int> jpvt;
@@ -371,7 +373,7 @@ TEST(LaqpsOracleTests, DegradedColumnRecomputeFloat) {
 // fires on the degraded case and only there (the issue's explicit check), rather
 // than inferring it solely from the residual.
 TEST(LaqpsOracleTests, RecomputeBranchFiresOnlyWhenDegraded) {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const int m = 10;
   const int n = 4;
   const int lda = m;

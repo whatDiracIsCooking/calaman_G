@@ -39,6 +39,7 @@ import wwr.extension.memory_buffer;
 import calaman.feast;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -48,6 +49,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -83,13 +85,6 @@ std::vector<T> from_device(std::shared_ptr<DeviceHandle> handle, const DeviceBuf
     out[i] = host.data()[i];
   }
   return out;
-}
-
-// One device handle per process -- constructing it queries the device and
-// creates a stream + pool, so share it across the cases in the GPU suites.
-std::shared_ptr<DeviceHandle> &shared_handle() {
-  static std::shared_ptr<DeviceHandle> handle = std::make_shared<DeviceHandle>(0);
-  return handle;
 }
 
 struct Handles {
@@ -345,7 +340,7 @@ void check_diagonal() {
   const int count = static_cast<int>(expected.size());
   const int m0 = 8;
 
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   const auto q0 = random_matrix<T>(n, m0, 1234);
   const auto r = run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0);
@@ -390,7 +385,7 @@ void check_reference(int n, unsigned seed) {
       static_cast<T>((static_cast<double>(w[hi - 1]) + static_cast<double>(w[hi])) / 2.0);
   const int m0 = std::min(n, count + 4);
 
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   const auto q0 = random_matrix<T>(n, m0, seed + 1);
   const auto r = run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0);
@@ -434,7 +429,7 @@ void check_empty_interval() {
   const T emax = static_cast<T>(n + 10);
   const int m0 = 4;
 
-  auto handle = shared_handle();
+  auto handle = shared_device();
   Handles h = make_handles(handle);
   const auto q0 = random_matrix<T>(n, m0, 555);
   const auto r = run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0);

@@ -36,6 +36,7 @@ import wwr.extension.memory_buffer;
 import calaman.gebal;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -45,6 +46,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -239,7 +241,7 @@ void expect_reproduces(const std::vector<T> &A, const GebalRun<T> &g, int n, int
 // the balanced result and its reconstruction are exact.
 template<typename T>
 void dense_scaling() {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const int n = 4;
   const int lda = n;
   std::vector<T> A(static_cast<std::size_t>(lda) * n);
@@ -263,7 +265,7 @@ void dense_scaling() {
 // the swap kernels.
 template<typename T>
 void permutation_swap() {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const int n = 4;
   const int lda = n;
   std::vector<T> A(static_cast<std::size_t>(lda) * n, elem<T>::make(0, 0));
@@ -308,7 +310,7 @@ void permutation_swap() {
 // Scale pass over the balanced matrix must change nothing.
 template<typename T>
 void analytic_2x2() {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const int n = 2;
   const int lda = n;
   std::vector<T> A(4);
@@ -347,7 +349,7 @@ void analytic_2x2() {
 // untouched, and the reconstruction is trivial.
 template<typename T>
 void diagonal() {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const int n = 3;
   const int lda = n;
   std::vector<T> A(static_cast<std::size_t>(lda) * n, elem<T>::make(0, 0));
@@ -368,7 +370,7 @@ void diagonal() {
 // n == 1 is the trivial fixed point: ilo == ihi == 1, nothing changes.
 template<typename T>
 void one_by_one() {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const int n = 1;
   const int lda = 1;
   std::vector<T> A(1, elem<T>::make(5.0, 0.0));

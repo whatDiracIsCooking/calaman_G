@@ -33,6 +33,7 @@ import wwr.extension.memory_buffer;
 import calaman.laset;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -42,6 +43,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -114,7 +116,7 @@ T sentinel(std::size_t k) {
 // every written value is exact in T and `==` is the right comparison.
 template<typename T>
 void check(Region region, int m, int n, int lda, T alpha, T beta, const char *ctx) {
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   const std::size_t size = static_cast<std::size_t>(lda) * static_cast<std::size_t>(n);
 
   std::vector<T> ref(size);

@@ -34,6 +34,7 @@ import wwr.extension.memory_buffer;
 import calaman.orthogonalize;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 import calaman.test.shared.tolerance;
 
 namespace calaman {
@@ -44,6 +45,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 using test::factorization_tol;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
@@ -157,7 +159,7 @@ void expect_orthonormal(int m, int n, unsigned seed) {
     a_dev[i] = from_std<T>(a[i]);
   }
 
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrsolverDnHandle_t solver{};
   ASSERT_EQ(wwr::wwrsolverDnCreate(&solver), wwr::WWRSOLVER_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrsolverDnSetStream(solver, handle->stream().get()),

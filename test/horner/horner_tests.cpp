@@ -29,6 +29,7 @@ import wwr.extension.memory_buffer;
 import calaman.horner;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 import calaman.test.shared.tolerance;
 
 namespace calaman {
@@ -39,6 +40,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 using test::eps;
 using test::frobenius_norm;
 using test::kTolFactor;
@@ -75,14 +77,6 @@ std::vector<T> from_device(std::shared_ptr<DeviceHandle> handle, const DeviceBuf
     out[i] = host.data()[i];
   }
   return out;
-}
-
-// One device handle per process -- constructing it queries the device and
-// creates a stream + pool, so share it across the cases in the GPU suites. The
-// host-only suites never call this, so they need no device.
-std::shared_ptr<DeviceHandle> &shared_handle() {
-  static std::shared_ptr<DeviceHandle> handle = std::make_shared<DeviceHandle>(0);
-  return handle;
 }
 
 // C := A * B, all n-by-n column-major with leading dimension n, via reference
@@ -186,7 +180,7 @@ void expect_poly_matches(int n, int degree, unsigned seed) {
   const auto oracle = poly_reference(a, n, c, degree);
 
   std::vector<T> got(static_cast<std::size_t>(ldp) * n, T{0});
-  ASSERT_EQ(run_horner<T>(shared_handle(), n, c, degree, a, lda, ldp, got),
+  ASSERT_EQ(run_horner<T>(shared_device(), n, c, degree, a, lda, ldp, got),
             wwr::WWRBLAS_STATUS_SUCCESS);
 
   const T tol = poly_tol(a, c, degree, n);
@@ -328,7 +322,7 @@ TEST(HornerOracleTests, ZeroPolynomial) {
   }
   std::vector<double> c(static_cast<std::size_t>(degree) + 1, 0.0);
   std::vector<double> got(static_cast<std::size_t>(n) * n, 7.0); // sentinel, must be overwritten
-  ASSERT_EQ(run_horner<double>(shared_handle(), n, c, degree, a, n, n, got),
+  ASSERT_EQ(run_horner<double>(shared_device(), n, c, degree, a, n, n, got),
             wwr::WWRBLAS_STATUS_SUCCESS);
   for (const double v : got) {
     EXPECT_DOUBLE_EQ(v, 0.0);
@@ -357,7 +351,7 @@ TEST(HornerOracleTests, NilpotentSeriesTerminates) {
 
   const auto oracle = poly_reference(a, n, c, degree);
   std::vector<double> got(static_cast<std::size_t>(n) * n, 0.0);
-  ASSERT_EQ(run_horner<double>(shared_handle(), n, c, degree, a, n, n, got),
+  ASSERT_EQ(run_horner<double>(shared_device(), n, c, degree, a, n, n, got),
             wwr::WWRBLAS_STATUS_SUCCESS);
   const double tol = poly_tol(a, c, degree, n);
   for (std::size_t idx = 0; idx < got.size(); ++idx) {
@@ -390,7 +384,7 @@ TEST(HornerPaddingTests, PaddingRowsBetweenNAndLdpUntouched) {
 
     const double sentinel = -123.5;
     std::vector<double> buf(static_cast<std::size_t>(ldp) * n, sentinel);
-    ASSERT_EQ(run_horner<double>(shared_handle(), n, c, degree, a, lda, ldp, buf),
+    ASSERT_EQ(run_horner<double>(shared_device(), n, c, degree, a, lda, ldp, buf),
               wwr::WWRBLAS_STATUS_SUCCESS);
 
     const auto oracle = poly_reference(a, n, c, degree);

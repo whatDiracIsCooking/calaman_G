@@ -26,6 +26,7 @@ calaman_add_gtest_executable(
   calaman.laqps
   calaman.test.shared.abort_policy
   calaman.test.shared.device_handle
+  calaman.test.utils.shared_device
   calaman.test.shared.tolerance
   calaman::lapack_reference
   wwr.blas

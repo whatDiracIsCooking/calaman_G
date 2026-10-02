@@ -36,6 +36,7 @@ import wwr.extension.memory_buffer;
 import calaman.laqp2;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 import calaman.test.shared.tolerance;
 
 namespace calaman {
@@ -46,6 +47,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 using test::eps;
 using test::factorization_tol;
 using test::frobenius_norm;
@@ -171,7 +173,7 @@ void expect_matches_reference(int m, int n, unsigned seed,
   ASSERT_EQ(ref_geqp3(m, n, ref_a.data(), lda, ref_jpvt.data(), ref_tau.data()), 0);
 
   // Device laqp2.
-  auto handle = std::make_shared<DeviceHandle>(0);
+  auto handle = shared_device();
   wwr::wwrblasHandle_t blas{};
   ASSERT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);

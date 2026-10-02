@@ -28,6 +28,7 @@ import wwr.extension.memory_buffer;
 import calaman.columnwise_ell2;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.utils.shared_device;
 
 namespace calaman {
 namespace {
@@ -37,6 +38,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
@@ -70,14 +72,6 @@ std::vector<T> from_device(std::shared_ptr<DeviceHandle> handle, const DeviceBuf
     out[i] = host.data()[i];
   }
   return out;
-}
-
-// One device handle per process -- constructing it queries the device and
-// creates a stream + pool, so share it across the GPU cases. The host-only
-// suite never calls this, so it needs no device.
-std::shared_ptr<DeviceHandle> &shared_handle() {
-  static std::shared_ptr<DeviceHandle> handle = std::make_shared<DeviceHandle>(0);
-  return handle;
 }
 
 // The oracle: cblas_?nrm2 over one column (rows elements, stride 1 within the
@@ -126,11 +120,11 @@ void expect_matches_reference(std::size_t rows, std::size_t cols, std::size_t ld
     oracle[j] = ref_nrm2(static_cast<int>(rows), a.data() + j * lda);
   }
 
-  auto d_a = to_device(shared_handle(), a);
-  DeviceBuffer<T> d_result(cols, shared_handle());
+  auto d_a = to_device(shared_device(), a);
+  DeviceBuffer<T> d_result(cols, shared_device());
 
-  columnwise_ell2<T>(shared_handle()->stream().get(), rows, cols, d_a.data(), lda, d_result.data());
-  const auto got = from_device(shared_handle(), d_result, cols);
+  columnwise_ell2<T>(shared_device()->stream().get(), rows, cols, d_a.data(), lda, d_result.data());
+  const auto got = from_device(shared_device(), d_result, cols);
 
   for (std::size_t j = 0; j < cols; ++j) {
     EXPECT_NEAR(got[j], oracle[j], norm_tol(oracle[j]))
@@ -172,10 +166,10 @@ TEST(ColumnwiseEll2OracleTests, SingleRowIsMagnitude) {
     a[j] = -static_cast<double>(j + 1); // -1, -2, ... all negative
   }
 
-  auto d_a = to_device(shared_handle(), a);
-  DeviceBuffer<double> d_result(cols, shared_handle());
-  columnwise_ell2<double>(shared_handle()->stream().get(), 1, cols, d_a.data(), 1, d_result.data());
-  const auto got = from_device(shared_handle(), d_result, cols);
+  auto d_a = to_device(shared_device(), a);
+  DeviceBuffer<double> d_result(cols, shared_device());
+  columnwise_ell2<double>(shared_device()->stream().get(), 1, cols, d_a.data(), 1, d_result.data());
+  const auto got = from_device(shared_device(), d_result, cols);
 
   for (std::size_t j = 0; j < cols; ++j) {
     const double want = static_cast<double>(j + 1); // |-(j+1)|

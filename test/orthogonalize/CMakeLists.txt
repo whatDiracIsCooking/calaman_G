@@ -24,6 +24,7 @@ calaman_add_gtest_executable(
   calaman.orthogonalize
   calaman.test.shared.abort_policy
   calaman.test.shared.device_handle
+  calaman.test.utils.shared_device
   calaman.test.shared.tolerance
   wwr.solver
   wwr.complex
