@@ -10,11 +10,14 @@
 # The device-kernel library: the five genuinely per-element pieces (the fused
 # Pade evaluation, the numerator/denominator split, the balancing-vector
 # widening, and the two halves of the 1-norm). expm.cu launches its own functors
-# through wwr.extension.parallel_for AND defers the column sums to
-# calaman.reduce_columns's header, so it links BOTH PRIVATE: the first carries
-# parallel_for.cuh (plus, transitively, wwr.device for complex.h); the second,
-# the src/ include root for reduce_columns.cuh plus its own wwr.device dep. The
-# link is PRIVATE, as every device-library link is.
+# through wwr.extension.parallel_for, defers the column sums to
+# calaman.reduce_columns's header, and takes its type-generic scalar arithmetic
+# from calaman.elem_ops's header, so it links all three PRIVATE: parallel_for
+# carries parallel_for.cuh (plus, transitively, wwr.device for complex.h);
+# reduce_columns, the src/ include root for reduce_columns.cuh plus its own
+# wwr.device dep; elem_ops, the src/ root for elem_ops/elem_ops.cuh (which pulls
+# complex.h and wrappers/math/math.cuh via wwr.device). The link is PRIVATE, as
+# every device-library link is.
 calaman_add_gpu_device_library(
   NAME
   calaman.expm.device
@@ -23,6 +26,7 @@ calaman_add_gpu_device_library(
   LINK_PRIVATE
   wwr.extension.parallel_for
   calaman.reduce_columns
+  calaman.elem_ops
 )
 
 # The module itself: ordinary host C++23, no device code. instantiations.cpp is
