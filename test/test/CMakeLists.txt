@@ -3,6 +3,7 @@
 # test/shared/.
 
 add_subdirectory(columnwise_ell1)
+add_subdirectory(columnwise_ell2)
 add_subdirectory(complex_cast)
 add_subdirectory(diff_norm)
 add_subdirectory(gebal)
