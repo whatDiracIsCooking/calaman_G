@@ -8,6 +8,13 @@
 
 add_subdirectory(common)
 
+# calaman.error_handling is a pure-host value type (Status) that unifies the
+# three WarpWraps error domains behind one return type. Dependency-free of the
+# rest of src/ -- added next to common as foundational shared infrastructure. No
+# consumer links it yet; it is landed on its own (diff_norm's cross-domain path
+# is the motivating adopter, migrated separately).
+add_subdirectory(error_handling)
+
 # calaman.elem_ops is header-only device infrastructure (per-element scalar
 # arithmetic over float/double/complex), consumed by other modules' .cu TUs, so
 # it is added early -- before any consumer's device library links its INTERFACE

@@ -16,8 +16,10 @@
  * largest-magnitude element, so this reads that one element back from the device
  * and takes its magnitude. That costs a synchronizing device->host copy and the
  * wwr.runtime_api dependency, and it crosses error domains: iamax reports a BLAS
- * status but the copy reports a runtime error, which -- WarpWraps exposing no
- * neutral "internal error" BLAS code -- is surfaced as WWRBLAS_STATUS_NOT_INITIALIZED.
+ * status but the copy reports a runtime error. Both are returned as a
+ * calaman::Status (calaman.error_handling), which carries each in its OWN domain
+ * -- so the copy's runtime failure is reported as a runtime error, not disguised
+ * as a stand-in BLAS code the way a wwrblasStatus_t return once forced.
  *
  * No device code lives here. asum/nrm2/iamax/axpy are stock BLAS, so this module
  * reaches for the OUTERMOST WarpWraps layer that does the job -- the type-safe
@@ -36,21 +38,30 @@
  * the result is spelled T here rather than reused as the source type.
  *
  * Usage:
- *   import calaman.diff_norm;
- *   import wwr.blas;   // wwrblasHandle_t, wwrblasCreate, WWRBLAS_STATUS_SUCCESS
+ *   import calaman.diff_norm;   // names calaman::diff_norm, Norm and Status
+ *   import wwr.blas;            // wwrblasHandle_t, wwrblasCreate
  *   wwr::wwrblasHandle_t handle{};
  *   wwr::wwrblasCreate(&handle);
  *   // d_x, d_y: device vectors of length n; norm: a host scalar
  *   float norm = 0.0f;
- *   calaman::diff_norm(handle, calaman::Norm::inf, n, d_x, 1, d_y, 1, &norm);
+ *   const calaman::Status s =
+ *       calaman::diff_norm(handle, calaman::Norm::inf, n, d_x, 1, d_y, 1, &norm);
+ *   if (!s.ok()) { ... report s.name() and s.message() ... }
  */
 
 export module calaman.diff_norm;
 
-import wwr.blas;               // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
-import wwr.runtime_api;        // wwrMemcpy, wwrMemcpyDeviceToHost, wwrSuccess (ell_inf fetch)
-import wwr.wrappers.blas;      // axpy, asum, nrm2, iamax
-import calaman.common;         // kNegativeOne<T> (:constants), Norm (:enums)
+import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_STATUS_*
+import wwr.runtime_api;   // wwrMemcpy, wwrMemcpyDeviceToHost, wwrSuccess (ell_inf fetch)
+import wwr.wrappers.blas; // axpy, asum, nrm2, iamax
+import calaman.common;    // kNegativeOne<T> (:constants), Norm (:enums)
+
+// export import, not a plain import: diff_norm RETURNS calaman::Status, and
+// Status carries member functions (ok/name/message). A consumer of
+// `import calaman.diff_norm;` must see those definitions, not just the type
+// name, so the whole module is re-exported -- unlike Norm below, a plain enum
+// whose name alone (export using) is enough.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -64,9 +75,9 @@ export using calaman::Norm;
 /// Enqueues an axpy (y := -x + y, the scalar fixed at kNegativeOne<T>) followed
 /// by the reduction @p which selects: asum for l1, nrm2 for l2, or iamax plus a
 /// device read for inf. Writes the norm to @p result. Short-circuits: if the axpy
-/// (or, for inf, the iamax) does not succeed its status is returned and no norm is
-/// written. Does nothing and returns success when @p n is 0. y always ends up
-/// holding y - x, whether or not the caller wanted the norm.
+/// (or, for inf, the iamax or the device read) does not succeed its status is
+/// returned and no norm is written. Does nothing and returns success when @p n is
+/// 0. y always ends up holding y - x, whether or not the caller wanted the norm.
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param handle GPU BLAS handle in host pointer mode; x and y live on its device
@@ -77,11 +88,12 @@ export using calaman::Norm;
 /// @param y Device vector, updated in place to y - x, stride @p incy
 /// @param incy Stride between elements of y
 /// @param result Host scalar; ||y - x|| in norm @p which is written here (blocks)
-/// @return The BLAS status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
-///         (for inf, WWRBLAS_STATUS_NOT_INITIALIZED if the device read failed)
+/// @return A calaman::Status: success, or the status of the failing step -- the
+///         BLAS status for axpy/asum/nrm2/iamax, or (for inf) the runtime error
+///         if the device read failed, each carried in its own domain
 export template<typename T>
-wwr::wwrblasStatus_t diff_norm(wwr::wwrblasHandle_t handle, const Norm which, const int n,
-                               const T *x, const int incx, T *y, const int incy, T *result) {
+calaman::Status diff_norm(wwr::wwrblasHandle_t handle, const Norm which, const int n, const T *x,
+                          const int incx, T *y, const int incy, T *result) {
   if (n == 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
@@ -106,9 +118,10 @@ wwr::wwrblasStatus_t diff_norm(wwr::wwrblasHandle_t handle, const Norm which, co
       return imax_status;
     }
     T elem{};
-    if (wwr::wwrMemcpy(&elem, y + (idx - 1) * incy, sizeof(T), wwr::wwrMemcpyDeviceToHost) !=
-        wwr::wwrSuccess) {
-      return wwr::WWRBLAS_STATUS_NOT_INITIALIZED; // the only neutral non-success code exposed
+    const auto copy_status =
+        wwr::wwrMemcpy(&elem, y + (idx - 1) * incy, sizeof(T), wwr::wwrMemcpyDeviceToHost);
+    if (copy_status != wwr::wwrSuccess) {
+      return copy_status; // the runtime error, in its own domain -- no masquerade
     }
     *result = elem < T{0} ? -elem : elem;
     return wwr::WWRBLAS_STATUS_SUCCESS;
