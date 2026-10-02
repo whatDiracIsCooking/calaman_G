@@ -71,6 +71,12 @@ import wwr.extension.common; // success_code / error_name / error_string + the w
 import wwr.extension.blas;   // wwrblasStatus_t (re-exported) + its trait specialisation
 import wwr.extension.solver; // wwrsolverStatus_t (re-exported) + its trait specialisation
 
+// PointerModeStatus -- a recording error policy for ScopedPointerMode -- is a
+// second error-handling value type that ships beside Status. `export import`
+// re-exports it so a consumer (calaman.diff_norm) sees it through this one
+// interface, exactly as calaman.common assembles its partitions.
+export import :pointer_mode_policy;
+
 export namespace calaman {
 
 /// @brief Which WarpWraps error domain a Status was built from

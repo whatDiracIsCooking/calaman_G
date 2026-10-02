@@ -122,8 +122,8 @@ T y_at(std::size_t i) {
 /// The device vectors are the strided elements of length-(n*inc) buffers, so the
 /// reference difference is gathered over the same stride. n >= 1 here; the empty
 /// case is its own test because diff_norm leaves `result` untouched.
-template<typename T>
-void expect_matches_reference(Norm which, int n, int inc) {
+template<Norm which, typename T>
+void expect_matches_reference(int n, int inc) {
   ASSERT_GE(n, 1);
   ASSERT_GE(inc, 1);
   const std::size_t total = static_cast<std::size_t>(n) * static_cast<std::size_t>(inc);
@@ -152,7 +152,7 @@ void expect_matches_reference(Norm which, int n, int inc) {
   auto d_y = to_device(handle, host_y, total);
 
   T got = static_cast<T>(-12345);
-  const auto status = diff_norm<T>(blas, which, n, d_x.data(), inc, d_y.data(), inc, &got);
+  const auto status = diff_norm<which>(blas, n, d_x.data(), inc, d_y.data(), inc, &got);
   wwr::wwrblasDestroy(blas);
 
   EXPECT_TRUE(status.ok()) << "norm=" << static_cast<int>(which) << " n=" << n << " inc=" << inc
@@ -163,9 +163,9 @@ void expect_matches_reference(Norm which, int n, int inc) {
 
 template<typename T>
 void run_all_norms(int n, int inc) {
-  expect_matches_reference<T>(Norm::l1, n, inc);
-  expect_matches_reference<T>(Norm::l2, n, inc);
-  expect_matches_reference<T>(Norm::inf, n, inc);
+  expect_matches_reference<Norm::l1, T>(n, inc);
+  expect_matches_reference<Norm::l2, T>(n, inc);
+  expect_matches_reference<Norm::inf, T>(n, inc);
 }
 
 /// @brief Same oracle check, but with the handle in DEVICE pointer mode
@@ -175,8 +175,8 @@ void run_all_norms(int n, int inc) {
 /// and land the norm in device memory -- for ell_inf that is the calaman.set_element
 /// path (iamax's device index -> set_element_abs). The reference is identical; only
 /// where the result lives changes, so the device scalar is read back to compare.
-template<typename T>
-void expect_matches_reference_device(Norm which, int n, int inc) {
+template<Norm which, typename T>
+void expect_matches_reference_device(int n, int inc) {
   ASSERT_GE(n, 1);
   ASSERT_GE(inc, 1);
   const std::size_t total = static_cast<std::size_t>(n) * static_cast<std::size_t>(inc);
@@ -206,7 +206,7 @@ void expect_matches_reference_device(Norm which, int n, int inc) {
   DeviceBuffer<T> d_result(1, handle);
 
   const auto status =
-      diff_norm<T>(blas, which, n, d_x.data(), inc, d_y.data(), inc, d_result.data());
+      diff_norm<which>(blas, n, d_x.data(), inc, d_y.data(), inc, d_result.data());
   EXPECT_TRUE(status.ok()) << "device norm=" << static_cast<int>(which) << " n=" << n
                            << " inc=" << inc << " status=" << status.name();
 
@@ -222,9 +222,9 @@ void expect_matches_reference_device(Norm which, int n, int inc) {
 
 template<typename T>
 void run_all_norms_device(int n, int inc) {
-  expect_matches_reference_device<T>(Norm::l1, n, inc);
-  expect_matches_reference_device<T>(Norm::l2, n, inc);
-  expect_matches_reference_device<T>(Norm::inf, n, inc);
+  expect_matches_reference_device<Norm::l1, T>(n, inc);
+  expect_matches_reference_device<Norm::l2, T>(n, inc);
+  expect_matches_reference_device<Norm::inf, T>(n, inc);
 }
 
 TEST(DiffNormOracleTests, MatchesReferenceFloat) {
@@ -271,7 +271,7 @@ TEST(DiffNormOracleTests, EmptyIsNoopSuccess) {
   auto d_y = to_device(handle, host_y, 1);
 
   double got = -12345.0;
-  const auto status = diff_norm<double>(blas, Norm::l2, 0, d_x.data(), 1, d_y.data(), 1, &got);
+  const auto status = diff_norm<Norm::l2>(blas, 0, d_x.data(), 1, d_y.data(), 1, &got);
   wwr::wwrblasDestroy(blas);
 
   EXPECT_TRUE(status.ok());
