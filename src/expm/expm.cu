@@ -1,9 +1,9 @@
 // expm.cu
 //
-// The device-kernel half of calaman.expm: the five genuinely per-element pieces
+// The device-kernel half of calaman.expm: the four genuinely per-element pieces
 // of the scaling-and-squaring matrix exponential. Everything else in expm is a
-// host composition of wrapped BLAS (gemm/geam/scal/dgmm), the wrapped LU solve
-// (getrf/getrs) and calaman.gebal; these are the kernels those calls cannot
+// host composition of wrapped BLAS (gemm/geam) and the wrapped LU solve
+// (getrf/getrs); these are the kernels those calls cannot
 // express. Shared unchanged between both backends, like lacpy.cu / gebal.cu: a
 // .cu is compiled by the backend compiler, so parallel_for's launch machinery,
 // calaman.reduce_columns's segmented reduce, the raw <<<>>> launch syntax and
@@ -158,25 +158,6 @@ struct PadeSplitFunctor {
   }
 };
 
-// ── widen gebal's real scale vector into element-typed D and D^-1 ────────────
-
-template<typename T>
-struct ExpandScaleFunctor {
-  using ops = elem_ops<T>;
-  using R = typename ops::real_type;
-
-  const R *const d_scale_;
-  T *const d_diag_;
-  T *const d_inv_;
-
-  __device__ void operator()(const int idx) const {
-    const R d = d_scale_[idx];
-    d_diag_[idx] = ops::from_real(d);
-    // gebal only ever reports powers of two, so this division is exact.
-    d_inv_[idx] = ops::from_real(R(1) / d);
-  }
-};
-
 // ── 1-norm support: a modulus pre-transform and a plus fold for reduce_columns ─
 
 template<typename T, typename R>
@@ -281,16 +262,6 @@ void pade_split(const wwr::wwrStream_t stream, const int n, const T *d_U, const 
 }
 
 template<typename T, typename R>
-void expand_scale(const wwr::wwrStream_t stream, const int n, const R *d_scale, T *d_diag,
-                  T *d_inv) {
-  if (n < 1) {
-    return;
-  }
-  const ExpandScaleFunctor<T> functor{d_scale, d_diag, d_inv};
-  wwr::extension::parallel_for<int>(stream, n, functor);
-}
-
-template<typename T, typename R>
 void abs_colsums(const wwr::wwrStream_t stream, const int n, const T *d_A, const int lda,
                  R *d_colsum) {
   if (n < 1) {
@@ -342,14 +313,6 @@ template void pade_split<wwrFloatComplex>(wwr::wwrStream_t, int, const wwrFloatC
 template void pade_split<wwrDoubleComplex>(wwr::wwrStream_t, int, const wwrDoubleComplex *,
                                            const wwrDoubleComplex *, wwrDoubleComplex *, int,
                                            wwrDoubleComplex *);
-
-template void expand_scale<float, float>(wwr::wwrStream_t, int, const float *, float *, float *);
-template void expand_scale<double, double>(wwr::wwrStream_t, int, const double *, double *,
-                                           double *);
-template void expand_scale<wwrFloatComplex, float>(wwr::wwrStream_t, int, const float *,
-                                                   wwrFloatComplex *, wwrFloatComplex *);
-template void expand_scale<wwrDoubleComplex, double>(wwr::wwrStream_t, int, const double *,
-                                                     wwrDoubleComplex *, wwrDoubleComplex *);
 
 template void abs_colsums<float, float>(wwr::wwrStream_t, int, const float *, int, float *);
 template void abs_colsums<double, double>(wwr::wwrStream_t, int, const double *, int, double *);

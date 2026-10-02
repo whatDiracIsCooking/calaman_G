@@ -49,7 +49,6 @@ calaman_add_gtest_suite_tests(
   ExpmClosedFormTests
   ExpmIdentityTests
   ExpmLadderTests
-  ExpmBalanceTests
   ExpmPaddingTests
   ExpmPointerModeTests
   REQUIRES_GPU

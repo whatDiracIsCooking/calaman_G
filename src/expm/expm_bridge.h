@@ -14,9 +14,9 @@
  * constexpr helpers over them (pade_coeffs, pade_num_powers, pade_num_gemms,
  * pade_num_blocks, kPadeDegrees) are pure host arithmetic the interface reads to
  * drive the ladder; they name no device and no complex type, so a host GMF parse
- * is happy with them. The KERNEL LAUNCHERS are the five genuinely per-element
+ * is happy with them. The KERNEL LAUNCHERS are the four genuinely per-element
  * pieces of expm -- the fused Pade evaluation, the numerator/denominator split,
- * the balancing-vector widening, and the two halves of the 1-norm -- reached
+ * and the two halves of the 1-norm -- reached
  * through wwr.extension.parallel_for / calaman.reduce_columns from expm.cu.
  *
  * COMPLEX TYPES DO NOT APPEAR HERE, for the reason complex_cast_bridge.h spells
@@ -175,16 +175,6 @@ void pade_even_odd(wwr::wwrStream_t stream, int n, int num_powers, const T *d_P1
 template<typename T>
 void pade_split(wwr::wwrStream_t stream, int n, const T *d_U, const T *d_V, T *d_P, int ldp,
                 T *d_Q);
-
-/// @brief Widen a real balancing vector into element-typed D and D^-1 vectors
-///
-/// gebal reports the diagonal of D as reals even for complex matrices, while
-/// dgmm wants a vector of the matrix element type. This writes both
-/// d_diag[i] = D_i and d_inv[i] = 1 / D_i in one pass. The entries of D are
-/// exact powers of two, so the reciprocal is exact and undoing the balancing is
-/// a similarity that costs no accuracy.
-template<typename T, typename R>
-void expand_scale(wwr::wwrStream_t stream, int n, const R *d_scale, T *d_diag, T *d_inv);
 
 /// @brief Column absolute sums: d_colsum[j] = sum_i |A(i, j)| for each column j
 ///

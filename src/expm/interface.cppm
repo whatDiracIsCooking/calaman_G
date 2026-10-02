@@ -8,12 +8,16 @@
  * (Higham, "The Scaling and Squaring Method for the Matrix Exponential
  * Revisited", SIAM J. Matrix Anal. Appl. 26(4), 2005):
  *
- *   1. Optionally BALANCE the matrix (calaman.gebal, scaling half only), keeping
- *      the result only if its 1-norm actually fell.
- *   2. Take the CHEAPEST degree m in {3, 5, 7, 9, 13} whose backward-error
+ *   1. Take the CHEAPEST degree m in {3, 5, 7, 9, 13} whose backward-error
  *      threshold theta_m already covers norm_1(A).
- *   3. Only if even theta_13 does not, SCALE: pick the smallest s with
+ *   2. Only if even theta_13 does not, SCALE: pick the smallest s with
  *      norm_1(A)/2^s <= theta_13, evaluate X = r_13(A/2^s), and square s times.
+ *
+ * NO BALANCING. expm does not balance the matrix itself: balancing is the
+ * orthogonal similarity exp(A) = D exp(D^-1 A D) D^-1, which composes around this
+ * routine rather than belonging inside it. A caller who wants it runs
+ * calaman.gebal (GebalJob::Scale) to form D^-1 A D, calls expm on that, and
+ * re-wraps the result with D and D^-1 (the README spells out the recipe).
  *
  * The [m/m] diagonal Pade approximant r_m(x) = q_m(x)^-1 p_m(x), with
  * q_m(x) = p_m(-x), matches exp(x) through order x^(2m). Splitting p_m into its
@@ -23,8 +27,8 @@
  * numerator -- a general polynomial evaluator (calaman.horner) cannot see that
  * relationship. The README has the degree-13 nested form and the cost table.
  *
- * STRUCTURE. expm is a HOST COMPOSITION over wrapped BLAS (gemm/geam/scal/dgmm),
- * the wrapped LU solve (getrf/getrs), calaman.gebal and five fused kernels of
+ * STRUCTURE. expm is a HOST COMPOSITION over wrapped BLAS (gemm/geam), the
+ * wrapped LU solve (getrf/getrs) and four fused kernels of
  * its own (expm.cu, reached through expm_bridge.h). The matrix products are the
  * OUTERMOST WarpWraps layer that does the job -- the type-safe wrappers in
  * wwr.wrappers.blas / wwr.wrappers.solver (CLAUDE.md, "prefer the outermost
@@ -52,11 +56,9 @@
  * BLAS+solver routine reports through the BLAS enum and a non-success solver
  * result surfaces as WWRBLAS_STATUS_INTERNAL_ERROR.
  *
- * SYNCHRONIZES @p stream: once to read norm_1(A) onto the host (the degree and
- * the scaling exponent drive host-side control flow), and twice more when
- * balancing is enabled (gebal is itself host-driven, and the balanced norm has
- * to be read back to decide whether to keep it). Call pade() directly when the
- * norm is known a priori and a fully asynchronous path is required.
+ * SYNCHRONIZES @p stream once, to read norm_1(A) onto the host (the degree and
+ * the scaling exponent drive host-side control flow). Call pade() directly when
+ * the norm is known a priori and a fully asynchronous path is required.
  *
  * Usage:
  *   import calaman.expm;
@@ -67,9 +69,9 @@
  *   std::size_t bytes = 0;
  *   calaman::expm_bufferSize<double>(cusolver, n, &bytes);
  *   // d_work: bytes of 256-aligned device scratch; d_info: device int[2]
- *   calaman::ExpmInfo info{};
+ *   calaman::ExpmPlan plan{};
  *   calaman::expm<double>(cublas, cusolver, stream, n, d_A, n, d_expA, n,
- *                         d_work, bytes, d_info, &info);
+ *                         d_work, bytes, d_info, &plan);
  */
 
 module;
@@ -84,10 +86,9 @@ import wwr.blas;            // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_*, poin
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_STATUS_SUCCESS
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex, make_wwr*Complex (host)
 import wwr.wrappers.common; // usual_fp, complex_fp, ComplexToRealType
-import wwr.wrappers.blas;   // gemm, geam, scal, dgmm
+import wwr.wrappers.blas;   // gemm, geam
 import wwr.wrappers.solver; // getrf, getrf_bufferSize, getrs (legacy, int-dimensioned)
 import calaman.common;      // WorkspaceBuilder, align_up
-import calaman.gebal;       // gebal, gebal_bufferSize, GebalJob
 
 namespace calaman {
 
@@ -192,16 +193,10 @@ struct PadeWorkspace {
 /**
  * @brief Device workspace slices for expm(), all 256-aligned.
  *
- *   [As     | n*n T                     ]  scaled and/or balanced matrix, and,
- *                                          once pade() has consumed it, the
- *                                          ping-pong target for the squaring
- *                                          phase and the scratch for undoing the
- *                                          balancing -- hence the sq alias
+ *   [As     | n*n T                     ]  scaled matrix, and, once pade() has
+ *                                          consumed it, the ping-pong target for
+ *                                          the squaring phase -- hence the sq alias
  *   [colsum | n   ComplexToRealType<T>  ]  per-column absolute sums
- *   [scale  | n   ComplexToRealType<T>  ]  gebal's diagonal D
- *   [dscale | n   T                     ]  D widened to the element type
- *   [dinv   | n   T                     ]  D^-1, likewise
- *   [gwork  | gebal ints                ]  gebal scratch
  *   [pade   | PadeWorkspace, sized for the whole ladder ]
  */
 template<wwr::usual_fp T>
@@ -211,10 +206,6 @@ struct ExpmWorkspace {
   T *As = nullptr;
   T *sq = nullptr; // aliases As: only ever touched after pade() has returned
   RealT *colsum = nullptr;
-  RealT *scale = nullptr;
-  T *dscale = nullptr;
-  T *dinv = nullptr;
-  int *gwork = nullptr;
   void *pade_base = nullptr;
 
   static ExpmWorkspace make(void *d_work, const int n) {
@@ -234,13 +225,6 @@ struct ExpmWorkspace {
     r.sq = r.As;
 
     r.colsum = reinterpret_cast<RealT *>(bump(sn * sizeof(RealT)));
-    r.scale = reinterpret_cast<RealT *>(bump(sn * sizeof(RealT)));
-    r.dscale = reinterpret_cast<T *>(bump(sn * sizeof(T)));
-    r.dinv = reinterpret_cast<T *>(bump(sn * sizeof(T)));
-
-    int gebal_ints = 0;
-    gebal_bufferSize<T>(n, &gebal_ints);
-    r.gwork = reinterpret_cast<int *>(bump(static_cast<std::size_t>(gebal_ints) * sizeof(int)));
 
     r.pade_base = p;
     return r;
@@ -314,36 +298,16 @@ constexpr wwr::ComplexToRealType<T> pade_theta(const int m) {
 }
 
 /// @brief The shape of one evaluation: which approximant, how many squarings, what it costs.
+///
+/// Both the prediction and the report: expm_plan() computes it from a norm ahead
+/// of the call, and expm() fills it with the plan it executed. They are the same
+/// type because expm is deterministic -- the degree and the scaling exponent
+/// follow from the 1-norm alone, so what it WILL do and what it DID coincide, and
+/// a second "info" struct would only restate a subset of this one.
 export struct ExpmPlan {
-  int m;         ///< Pade degree chosen from {3, 5, 7, 9, 13}
-  int s;         ///< Squarings, i.e. the matrix is evaluated at A / 2^s
-  int num_gemms; ///< Matrix products the whole evaluation will issue
-};
-
-/// @brief Whether expm() may balance the matrix before exponentiating it.
-export enum class ExpmBalance {
-  None, ///< Use the matrix exactly as given.
-  Auto, ///< Balance, and keep the result only if the 1-norm actually fell.
-};
-
-/// @brief Tuning knobs for expm(); the default is the recommended setting.
-export struct ExpmOptions {
-  /// Diagonal balancing (calaman.gebal, scaling half only). Every factor of two
-  /// it takes off the 1-norm is one squaring -- one n^3 product -- removed from
-  /// the tail, and it improves accuracy on badly scaled matrices; the similarity
-  /// is exact because gebal only scales by powers of two. Auto is safe: the
-  /// balanced matrix is kept only when its 1-norm is strictly smaller, so the
-  /// flop count can never rise. Set None to reproduce the unbalanced result bit
-  /// for bit, or when Watkins' caveat applies ("A case where balancing is
-  /// harmful", ETNA 2006).
-  ExpmBalance balance = ExpmBalance::Auto;
-};
-
-/// @brief What expm() actually did, reported back on request.
-export struct ExpmInfo {
-  int s = 0;             ///< Squarings performed
-  int m = 0;             ///< Pade degree used
-  bool balanced = false; ///< Whether the balanced matrix was the one exponentiated
+  int m = 0;         ///< Pade degree chosen from {3, 5, 7, 9, 13}
+  int s = 0;         ///< Squarings, i.e. the matrix is evaluated at A / 2^s
+  int num_gemms = 0; ///< Matrix products the whole evaluation will issue
 };
 
 /**
@@ -475,17 +439,12 @@ wwr::wwrblasStatus_t expm_bufferSize(wwr::wwrsolverDnHandle_t handle, const int 
     return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
   }
 
-  int gebal_ints = 0;
-  gebal_bufferSize<T>(n, &gebal_ints);
-
   const std::size_t sn = static_cast<std::size_t>(n);
   using RealT = wwr::ComplexToRealType<T>;
 
   WorkspaceBuilder ws;
   ws.add_fixed<T>(sn * sn);                                 // As (and, later, sq)
-  ws.add_fixed<RealT>(sn, 2);                               // colsum, scale
-  ws.add_fixed<T>(sn, 2);                                   // dscale, dinv
-  ws.add_fixed<int>(static_cast<std::size_t>(gebal_ints));  // gebal scratch
+  ws.add_fixed<RealT>(sn);                                  // colsum
   // The pade region, sized for the worst degree on the ladder.
   ws.add_fixed<T>(sn * sn, static_cast<std::size_t>(pade_max_blocks()));
   ws.add_fixed<int>(sn);                                    // ipiv
@@ -687,9 +646,9 @@ wwr::wwrblasStatus_t pade(wwr::wwrblasHandle_t cublas_handle,
  * @param d_work          Device workspace of at least expm_bufferSize<T>() bytes.
  * @param lwork_bytes     Size of @p d_work in bytes.
  * @param d_info          Device array of 2 ints: [0] getrf info, [1] getrs info.
- * @param info            Optional output: the degree, the squarings, whether
- *                        balancing was kept.
- * @param opts            Balancing setting; see ExpmOptions.
+ * @param plan            Optional output: the plan expm executed -- degree,
+ *                        squarings and gemm count, the same ExpmPlan expm_plan()
+ *                        would have predicted from norm_1(A).
  * @return WWRBLAS_STATUS_SUCCESS, or the first error; a BLAS/solver failure is
  *         WWRBLAS_STATUS_INTERNAL_ERROR, a bad argument (including a 1-norm that
  *         is not finite) WWRBLAS_STATUS_INVALID_VALUE, an undersized workspace
@@ -705,7 +664,7 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
                           wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
                           const int n, const T *d_A, const int lda, T *d_expA, const int lde,
                           void *d_work, const std::size_t lwork_bytes, int *d_info,
-                          ExpmInfo *info = nullptr, const ExpmOptions opts = {}) {
+                          ExpmPlan *plan = nullptr) {
   using RealT = wwr::ComplexToRealType<T>;
 
   if (n < 1 || n > kMaxDim || lda < n || lde < n || d_work == nullptr) {
@@ -740,75 +699,38 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
   const T zero = as_element<T>(RealT{0});
 
   // ── The norm the whole plan hangs off ──────────────────────────────
-  RealT norm = matrix_norm1<T>(stream, n, d_A, lda, ws.colsum);
+  const RealT norm = matrix_norm1<T>(stream, n, d_A, lda, ws.colsum);
   if (!std::isfinite(norm)) {
     return restore(wwr::WWRBLAS_STATUS_INVALID_VALUE);
   }
 
-  // ── Balance, and keep it only if the norm actually fell ────────────
-  //
-  // Only the scaling half of gebal is run. The permutation half isolates
-  // eigenvalues, which does nothing for the norm and would oblige us to undo a
-  // permutation as well; with job = Scale, ilo = 1 and ihi = n, so the scale
-  // vector is the diagonal of D over its whole length and the undo is two dgmms.
-  bool balanced = false;
-  if (opts.balance == ExpmBalance::Auto && n > 1 && norm > RealT{0}) {
-    if (wwr::geam<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &one, d_A, lda, &zero,
-                     d_A, lda, ws.As, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
-
-    int ilo = 1;
-    int ihi = n;
-    if (gebal<T>(stream, GebalJob::Scale, n, ws.As, n, &ilo, &ihi, ws.scale, ws.gwork) !=
-        wwr::wwrSuccess) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
-
-    const RealT norm_b = matrix_norm1<T>(stream, n, ws.As, n, ws.colsum);
-    if (std::isfinite(norm_b) && norm_b < norm) {
-      balanced = true;
-      norm = norm_b;
-    }
-  }
-
-  const ExpmPlan plan = expm_plan<T>(norm);
-  if (info != nullptr) {
-    info->s = plan.s;
-    info->m = plan.m;
-    info->balanced = balanced;
+  const ExpmPlan chosen = expm_plan<T>(norm);
+  if (plan != nullptr) {
+    *plan = chosen;
   }
 
   std::size_t pade_bytes = 0;
-  const wwr::wwrblasStatus_t pstatus = pade_bufferSize<T>(cusolver_handle, plan.m, n, &pade_bytes);
+  const wwr::wwrblasStatus_t pstatus = pade_bufferSize<T>(cusolver_handle, chosen.m, n, &pade_bytes);
   if (pstatus != wwr::WWRBLAS_STATUS_SUCCESS) {
     return restore(pstatus);
   }
 
   // ── Pick what actually gets exponentiated ──────────────────────────
-  const T *src = balanced ? ws.As : d_A;
-  int ld_src = balanced ? n : lda;
+  const T *src = d_A;
+  int ld_src = lda;
 
-  if (plan.s > 0) {
-    const T factor = as_element<T>(std::ldexp(RealT{1}, -plan.s));
-    if (balanced) {
-      // As already holds the balanced matrix and is contiguous with ld = n, so
-      // one scal over its n*n elements scales it in place.
-      if (wwr::scal<T>(cublas_handle, n * n, &factor, ws.As, 1) != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-      }
-    } else {
-      if (wwr::geam<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &factor, d_A, lda,
-                       &zero, d_A, lda, ws.As, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-      }
-      src = ws.As;
-      ld_src = n;
+  if (chosen.s > 0) {
+    const T factor = as_element<T>(std::ldexp(RealT{1}, -chosen.s));
+    if (wwr::geam<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &factor, d_A, lda,
+                     &zero, d_A, lda, ws.As, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
+      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
     }
+    src = ws.As;
+    ld_src = n;
   }
 
   const wwr::wwrblasStatus_t pade_status =
-      pade<T>(cublas_handle, cusolver_handle, stream, plan.m, n, src, ld_src, d_expA, lde,
+      pade<T>(cublas_handle, cusolver_handle, stream, chosen.m, n, src, ld_src, d_expA, lde,
               ws.pade_base, pade_bytes, d_info);
   if (pade_status != wwr::WWRBLAS_STATUS_SUCCESS) {
     return restore(pade_status);
@@ -825,7 +747,7 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
   T *other = ws.sq;
   int ld_other = n;
 
-  for (int k = 0; k < plan.s; ++k) {
+  for (int k = 0; k < chosen.s; ++k) {
     if (wwr::gemm<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &one, cur, ld_cur,
                      cur, ld_cur, &zero, other, ld_other) != wwr::WWRBLAS_STATUS_SUCCESS) {
       return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
@@ -838,20 +760,6 @@ wwr::wwrblasStatus_t expm(wwr::wwrblasHandle_t cublas_handle,
   if (cur != d_expA) {
     if (wwr::geam<T>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &one, cur, ld_cur,
                      &zero, cur, ld_cur, d_expA, lde) != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
-  }
-
-  // ── Undo the balancing: exp(A) = D exp(D^-1 A D) D^-1 ──────────────
-  if (balanced) {
-    device::expand_scale<T, RealT>(stream, n, ws.scale, ws.dscale, ws.dinv);
-
-    if (wwr::dgmm<T>(cublas_handle, wwr::WWRBLAS_SIDE_LEFT, n, n, d_expA, lde, ws.dscale, 1, ws.sq,
-                     n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-    }
-    if (wwr::dgmm<T>(cublas_handle, wwr::WWRBLAS_SIDE_RIGHT, n, n, ws.sq, n, ws.dinv, 1, d_expA,
-                     lde) != wwr::WWRBLAS_STATUS_SUCCESS) {
       return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
     }
   }
@@ -909,19 +817,18 @@ pade<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr:
 
 extern template wwr::wwrblasStatus_t expm<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
                                                  wwr::wwrStream_t, int, const float *, int, float *,
-                                                 int, void *, std::size_t, int *, ExpmInfo *,
-                                                 ExpmOptions);
+                                                 int, void *, std::size_t, int *, ExpmPlan *);
 extern template wwr::wwrblasStatus_t expm<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
                                                   wwr::wwrStream_t, int, const double *, int,
                                                   double *, int, void *, std::size_t, int *,
-                                                  ExpmInfo *, ExpmOptions);
+                                                  ExpmPlan *);
 extern template wwr::wwrblasStatus_t
 expm<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
                            const wwr::wwrFloatComplex *, int, wwr::wwrFloatComplex *, int, void *,
-                           std::size_t, int *, ExpmInfo *, ExpmOptions);
+                           std::size_t, int *, ExpmPlan *);
 extern template wwr::wwrblasStatus_t
 expm<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t, int,
                             const wwr::wwrDoubleComplex *, int, wwr::wwrDoubleComplex *, int, void *,
-                            std::size_t, int *, ExpmInfo *, ExpmOptions);
+                            std::size_t, int *, ExpmPlan *);
 
 } // namespace calaman
