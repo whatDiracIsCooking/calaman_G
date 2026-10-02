@@ -1,5 +1,5 @@
-# Oracle suite for calaman.feast -- the FEAST eigensolver. The natural oracle for
-# an eigensolver is the reference LAPACK (LAPACKE_?syevd), which arrives as
+# Oracle suite for calaman.feast -- the FEAST eigensolver. The natural oracle
+# for an eigensolver is the reference LAPACK (LAPACKE_?syevd), which arrives as
 # calaman::lapack_reference; guard on that target and skip rather than fail the
 # configure where it is absent (it is a WARNING, not an error -- CLAUDE.md). The
 # filter-shape and diagonal/empty-interval cases carry their own closed-form
@@ -12,8 +12,8 @@ if(NOT TARGET calaman::lapack_reference)
 endif()
 
 # The two test/shared/ modules back the device buffers that stage the matrices;
-# wwr.blas / wwr.solver supply the handles feast needs, wwr.wrappers.common the
-# real_fp/RealToComplexType traits, wwr.runtime_api the stream/sync. feast itself
+# wwr.blas / wwr.solver supply the handles feast needs, wwr.wrappers.common
+# the real_fp/RealToComplexType traits, wwr.runtime_api the stream/sync. feast
 # allocates nothing -- the test supplies the workspace.
 calaman_add_gtest_executable(
   NAME

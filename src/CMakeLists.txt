@@ -50,5 +50,5 @@ add_subdirectory(expm)
 # calaman.feast -- the FEAST eigensolver for real symmetric matrices. A host
 # driver over wrapped batched BLAS + symm/gemm + the eigensolver +
 # calaman.orthogonalize, plus its own fused kernels. Added after its calaman
-# dependencies (common, orthogonalize) so their targets exist when it links them.
+# dependencies (common, orthogonalize) so their targets exist when linked.
 add_subdirectory(feast)
