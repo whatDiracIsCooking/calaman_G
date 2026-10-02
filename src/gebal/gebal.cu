@@ -23,6 +23,7 @@
 #include "gebal_bridge.h"
 
 #include "complex.h"
+#include "elem_ops/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 
 #include <cmath>
@@ -31,8 +32,8 @@
 namespace calaman::device {
 
 // complex.h puts the neutral complex types in namespace wwr; pull the two type
-// names in so the elem_ops specializations and the explicit instantiations below
-// can spell them bare. The accessor / constructor calls stay wwr::-qualified.
+// names in so the explicit instantiations below can spell them bare. The
+// accessor / constructor calls stay wwr::-qualified.
 using wwr::wwrDoubleComplex;
 using wwr::wwrFloatComplex;
 
@@ -40,58 +41,27 @@ namespace {
 
 // ── element access ─────────────────────────────────────────────────────────
 //
+// Scaling is calaman::device::elem_ops<T>::scale (elem_ops/elem_ops.cuh). The
+// two measurements balancing needs are expm-free helpers over that core:
+//
 // LAPACK's complex balancing (CGEBAL/ZGEBAL) measures magnitude with CABS1,
-// |Re| + |Im|, not the true modulus: balancing only cares about orders of
-// magnitude, and CABS1 keeps a sqrt out of the innermost loop. Member access
-// goes through the wwrC* accessors, not .x/.y -- cuComplex is a float2 aggregate
-// but hipComplex is a class, so the accessors are the only portable spelling.
+// |Re| + |Im|, not the true modulus (elem_ops::modulus): balancing only cares
+// about orders of magnitude, and CABS1 keeps a sqrt out of the innermost loop.
+// imag_part is 0 for a real T, so both helpers are one type-generic line --
+// no per-precision wwrC* branch, which the core already absorbed.
 
+/// @brief CABS1 magnitude |Re| + |Im| (just |x| for a real element).
 template<typename T>
-struct elem_ops;
+__device__ __forceinline__ typename elem_ops<T>::real_type abs1(const T x) {
+  return wwr::fabs(elem_ops<T>::real_part(x)) + wwr::fabs(elem_ops<T>::imag_part(x));
+}
 
-template<>
-struct elem_ops<float> {
-  using real_type = float;
-  static __device__ float abs1(const float x) { return fabsf(x); }
-  static __device__ bool is_zero(const float x) { return x == 0.0f; }
-  static __device__ float scal(const float x, const float s) { return x * s; }
-};
-
-template<>
-struct elem_ops<double> {
-  using real_type = double;
-  static __device__ double abs1(const double x) { return fabs(x); }
-  static __device__ bool is_zero(const double x) { return x == 0.0; }
-  static __device__ double scal(const double x, const double s) { return x * s; }
-};
-
-template<>
-struct elem_ops<wwrFloatComplex> {
-  using real_type = float;
-  static __device__ float abs1(const wwrFloatComplex x) {
-    return fabsf(wwr::wwrCrealf(x)) + fabsf(wwr::wwrCimagf(x));
-  }
-  static __device__ bool is_zero(const wwrFloatComplex x) {
-    return wwr::wwrCrealf(x) == 0.0f && wwr::wwrCimagf(x) == 0.0f;
-  }
-  static __device__ wwrFloatComplex scal(const wwrFloatComplex x, const float s) {
-    return wwr::make_wwrFloatComplex(wwr::wwrCrealf(x) * s, wwr::wwrCimagf(x) * s);
-  }
-};
-
-template<>
-struct elem_ops<wwrDoubleComplex> {
-  using real_type = double;
-  static __device__ double abs1(const wwrDoubleComplex x) {
-    return fabs(wwr::wwrCreal(x)) + fabs(wwr::wwrCimag(x));
-  }
-  static __device__ bool is_zero(const wwrDoubleComplex x) {
-    return wwr::wwrCreal(x) == 0.0 && wwr::wwrCimag(x) == 0.0;
-  }
-  static __device__ wwrDoubleComplex scal(const wwrDoubleComplex x, const double s) {
-    return wwr::make_wwrDoubleComplex(wwr::wwrCreal(x) * s, wwr::wwrCimag(x) * s);
-  }
-};
+/// @brief Whether an element is exactly zero (both components, for complex).
+template<typename T>
+__device__ __forceinline__ bool is_zero(const T x) {
+  using R = typename elem_ops<T>::real_type;
+  return elem_ops<T>::real_part(x) == R(0) && elem_ops<T>::imag_part(x) == R(0);
+}
 
 /// Column-major offset of A(i, j).
 __device__ __forceinline__ std::size_t idx(const int i, const int j, const int lda) {
@@ -125,7 +95,7 @@ __global__ void mark_nonzero_kernel(const T *__restrict__ A, const int lda, cons
   if (i > r1 || j > c1 || i == j) {
     return;
   }
-  if (!elem_ops<T>::is_zero(A[idx(i, j, lda)])) {
+  if (!is_zero(A[idx(i, j, lda)])) {
     // Every writer stores the same value, so the concurrent stores agree.
     row_flag[i] = 1;
     col_flag[j] = 1;
@@ -237,8 +207,8 @@ __global__ void gebal_sweep_kernel(const int n, T *A, const int lda, const int k
     R ca = R(0);
     R ra = R(0);
     for (int j = t; j < n; j += BLOCK) {
-      const R a_col = ops::abs1(A[idx(j, i, lda)]);
-      const R a_row = ops::abs1(A[idx(i, j, lda)]);
+      const R a_col = abs1(A[idx(j, i, lda)]);
+      const R a_row = abs1(A[idx(i, j, lda)]);
       if (j >= k0 && j <= l0 && j != i) {
         c += a_col;
         r += a_row;
@@ -327,13 +297,13 @@ __global__ void gebal_sweep_kernel(const int n, T *A, const int lda, const int k
     if (accept) {
       const R inv_f = R(1) / f;
       for (int j = k0 + t; j < n; j += BLOCK) {
-        A[idx(i, j, lda)] = ops::scal(A[idx(i, j, lda)], inv_f);
+        A[idx(i, j, lda)] = ops::scale(A[idx(i, j, lda)], inv_f);
       }
     }
     __syncthreads();
     if (accept) {
       for (int j = t; j <= l0; j += BLOCK) {
-        A[idx(j, i, lda)] = ops::scal(A[idx(j, i, lda)], f);
+        A[idx(j, i, lda)] = ops::scale(A[idx(j, i, lda)], f);
       }
       if (t == 0) {
         scale[i] *= f;
