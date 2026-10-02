@@ -65,7 +65,7 @@ one-block-per-column mapping carries, are possible later optimisations.
 
 ## Tested
 
-Not currently. The reference-LAPACK oracle suite that lived at `test/test/lacpy/`
+Not currently. The reference-LAPACK oracle suite that lived at `test/lacpy/`
 was removed together with the `calaman.test.elementwise_compare` utility it used
 for the exact device-side comparison; lacpy has no automated test until that
 comparison is reinstated (e.g. via `calaman.diff_norm` or a replacement utility).

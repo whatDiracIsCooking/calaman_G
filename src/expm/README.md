@@ -212,7 +212,7 @@ with the hand-written kernel this port keeps.)
 
 ## Tests
 
-`test/test/expm/expm_tests.cpp`. There is no `LAPACKE_?expm` — LAPACK ships no
+`test/expm/expm_tests.cpp`. There is no `LAPACKE_?expm` — LAPACK ships no
 matrix exponential — so the oracle is closed forms, identities that hold for any
 matrix, and an independent approximation from a different code path:
 
