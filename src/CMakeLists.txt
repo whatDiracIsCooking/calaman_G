@@ -183,3 +183,10 @@ add_subdirectory(lanv2)
 # structurally lacgv's twin through wwr.extension.parallel_for. It shares no
 # build edge with the rest of src/ and links only calaman.error_handling.
 add_subdirectory(lasy2)
+
+# calaman.gehd2 -- the unblocked reduction of a general matrix to upper
+# Hessenberg form (LAPACK's ?gehd2), the step between calaman.gebal and the QR
+# iteration in the nonsymmetric eigenproblem. A host composition and the slim
+# sibling of calaman.laqp2: it LINKS calaman.larfg and calaman.larf1f (both
+# added earlier in the reflector group), so it follows them here.
+add_subdirectory(gehd2)
