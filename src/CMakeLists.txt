@@ -242,3 +242,12 @@ add_subdirectory(lahqr)
 # (the left block-reflector apply) and calaman.gehd2 (the unblocked tail), so it
 # follows all three here.
 add_subdirectory(gehrd)
+
+# calaman.laln2 -- solve the scaled 1x1 / 2x2 real system
+# (ca*op(A) - w*D) X = SCALE*B with a real or complex right-hand side, the GPU
+# counterpart of LAPACK's ?laln2 (a ?trevc eigenvector step). One single-thread
+# device kernel (the solve is O(1), X at most 2x2), structurally lasy2's twin;
+# its complex divisions reach calaman.ladiv's header-only host/device
+# ladiv_scalar root-relative (#94 depends on #86), so it links no sibling module
+# -- only calaman.error_handling.
+add_subdirectory(laln2)
