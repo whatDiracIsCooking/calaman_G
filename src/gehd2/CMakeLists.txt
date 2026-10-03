@@ -12,7 +12,7 @@
 # error_handling/error_macros.h (CLM_TRY), resolved root-relative via that
 # target's exported include root.
 #   wwr.blas                wwrblasHandle_t, wwrblasGetStream, WWRBLAS_STATUS_*
-#   wwr.runtime_api         wwrMemcpy(Async), wwrStreamSynchronize, wwrErrorInvalidValue
+#   wwr.runtime_api         wwrMemcpyAsync, wwrStreamSynchronize, bad-arg status
 #   calaman.larfg           calaman::larfg
 #   calaman.larf1f          calaman::larf1f, calaman::Side
 #   calaman.error_handling  Status, the cross-domain return type (re-exported)
