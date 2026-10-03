@@ -67,6 +67,13 @@ add_subdirectory(laqp2)
 add_subdirectory(laqps)
 add_subdirectory(geqp3)
 
+# calaman.pstf2 -- the unblocked level-2 pivoted Cholesky panel of a symmetric
+# positive semidefinite matrix. A host composition of the wrapped BLAS plus its
+# own fused diagonal-and-pivot reduction; it shares no build edge with the geqp3
+# call graph above (complete pivoting, not column pivoting) and links only
+# calaman.common (Uplo) and calaman.error_handling, both added earlier.
+add_subdirectory(pstf2)
+
 # calaman.nnls -- non-negative least squares (Lawson-Hanson active set). A host
 # driver over wrapped BLAS + wwr::ormqr that solves each passive-set subproblem
 # with calaman.geqp3, plus its own P/Z-bookkeeping kernels. Added after geqp3 so
