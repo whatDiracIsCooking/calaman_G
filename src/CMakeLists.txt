@@ -279,3 +279,10 @@ add_subdirectory(ormhr)
 # sibling-LAPACK build edge and links only calaman.common and
 # calaman.error_handling (both added earlier).
 add_subdirectory(orghr)
+
+# calaman.trexc -- reorder a real Schur factorization by moving a selected
+# diagonal block to another position (LAPACK's ?trexc), a Schur-reordering
+# driver. A host composition and the slim sibling of calaman.gehd2: a host loop
+# bubbles the block one adjacent swap at a time, so it LINKS calaman.laexc (the
+# swap, added just above) and must follow it here.
+add_subdirectory(trexc)
