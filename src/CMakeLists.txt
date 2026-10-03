@@ -226,3 +226,12 @@ add_subdirectory(gehd2)
 # ?lanv2/?larfg auxiliaries, so it links no sibling LAPACK module -- only
 # calaman.error_handling. Structurally lasy2's twin.
 add_subdirectory(laexc)
+
+# calaman.lahqr -- double-shift Francis QR for the Schur form of a small upper
+# Hessenberg matrix (LAPACK's ?lahqr), the QR-iteration base case the real
+# nonsymmetric eigensolver recurses down to. One single-thread device kernel
+# (the whole iteration -- deflation search, Francis shift, bulge-chasing
+# reflector sweep, ?lanv2 standardisation -- runs in one thread) that inlines
+# the ?larfg/?lanv2/DROT auxiliaries, so it links no sibling LAPACK module --
+# only calaman.error_handling. Structurally laexc's twin.
+add_subdirectory(lahqr)
