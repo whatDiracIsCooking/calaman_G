@@ -49,3 +49,10 @@ add_subdirectory(pstf2)
 add_subdirectory(pstrf)
 add_subdirectory(random_unitary)
 add_subdirectory(set_element)
+
+# The experimental/ tier's suites, gated on the same option as the modules
+# themselves (src-side add is in the top-level CMakeLists.txt). Guarded here too
+# so a default build never configures them.
+if(CALAMAN_BUILD_EXPERIMENTAL)
+  add_subdirectory(experimental)
+endif()
