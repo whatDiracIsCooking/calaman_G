@@ -31,22 +31,28 @@ cannot carry a capital. `doctor.sh` warns when `PROJECT_NAME` and any
 
 ## The state of the tree — read this before trusting any tier
 
-`src/` and `test/` **are live and GPU-exercised.** `src/` ships `calaman.common`,
-`calaman.diff_norm`, `calaman.lacpy`, and the `geqp3` column-pivoted-QR call graph
-as **one module per LAPACK routine, each in its own `src/` directory**:
-`calaman.larfg`, `calaman.larf`, `calaman.laqp2`, `calaman.laqps`, and the
-`calaman.geqp3` driver (all-free and fixed-prefix). The inter-routine edges are
-real module imports (`laqp2` imports `larfg`+`larf`, `laqps` imports `larfg`,
-`geqp3` imports `laqp2`+`laqps`), not partitions of one umbrella module. The test
-tier checks each against the reference LAPACK on a real card. What is still NOT live is the install tier; the
-table says which is which, so report the tier you actually touched.
+`src/` and `test/` **are live and GPU-exercised.** `src/` holds **one module per
+LAPACK routine, each in its own `src/` directory** — ~40 of them now, spanning the
+`calaman.common`/`calaman.diff_norm`/`calaman.lacpy` utilities, pivoted Cholesky
+(`pstrf`/`pstf2`), the matrix exponential (`expm` + `paterson_stockmeyer` +
+`horner`), balancing (`gebal`/`gebak`), the `feast` eigensolver, `nnls`, and the
+Hessenberg/Schur reduction chain (`gehd2`, `lahr2`, `larfb`, `larft`, `lanv2`,
+`lartg`, `lasy2`, …). The `geqp3` column-pivoted-QR call graph is the worked
+example of the shape — `calaman.larfg`, `calaman.larf`, `calaman.laqp2`,
+`calaman.laqps`, and the `calaman.geqp3` driver (all-free and fixed-prefix) — with
+the inter-routine edges as real module imports (`laqp2` imports `larfg`+`larf`,
+`laqps` imports `larfg`, `geqp3` imports `laqp2`+`laqps`), not partitions of one
+umbrella module. The test tier checks each against the reference LAPACK on a real
+card. What is still NOT live is the install tier; the table says which is which,
+so report the tier you actually touched.
 
 | | State |
 |---|---|
 | `deps/` | **live.** WarpWraps submodule + GoogleTest fetch. |
 | `docker/`, `.devcontainer/`, `devtools/` | **live**, and the LAPACK layer in `docker/Dockerfile.base` is new here. |
-| `src/`, `test/` | **live.** The modules above plus their suites; `add_subdirectory(src)` and `(test)` are enabled. Only `#add_subdirectory(example)` stays commented — there is no `example/` tier yet (a directory with no `CMakeLists.txt` is a configure error). |
-| `CMakeLists.txt` | **live**: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, WarpWraps, and now `src/` and `test/`. |
+| `src/`, `test/` | **live.** The modules above plus their suites; `add_subdirectory(src)` and `(test)` are enabled. `#add_subdirectory(example)` stays commented — `example/` is a `README.md` stub with no `CMakeLists.txt` yet (a directory with no `CMakeLists.txt` is a configure error). |
+| `experimental/` | **live but opt-in.** `add_subdirectory(experimental)` is gated behind `CALAMAN_BUILD_EXPERIMENTAL` (default **OFF**) and runs after `src/` so an experimental module may link a shipped one; ships `calaman.experimental.xor_delta` and `calaman.experimental.byte_transpose`. |
+| `CMakeLists.txt` | **live**: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, WarpWraps, and now `src/`, `test/`, and the gated `experimental/`. |
 | the `cmake/` target macros | **exercised** — `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` macros, and `calaman_add_gpu_device_library` all have call sites now. `calaman_add_interface_library` still has none (documented, not dead). |
 | `calaman_install.cmake` | dormant, but **no longer wrong-shaped**: it does one recursive sweep of the single `src/` tree now; the old per-backend `src/{cuda,hip,wrappers}` sweep inherited from WarpWraps is gone. |
 | the install tier | **dormant.** `CALAMAN_INSTALL` defaults OFF; `calaman_install_package()` is still expected to fail on the unexported `wwr.*` interface targets until the two-package problem (docs/architecture.md §2) is decided. `devtools/install-check.sh` and CI's `install-check` job have nothing to prove until then. |
