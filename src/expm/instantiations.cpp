@@ -93,4 +93,34 @@ template Status expm<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolver
                                             int, wwr::wwrDoubleComplex *, int, void *, std::size_t,
                                             int *, ExpmPlan *);
 
+// expm_herm_bufferSize
+template Status expm_herm_bufferSize<float>(wwr::wwrsolverDnHandle_t, wwr::wwrblasFillMode_t, int,
+                                            std::size_t *);
+template Status expm_herm_bufferSize<double>(wwr::wwrsolverDnHandle_t, wwr::wwrblasFillMode_t, int,
+                                             std::size_t *);
+template Status expm_herm_bufferSize<wwr::wwrFloatComplex>(wwr::wwrsolverDnHandle_t,
+                                                           wwr::wwrblasFillMode_t, int,
+                                                           std::size_t *);
+template Status expm_herm_bufferSize<wwr::wwrDoubleComplex>(wwr::wwrsolverDnHandle_t,
+                                                            wwr::wwrblasFillMode_t, int,
+                                                            std::size_t *);
+
+// expm_herm
+template Status expm_herm<float>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t,
+                                 wwr::wwrblasFillMode_t, int, const float *, int, float *, int,
+                                 void *, std::size_t, int *);
+template Status expm_herm<double>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t, wwr::wwrStream_t,
+                                  wwr::wwrblasFillMode_t, int, const double *, int, double *, int,
+                                  void *, std::size_t, int *);
+template Status expm_herm<wwr::wwrFloatComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                                wwr::wwrStream_t, wwr::wwrblasFillMode_t, int,
+                                                const wwr::wwrFloatComplex *, int,
+                                                wwr::wwrFloatComplex *, int, void *, std::size_t,
+                                                int *);
+template Status expm_herm<wwr::wwrDoubleComplex>(wwr::wwrblasHandle_t, wwr::wwrsolverDnHandle_t,
+                                                 wwr::wwrStream_t, wwr::wwrblasFillMode_t, int,
+                                                 const wwr::wwrDoubleComplex *, int,
+                                                 wwr::wwrDoubleComplex *, int, void *, std::size_t,
+                                                 int *);
+
 } // namespace calaman

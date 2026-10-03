@@ -290,6 +290,27 @@ std::vector<T> run_pade(std::shared_ptr<DeviceHandle> handle, Handles &h, int m,
   return from_device(handle, d_r, static_cast<std::size_t>(n) * n);
 }
 
+// Run expm_herm on a self-adjoint A (n-by-n, leading dim lda), result into an
+// lde-by-n buffer seeded with @p out_seed. Returns status; writes the read-back
+// result (length lde*n) into @p out_seed.
+template<typename T>
+Status run_expm_herm(std::shared_ptr<DeviceHandle> handle, Handles &h, wwr::wwrblasFillMode_t uplo,
+                     int n, const std::vector<T> &a, int lda, int lde, std::vector<T> &out_seed) {
+  auto d_a = to_device(handle, a);
+  auto d_e = to_device(handle, out_seed);
+
+  std::size_t bytes = 0;
+  EXPECT_EQ(expm_herm_bufferSize<T>(h.solver, uplo, n, &bytes), wwr::WWRBLAS_STATUS_SUCCESS);
+  DeviceBuffer<T> d_work(bytes / sizeof(T) + 1, handle);
+  DeviceBuffer<int> d_info(1, handle);
+
+  const auto status = expm_herm<T>(h.blas, h.solver, handle->stream().get(), uplo, n, d_a.data(),
+                                   lda, d_e.data(), lde, d_work.data(), bytes, d_info.data());
+  wwr::wwrStreamSynchronize(handle->stream().get());
+  out_seed = from_device(handle, d_e, static_cast<std::size_t>(lde) * n);
+  return status;
+}
+
 // A random matrix scaled so its induced 1-norm equals @p target.
 template<typename T>
 std::vector<T> scaled_random(int n, double target, unsigned seed) {
@@ -307,6 +328,53 @@ std::vector<T> scaled_random(int n, double target, unsigned seed) {
   const double nrm = host_norm1(n, a);
   if (nrm > 0.0) {
     const auto s = static_cast<real_t<T>>(target / nrm);
+    for (auto &x : a) {
+      x *= s;
+    }
+  }
+  return from_compute<T>(a);
+}
+
+// conj on compute_t: std::conj for the complex types, identity for the reals
+// (std::conj(float) would return std::complex<float>, so it cannot be used bare).
+template<typename C>
+C conj_c(const C &x) {
+  if constexpr (std::is_same_v<C, std::complex<float>> ||
+                std::is_same_v<C, std::complex<double>>) {
+    return std::conj(x);
+  } else {
+    return x;
+  }
+}
+
+// A self-adjoint matrix -- symmetric (real T) or Hermitian (complex T) -- built
+// from random entries and scaled to induced 1-norm @p target. The upper triangle
+// is random, the lower is its conjugate mirror, and the diagonal is real, so the
+// result is exactly self-adjoint in floating point (what syevd/heevd assume).
+template<typename T>
+std::vector<T> self_adjoint(int n, double target, unsigned seed) {
+  std::mt19937 rng(seed);
+  std::uniform_real_distribution<double> dist(-1.0, 1.0);
+  std::vector<compute_t<T>> a(static_cast<std::size_t>(n) * n, compute_t<T>{});
+  constexpr bool is_cplx = !std::is_same_v<compute_t<T>, real_t<T>>;
+
+  for (int j = 0; j < n; ++j) {
+    a[static_cast<std::size_t>(j) * n + j] = static_cast<compute_t<T>>(dist(rng)); // real diagonal
+    for (int i = 0; i < j; ++i) {
+      compute_t<T> v;
+      if constexpr (is_cplx) {
+        v = compute_t<T>(static_cast<real_t<T>>(dist(rng)), static_cast<real_t<T>>(dist(rng)));
+      } else {
+        v = static_cast<compute_t<T>>(dist(rng));
+      }
+      a[static_cast<std::size_t>(j) * n + i] = v;           // (row i, col j), upper
+      a[static_cast<std::size_t>(i) * n + j] = conj_c(v);   // (row j, col i), its mirror
+    }
+  }
+
+  const double nrm = host_norm1(n, a);
+  if (nrm > 0.0) {
+    const auto s = static_cast<real_t<T>>(target / nrm); // real scale keeps it self-adjoint
     for (auto &x : a) {
       x *= s;
     }
@@ -694,6 +762,160 @@ TEST(ExpmPointerModeTests, RestoresDevicePointerMode) {
   wwr::wwrblasPointerMode_t mode{};
   ASSERT_EQ(wwr::wwrblasGetPointerMode(h.blas, &mode), wwr::WWRBLAS_STATUS_SUCCESS);
   EXPECT_EQ(mode, wwr::WWRBLAS_POINTER_MODE_DEVICE) << "pointer mode must be restored";
+  destroy_handles(h);
+}
+
+// ========================================================================
+// expm_herm: the self-adjoint (eigendecomposition) path
+// ========================================================================
+//
+// For a symmetric/Hermitian A the independent oracle is the GENERAL expm on the
+// same matrix: exp(A) = U diag(exp w) U^H (the herm path) must agree with the
+// scaling-and-squaring Pade path (a wholly separate code path and algorithm).
+// Closed forms (exp(0) = I, a real diagonal) pin it down absolutely.
+
+// Host-only: the rejection paths return before any device work.
+TEST(ExpmHermArgCheckTests, RejectsBadArgumentsBeforeTouchingTheDevice) {
+  const int n = 4;
+  std::vector<double> a(static_cast<std::size_t>(n) * n, 1.0);
+  std::vector<double> e(static_cast<std::size_t>(n) * n, 0.0);
+  std::vector<double> work(64, 0.0);
+  int info_dev = 0;
+  wwr::wwrblasHandle_t null_blas{};
+  wwr::wwrsolverDnHandle_t null_solver{};
+
+  auto call = [&](int nn, int lda, int lde, void *w) {
+    return expm_herm<double>(null_blas, null_solver, wwr::wwrStream_t{},
+                             wwr::WWRBLAS_FILL_MODE_UPPER, nn, a.data(), lda, e.data(), lde, w,
+                             work.size() * sizeof(double), &info_dev);
+  };
+  EXPECT_EQ(call(0, n, n, work.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "n < 1";
+  EXPECT_EQ(call(n, n - 1, n, work.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "lda < n";
+  EXPECT_EQ(call(n, n, n - 1, work.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "lde < n";
+  EXPECT_EQ(call(n, n, n, nullptr), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "null workspace";
+
+  std::size_t bytes = 0;
+  EXPECT_EQ(expm_herm_bufferSize<double>(null_solver, wwr::WWRBLAS_FILL_MODE_UPPER, 0, &bytes),
+            wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "n < 1";
+}
+
+// Device: expm_herm against the general expm on the same self-adjoint matrix.
+template<typename T>
+void check_herm_vs_general(int n, double target, unsigned seed, wwr::wwrblasFillMode_t uplo) {
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  const auto a = self_adjoint<T>(n, target, seed);
+
+  std::vector<T> eg(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
+  ExpmPlan info{};
+  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, eg, &info), wwr::WWRBLAS_STATUS_SUCCESS);
+
+  std::vector<T> eh(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
+  ASSERT_EQ(run_expm_herm<T>(handle, h, uplo, n, a, n, n, eh), wwr::WWRBLAS_STATUS_SUCCESS);
+
+  expect_close<T>(eh, to_compute(eg), n, n, real_t<T>{256}, "expm_herm vs expm");
+  destroy_handles(h);
+}
+
+TEST(ExpmHermTests, VsGeneralDoubleUpper) {
+  check_herm_vs_general<double>(6, 1.5, 200, wwr::WWRBLAS_FILL_MODE_UPPER);
+}
+TEST(ExpmHermTests, VsGeneralDoubleLower) {
+  check_herm_vs_general<double>(6, 2.5, 201, wwr::WWRBLAS_FILL_MODE_LOWER);
+}
+TEST(ExpmHermTests, VsGeneralFloatUpper) {
+  check_herm_vs_general<float>(5, 1.0, 202, wwr::WWRBLAS_FILL_MODE_UPPER);
+}
+TEST(ExpmHermTests, VsGeneralComplexDoubleUpper) {
+  check_herm_vs_general<wwr::wwrDoubleComplex>(5, 1.5, 203, wwr::WWRBLAS_FILL_MODE_UPPER);
+}
+TEST(ExpmHermTests, VsGeneralComplexFloatLower) {
+  check_herm_vs_general<wwr::wwrFloatComplex>(4, 1.0, 204, wwr::WWRBLAS_FILL_MODE_LOWER);
+}
+
+// Device: exp(0) = I through the eigendecomposition path (all eigenvalues 0).
+template<typename T>
+void check_herm_zero(int n) {
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  std::vector<T> a(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
+  std::vector<T> got(static_cast<std::size_t>(n) * n, traits<T>::make(-7.0, 0.0));
+  ASSERT_EQ(run_expm_herm<T>(handle, h, wwr::WWRBLAS_FILL_MODE_UPPER, n, a, n, n, got),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+  const auto oracle = host_identity<compute_t<T>>(n);
+  expect_close<T>(got, oracle, n, n, real_t<T>{64}, "expm_herm exp(0)=I");
+  destroy_handles(h);
+}
+
+TEST(ExpmHermTests, ZeroIsIdentityDouble) {
+  check_herm_zero<double>(5);
+}
+TEST(ExpmHermTests, ZeroIsIdentityComplexDouble) {
+  check_herm_zero<wwr::wwrDoubleComplex>(4);
+}
+
+// Device: a real diagonal (self-adjoint) matrix -- exp(diag) = diag(exp).
+template<typename T>
+void check_herm_diagonal(int n, unsigned seed) {
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  std::mt19937 rng(seed);
+  std::uniform_real_distribution<double> dist(-1.0, 1.0);
+
+  std::vector<compute_t<T>> ac(static_cast<std::size_t>(n) * n, compute_t<T>{});
+  std::vector<compute_t<T>> oracle(static_cast<std::size_t>(n) * n, compute_t<T>{});
+  for (int i = 0; i < n; ++i) {
+    const compute_t<T> d = static_cast<compute_t<T>>(dist(rng)); // real -> self-adjoint
+    ac[static_cast<std::size_t>(i) * n + i] = d;
+    oracle[static_cast<std::size_t>(i) * n + i] = std::exp(d);
+  }
+  auto a = from_compute<T>(ac);
+  std::vector<T> got(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
+  ASSERT_EQ(run_expm_herm<T>(handle, h, wwr::WWRBLAS_FILL_MODE_LOWER, n, a, n, n, got),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+  expect_close<T>(got, oracle, n, n, real_t<T>{128}, "expm_herm exp(diag)=diag(exp)");
+  destroy_handles(h);
+}
+
+TEST(ExpmHermTests, DiagonalDouble) {
+  check_herm_diagonal<double>(6, 210);
+}
+TEST(ExpmHermTests, DiagonalComplexFloat) {
+  check_herm_diagonal<wwr::wwrFloatComplex>(5, 211);
+}
+
+// Device: a padded output leading dimension, with the general expm as the oracle.
+TEST(ExpmHermTests, PaddedOutputLeadingDimension) {
+  using T = double;
+  const int n = 5;
+  const int lde = n + 3;
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  const auto a = self_adjoint<T>(n, 1.5, 220);
+
+  std::vector<T> eg(static_cast<std::size_t>(n) * n, 0.0);
+  ExpmPlan info{};
+  ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, eg, &info), wwr::WWRBLAS_STATUS_SUCCESS);
+
+  const T sentinel = -123.5;
+  std::vector<T> buf(static_cast<std::size_t>(lde) * n, sentinel);
+  ASSERT_EQ(run_expm_herm<T>(handle, h, wwr::WWRBLAS_FILL_MODE_UPPER, n, a, n, lde, buf),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+
+  const real_t<T> tol = elem_tol<T>(to_compute(eg), n, real_t<T>{256});
+  for (int j = 0; j < n; ++j) {
+    for (int i = 0; i < n; ++i) {
+      EXPECT_LE(std::abs(buf[static_cast<std::size_t>(j) * lde + i] -
+                         eg[static_cast<std::size_t>(j) * n + i]),
+                tol)
+          << "block (" << i << "," << j << ")";
+    }
+    for (int i = n; i < lde; ++i) {
+      EXPECT_DOUBLE_EQ(buf[static_cast<std::size_t>(j) * lde + i], sentinel)
+          << "padding row " << i << " col " << j;
+    }
+  }
   destroy_handles(h);
 }
 

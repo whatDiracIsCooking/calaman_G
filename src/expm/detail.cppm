@@ -127,4 +127,40 @@ struct ExpmWorkspace {
   }
 };
 
+/**
+ * @brief Device workspace slices for expm_herm(), all 256-aligned.
+ *
+ * The self-adjoint path exp(A) = U diag(exp(w)) U^H needs two n*n blocks and two
+ * O(n) vectors -- far less than the Pade ladder:
+ *
+ *   [U        | n*n T          ]  the input A copied in, overwritten by the
+ *                                 eigenvectors; also the right factor of the U^H
+ *                                 product, so it must outlive the scaling
+ *   [M        | n*n T          ]  U * diag(exp(w)), the left factor
+ *   [w        | n RealT        ]  the (real) eigenvalues
+ *   [eig_work | lwork_eig T    ]  the syevd/heevd scratch, whose length is the one
+ *                                 region the caller must query first
+ */
+template<wwr::usual_fp T>
+struct HermWorkspace {
+  using RealT = wwr::ComplexToRealType<T>;
+
+  T *U = nullptr;
+  T *M = nullptr;
+  RealT *w = nullptr;
+  T *eig_work = nullptr;
+
+  /// @brief Carve the slices from @p layout, which sizes (null base) or carves
+  ///        (real base) identically -- so expm_herm_bufferSize and expm_herm
+  ///        share this ONE region list and cannot drift. @p lwork_eig is the
+  ///        eigensolver scratch length, the one region the caller queries first.
+  void carve(WorkspaceLayout &layout, const int n, const int lwork_eig) {
+    const std::size_t nn = static_cast<std::size_t>(n) * n;
+    U = layout.fixed<T>(nn);
+    M = layout.fixed<T>(nn);
+    w = layout.fixed<RealT>(static_cast<std::size_t>(n));
+    eig_work = layout.fixed<T>(static_cast<std::size_t>(lwork_eig));
+  }
+};
+
 } // namespace calaman
