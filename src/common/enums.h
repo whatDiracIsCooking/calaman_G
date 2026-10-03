@@ -1,8 +1,9 @@
 /**
  * @file enums.h
  * @brief Scoped enums for the LAPACK-shaped selector arguments (Jobz, Uplo,
- *        Trans, Side, Diag, Range, JobSvd, Region, SortDir) and the diff_norm
- *        Norm selector, a header shareable by device .cu code and module GMFs alike
+ *        Trans, Side, Diag, Range, JobSvd, Region, SortDir), the diff_norm Norm
+ *        selector and the ?lange MatrixNorm selector, as a header shareable by
+ *        device .cu code and module GMFs alike
  *
  * A plain header, not a module unit, for the same reason constants.h and
  * align_up.h are: a scoped enum is a compile-time tag that both a device
@@ -112,6 +113,19 @@ enum class Norm : std::uint8_t {
     l1,  ///< ell_1: the sum of magnitudes, sum |y_i - x_i| (BLAS asum)
     l2,  ///< ell_2: the Euclidean norm, sqrt(sum |y_i - x_i|^2) (BLAS nrm2)
     inf, ///< ell_inf: the largest magnitude, max |y_i - x_i| (BLAS iamax + a read)
+};
+
+/// @brief Which matrix norm ?lange returns -- LAPACK's NORM char.
+///
+/// Distinct from Norm: these are matrix norms of a whole m-by-n array, not the
+/// vector reductions diff_norm selects. one/inf are the operator norms (max
+/// column/row sum); max_abs is the largest element, which -- as DLANGE notes --
+/// is not a consistent matrix norm.
+enum class MatrixNorm : std::uint8_t {
+    max_abs,   ///< 'M': max_ij |A(i,j)|, the largest absolute element.
+    one,       ///< '1'/'O': the 1-norm, max over columns of sum_i |A(i,j)|.
+    inf,       ///< 'I': the infinity-norm, max over rows of sum_j |A(i,j)|.
+    frobenius, ///< 'F'/'E': the Frobenius norm, sqrt(sum_ij A(i,j)^2).
 };
 
 } // namespace calaman

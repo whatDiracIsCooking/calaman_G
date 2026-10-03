@@ -38,5 +38,6 @@ using calaman::Range;
 using calaman::JobSvd;
 using calaman::SortDir;
 using calaman::Norm;
+using calaman::MatrixNorm;
 
 } // namespace calaman
