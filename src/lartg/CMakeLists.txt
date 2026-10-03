@@ -28,7 +28,7 @@ calaman_add_gpu_device_library(
 # LINK_PUBLIC carries every module the exported surface names: wwr.runtime_api
 # (the wwrStream_t it forwards) and calaman.error_handling (re-exported via
 # `export import` for the Status return type; its src/ root resolves the
-# "error_handling/error_macros.h" interface.cppm pulls into the GMF for CLM_TRY).
+# "error_handling/error_macros.h" the GMF pulls in for CLM_TRY).
 #
 # LINK_PRIVATE wwr_backend is for the runtime.h that lartg_bridge.h pulls into
 # the global module fragment: a GMF cannot `import`, so wwrStream_t arrives by
