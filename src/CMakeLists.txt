@@ -235,3 +235,10 @@ add_subdirectory(laexc)
 # the ?larfg/?lanv2/DROT auxiliaries, so it links no sibling LAPACK module --
 # only calaman.error_handling. Structurally laexc's twin.
 add_subdirectory(lahqr)
+
+# calaman.gehrd -- the blocked reduction of a general matrix to upper Hessenberg
+# form (LAPACK's ?gehrd), the level-3 driver over the unblocked calaman.gehd2. A
+# host composition that LINKS calaman.lahr2 (per-panel V/T/Y), calaman.larfb
+# (the left block-reflector apply) and calaman.gehd2 (the unblocked tail), so it
+# follows all three here.
+add_subdirectory(gehrd)
