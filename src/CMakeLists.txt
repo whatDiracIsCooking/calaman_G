@@ -23,6 +23,11 @@ add_subdirectory(elem_ops)
 
 add_subdirectory(complex_cast)
 
+# calaman.lacgv is complex_cast's slimmest sibling (a single per-element functor
+# through parallel_for, conjugating via calaman.elem_ops) -- the GPU counterpart
+# of LAPACK's ?lacgv. It links calaman.elem_ops, added above, so it follows it.
+add_subdirectory(lacgv)
+
 # calaman.set_element is complex_cast's structural twin (per-element functors
 # through parallel_for, |.| through calaman.elem_ops) -- the device-pointer-mode
 # back half of iamax, reading one element of a device array by a device-held
