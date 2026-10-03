@@ -162,3 +162,10 @@ add_subdirectory(lasrt)
 # header-only template) but taking only a stream, since it owns no device code.
 # It links only wwr.runtime_api and calaman.error_handling (added earlier).
 add_subdirectory(lanv2)
+
+# calaman.lasy2 -- solve the order-(1..2) Sylvester equation
+# op(TL)*X + ISGN*X*op(TR) = SCALE*B, the GPU counterpart of LAPACK's ?lasy2. A
+# single single-thread device kernel (the whole solve is O(1), X at most 2x2),
+# structurally lacgv's twin through wwr.extension.parallel_for. It shares no
+# build edge with the rest of src/ and links only calaman.error_handling.
+add_subdirectory(lasy2)
