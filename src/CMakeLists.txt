@@ -298,3 +298,14 @@ add_subdirectory(trexc)
 # as laln2 does. Structurally laqr5's twin; placed after laln2, whose
 # arithmetic it reproduces.
 add_subdirectory(trevc3)
+
+# calaman.laqr2 -- aggressive early deflation for the real nonsymmetric
+# eigensolver (LAPACK's ?laqr2, the small-window variant using ?lahqr for the
+# window Schur form, not the recursive ?laqr4 of ?laqr3). One single-thread
+# device kernel (the window Schur form, the spike-tip deflation, the ?trexc
+# reorder, the ?gehrd re-Hessenberg and the slab updates all run in one thread)
+# that inlines its ?lahqr/?trexc/?laexc/?lanv2/?larfg/?gehrd/?ormhr auxiliaries
+# -- those siblings are host compositions unusable from a device kernel -- so,
+# like laqr5, it links no sibling LAPACK module, only calaman.error_handling.
+# Structurally laqr5's twin.
+add_subdirectory(laqr2)
