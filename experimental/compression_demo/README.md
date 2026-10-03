@@ -349,6 +349,48 @@ compresses spectacularly. Lossless ratio vs the original 5.92 GB,
   the nonzero stream (per `lossy_downcast.py`, ~2× at 6e-8 error) stacks on top
   for ~5× total.
 
+### fp32 downcast confirms ~5×; pre-sorting the values does *not* help (`cderi_fp32_sort_demo.py`)
+
+Two follow-ons to the lossy lever above, both end-to-end vs the original 5.92 GB
+(lossy only in the fp32 cast — rms rel err **6.5e-6**, 0 underflow; a tail of
+near-denormal values ~1e-40 casts to fp32 subnormals with max rel err ~7e-2, but
+their absolute error is ~1e-41, negligible):
+
+```bash
+uv run --with numpy --with cramjam --with h5py \
+    experimental/compression_demo/cderi_fp32_sort_demo.py [path/to/cderi.h5]
+```
+
+**fp32 downcast alone lands the predicted ~5×** — strip zeros, cast the nonzero
+stream to fp32, compress, keep the bitmask: **5.12× zstd** (4.69× LZ4, 4.58×
+Snappy), a clean 2× over the #123 lossless 2.56×.
+
+The tempting next step is to **sort** the nonzero values first, so neighbouring
+magnitudes cluster and `xor+transpose` gets a smooth, near-monotonic sequence to
+delta-code. It works *spectacularly* on the values — but loses the gain to the
+side-channel it forces, because restoring the original order needs the full sort
+permutation, which is **incompressible**:
+
+| codec | fp32 values (sorted, intrinsic) | sort permutation (uint32, 1.28 GB) | **A: fp32 in-place** | **B: fp32 sorted** |
+|---|---|---|---|---|
+| LZ4 | 4.01× | 1.00× | **4.69×** | 3.68× |
+| Snappy | 3.38× | 1.00× | **4.58×** | 3.54× |
+| zstd | **5.50×** | 1.04× | **5.12×** | 4.04× |
+
+- **Sorting makes the fp32 value stream 3.4–5.5× compressible** (vs ~1.0–1.1×
+  unsorted) — the monotonic-sequence case where `xor_delta` finally earns its
+  keep, exactly as on synthetic `linspace`.
+- **But an arbitrary order over 320M elements costs ~n·log₂n bits** (~1.23 GB
+  even after zstd), and that *exceeds* the compression it buys. Under zstd,
+  sorting shrinks the values by 0.93 GB (1.16→0.23 GB) but the permutation adds
+  1.23 GB — a net **+0.30 GB**, dropping 5.12× → **4.04×**.
+
+**Takeaway:** for a general lossless-position CDERI store, **don't pre-sort —
+just fp32-downcast.** Sorting only pays when the permutation is cheap (data
+already near-sorted, or a use that doesn't need the original order restored),
+which density-fitting integrals are not. The honest ranking on this tensor:
+fp32-in-place (5.12×) > fp32-sorted (4.04×) > fp64 lossless zero-strip (2.56×).
+
 ## Files
 
 | File | What |
@@ -356,6 +398,7 @@ compresses spectacularly. Lossless ratio vs the original 5.92 GB,
 | `compression_demo.py` | the lossless spike: numpy transforms + `_selfcheck` + ratio/scaling/split tables |
 | `cderi_demo.py` | the same transforms + codecs over a real multi-GB PySCF RI-fit CDERI `.h5` |
 | `cderi_nonzero_demo.py` | strip exact zeros, compress the dense stream + a presence bitmask; sparse-split vs in-place |
+| `cderi_fp32_sort_demo.py` | fp32 downcast of the nonzero stream, and whether pre-sorting pays once the permutation is stored (it doesn't) |
 | `lossy_downcast.py` | lossy fp32/fp16 downcast, global vs per-element (block-FP) scaling |
 | `bit_transpose_demo.py` | bit-plane vs byte-plane transpose + xor/transpose commutativity |
 | `geqp3_dump.cpp` | standalone dumper of the geqp3 suite's matrices to raw f64 |
