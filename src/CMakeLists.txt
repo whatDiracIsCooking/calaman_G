@@ -117,6 +117,14 @@ add_subdirectory(geqp3)
 # (Direct/StoreV) and calaman.error_handling, both added earlier.
 add_subdirectory(larft)
 
+# calaman.larfb -- apply a block reflector H (or H^T) to a general matrix
+# (LAPACK ?larfb), the level-3 companion that consumes the factor larft forms. A
+# host composition of the wrapped BLAS-3 (trmm/gemm) plus geam for the block
+# copies and the rank-k subtraction; it takes T as input rather than calling
+# larft, so it shares no build edge with it and links only calaman.common
+# (Side/Trans/Direct/StoreV) and calaman.error_handling, both added earlier.
+add_subdirectory(larfb)
+
 # calaman.pstf2 -- the unblocked level-2 pivoted Cholesky panel of a symmetric
 # positive semidefinite matrix. A host composition of the wrapped BLAS plus its
 # own fused diagonal-and-pivot reduction; it shares no build edge with the geqp3
