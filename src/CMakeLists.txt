@@ -125,6 +125,13 @@ add_subdirectory(larft)
 # (Side/Trans/Direct/StoreV) and calaman.error_handling, both added earlier.
 add_subdirectory(larfb)
 
+# calaman.lahr2 -- LAPACK's ?lahr2, reduce the first nb columns of a panel to
+# upper Hessenberg form and return the V/T/Y that ?gehrd applies to the trailing
+# matrix. A host composition of wrapped BLAS plus calaman.larfg per column
+# (structurally calaman.larft's sibling, no custom kernel); it links
+# calaman.larfg (added above in the geqp3 call graph) so it follows it.
+add_subdirectory(lahr2)
+
 # calaman.pstf2 -- the unblocked level-2 pivoted Cholesky panel of a symmetric
 # positive semidefinite matrix. A host composition of the wrapped BLAS plus its
 # own fused diagonal-and-pivot reduction; it shares no build edge with the geqp3
