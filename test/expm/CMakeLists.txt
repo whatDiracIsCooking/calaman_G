@@ -37,6 +37,7 @@ calaman_add_gtest_suite_tests(
   ExpmPlanTests
   ExpmThetaTests
   ExpmArgCheckTests
+  ExpmHermArgCheckTests
 )
 
 # The numerical suites stage the matrices on the device and run the Pade
@@ -51,5 +52,6 @@ calaman_add_gtest_suite_tests(
   ExpmLadderTests
   ExpmPaddingTests
   ExpmPointerModeTests
+  ExpmHermTests
   REQUIRES_GPU
 )

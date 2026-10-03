@@ -10,14 +10,22 @@
  * :expm; see expm.cppm and the README for the algorithm, the degree-13 nested
  * form, the cost table and the (deliberately external) balancing recipe.
  *
+ * TWO DRIVERS. expm() is the general route and works for any square A. When A is
+ * symmetric (real) or Hermitian (complex), expm_herm() (:herm) is the specialised
+ * route: it diagonalises A and exponentiates the eigenvalues, exp(A) =
+ * U diag(exp(w)) U^H, which is exact up to the eigensolver's accuracy and cheaper
+ * than the ladder. Reach for it only for a self-adjoint matrix -- it assumes the
+ * symmetry and reads just one triangle.
+ *
  * Partitions:
  * - :plan         degree/scaling selection: pade_theta, ExpmPlan, expm_plan
  * - :norm1        the induced matrix 1-norm, matrix_norm1
  * - :buffer_size  device-workspace sizing: pade_bufferSize, expm_bufferSize
  * - :pade         the unscaled [m/m] Pade approximant r_m(A)
  * - :expm         the scaling-and-squaring driver
+ * - :herm         the self-adjoint driver: expm_herm, expm_herm_bufferSize
  * - :detail       shared internals (NOT re-exported): as_element, kMaxDim and
- *                 the two workspace layouts
+ *                 the three workspace layouts
  *
  * STRUCTURE. expm is a HOST COMPOSITION over wrapped BLAS (gemm/geam), the
  * wrapped LU solve (getrf/getrs) and four fused kernels of its own (expm.cu,
@@ -74,6 +82,7 @@ export import :norm1;
 export import :buffer_size;
 export import :pade;
 export import :expm;
+export import :herm;
 
 // expm()/pade()/the bufferSize queries RETURN calaman::Status, so a consumer
 // importing this one module sees that type without a second import.

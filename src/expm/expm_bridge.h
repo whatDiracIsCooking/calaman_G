@@ -194,6 +194,22 @@ void abs_colsums(wwr::wwrStream_t stream, int n, const T *d_A, int lda, R *d_col
 template<typename R>
 void max_reduce(wwr::wwrStream_t stream, int n, R *d_values);
 
+/// @brief Scale each column of the eigenvectors by the exponential of its eigenvalue
+///
+/// Writes M = U * diag(exp(w)), the middle step of the self-adjoint matrix
+/// exponential exp(A) = U diag(exp(w)) U^H: column j of the n x n column-major U
+/// is multiplied by the real scalar exp(w[j]). Both U and M are packed n x n
+/// (leading dimension n). The eigenvalues w are real -- the modulus type R --
+/// because A is symmetric/Hermitian, so exp(w[j]) is a real scale even when the
+/// elements are complex (expm_herm's :herm partition then does the U^H product by
+/// gemm). The per-element exp is recomputed for each of a column's n entries
+/// rather than pre-reduced to n values: the redundancy is O(n^2) exps against the
+/// O(n^3) gemm that follows, and it saves a buffer and a second launch.
+///
+/// @tparam T Element type; @tparam R its real component type (w and exp(w) real)
+template<typename T, typename R>
+void herm_exp_scale(wwr::wwrStream_t stream, int n, const T *d_U, const R *d_w, T *d_M);
+
 } // namespace device
 
 } // namespace calaman

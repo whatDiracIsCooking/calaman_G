@@ -1,13 +1,21 @@
 # calaman.expm
 
-Matrix exponential `exp(A)` by **scaling and squaring** with a **diagonal Padé
-approximant**, choosing the degree from the matrix 1-norm. Four fused device
-kernels evaluate the Padé polynomial and build the 1-norm; the wrapped BLAS
-(`wwr::gemm`/`geam`) supplies the matrix products and the wrapped LU
-solve (`wwr::getrf`/`getrs`) the linear solve. Written once against WarpWraps's
-backend-neutral `wwr*` names and built for either vendor; templated over all four
-element types (`float`, `double`, and the two complex types), constrained by
-`wwr::usual_fp`.
+Matrix exponential `exp(A)`, by two routes:
+
+- **`expm`** — the general route, **scaling and squaring** with a **diagonal Padé
+  approximant**, choosing the degree from the matrix 1-norm. Works for any square
+  `A`. Fused device kernels evaluate the Padé polynomial and build the 1-norm; the
+  wrapped BLAS (`wwr::gemm`/`geam`) supplies the matrix products and the wrapped LU
+  solve (`wwr::getrf`/`getrs`) the linear solve.
+- **`expm_herm`** — the route for a **symmetric (real) or Hermitian (complex)**
+  `A`, by **eigenvalue decomposition**: `exp(A) = U diag(exp(w)) U^H`, exact up to
+  the eigensolver's accuracy. The wrapped `wwr::syevd`/`heevd` diagonalise, one
+  fused kernel exponentiates and scales, and one `wwr::gemm` forms the `U^H`
+  product. See [below](#symmetric--hermitian-expm_herm).
+
+Written once against WarpWraps's backend-neutral `wwr*` names and built for either
+vendor; templated over all four element types (`float`, `double`, and the two
+complex types), constrained by `wwr::usual_fp`.
 
 ## Algorithm
 
@@ -123,12 +131,46 @@ would compile on exactly one backend and break the promise this project is built
 on. The option is gone; every matrix product goes through the portable
 `wwr::gemm`.
 
+## Symmetric / Hermitian: `expm_herm`
+
+When `A` is symmetric (real) or Hermitian (complex), the spectral theorem gives
+`A = U diag(w) U^H` with `U` orthogonal/unitary and the eigenvalues `w` **real**,
+so
+
+```
+exp(A) = U diag(exp(w)) U^H
+```
+
+is exact up to the eigensolver's accuracy — no Padé, no scaling, no squaring, and
+no 1-norm to measure. `expm_herm` is the specialised route for this class; the
+general `expm` stays the right tool for a non-normal matrix.
+
+Three steps, all backend-neutral:
+
+1. **Diagonalise** with `wwr::syevd` (real `A`) or `wwr::heevd` (complex `A`),
+   chosen by `if constexpr` on the element type. Only the `uplo` triangle of `A`
+   is read; the input is copied into workspace first (the eigensolver overwrites
+   its matrix with the eigenvectors, and `d_A` is `const`).
+2. **Exponentiate and scale** in one fused kernel (`herm_exp_scale`):
+   `M = U diag(exp(w))`, a real column scale even when the elements are complex
+   (the eigenvalues are real).
+3. **Re-form** `exp(A) = M U^H` with one `wwr::gemm` — `U^T` for a real symmetric
+   `A`, the conjugate transpose `U^H` for a complex Hermitian one.
+
+Unlike `expm`, it **never synchronizes the stream** — the eigenvalues stay on the
+device and the exp is taken there. Workspace is two `n*n` blocks (the
+eigenvectors and their scaled copy), the `O(n)` eigenvalue vector and the
+eigensolver's own scratch — far less than the Padé ladder. `d_info` is a **single**
+device int (the eigensolver's convergence code), not the two `expm`/`pade` use.
+
 ## API
 
 | Function | Description |
 |----------|-------------|
 | `expm_bufferSize<T>(cusolver, n, &bytes)` | Device workspace for `expm` (the ladder's worst case) |
 | `expm<T>(cublas, cusolver, stream, n, d_A, lda, d_expA, lde, d_work, bytes, d_info, plan)` | `exp(A)` by scaling and squaring |
+| `expm_herm_bufferSize<T>(cusolver, uplo, n, &bytes)` | Device workspace for `expm_herm` |
+| `expm_herm<T>(cublas, cusolver, stream, uplo, n, d_A, lda, d_expA, lde, d_work, bytes, d_info)` | `exp(A)` for a symmetric/Hermitian `A` by eigendecomposition; never synchronizes |
 | `expm_plan<T>(norm1)` | `{m, s, num_gemms}` for a given 1-norm, without evaluating anything |
 | `pade_theta<T>(m)` | Backward-error threshold for degree `m` |
 | `pade_bufferSize<T>(cusolver, m, n, &bytes)` | Device workspace for `pade` at degree `m` |
@@ -186,7 +228,7 @@ asynchronous path is required.
 
 ## Custom kernels
 
-`expm.cu` holds the four genuinely per-element pieces, built on
+`expm.cu` holds the genuinely per-element pieces, built on
 `wwr.extension.parallel_for` and `calaman.reduce_columns`:
 
 | Launcher | Purpose |
@@ -195,6 +237,7 @@ asynchronous path is required.
 | `pade_split` | Reads `U` and `V` once, writing `V + U` to the output (arbitrary `ldr`) and `V - U` over `V`. The output may alias `V`: element `i` is read by the one thread that writes it. |
 | `abs_colsums` | Per-column absolute sums for the 1-norm, via `calaman.reduce_columns` with the **true modulus** as the pre-transform (not the `|Re| + |Im|` surrogate). |
 | `max_reduce` | Single-block max reduction over those column sums, in place, NaN-propagating. |
+| `herm_exp_scale` | `expm_herm`'s middle step: `M = U diag(exp(w))`, scaling each eigenvector column by the exponential of its (real) eigenvalue. A real scale of an element (`elem_ops::scale`), so one launcher covers real and complex. |
 
 **No Thrust.** The max reduction and the column sums are a hand-written kernel
 and `calaman.reduce_columns` respectively, following the decision WarpWraps's
@@ -213,14 +256,15 @@ The module is one interface partition per concern, re-exported by the primary
 | File | Role |
 |------|------|
 | `interface.cppm` | Primary interface: the module overview and the re-exports |
-| `detail.cppm` | `:detail` — shared internals (`as_element`, `kMaxDim`, the two workspace layouts), not re-exported |
+| `detail.cppm` | `:detail` — shared internals (`as_element`, `kMaxDim`, the three workspace layouts), not re-exported |
 | `plan.cppm` | `:plan` — the ladder: `pade_theta`, `ExpmPlan`, `expm_plan` |
 | `norm1.cppm` | `:norm1` — the induced matrix 1-norm, `matrix_norm1` |
 | `buffer_size.cppm` | `:buffer_size` — `pade_bufferSize`, `expm_bufferSize` |
 | `pade.cppm` | `:pade` — the unscaled Padé approximant, `pade` |
 | `expm.cppm` | `:expm` — the scaling-and-squaring driver, `expm` |
+| `expm_herm.cppm` | `:herm` — the self-adjoint driver, `expm_herm` + `expm_herm_bufferSize` |
 | `expm_bridge.h` | Padé coefficient tables and the kernel-launcher declarations |
-| `expm.cu` | The five custom kernels |
+| `expm.cu` | The custom kernels |
 | `instantiations.cpp` | Explicit instantiations for the four element types |
 
 ## Tests
@@ -238,6 +282,12 @@ matrix, and an independent approximation from a different code path:
   and code path), so a wrong coefficient anywhere on the ladder shows up.
 - **the plan, padded leading dimensions, pointer-mode restoration and argument
   validation.**
+
+`expm_herm` is checked the same way: on a symmetric/Hermitian matrix the
+**general `expm` is the independent oracle** (a wholly separate algorithm and
+code path), plus the closed forms `exp(0) = I` and `exp(diag) = diag(exp)`, both
+`uplo` triangles, a padded output leading dimension, and host-only argument
+validation.
 
 The numerical suites stage the matrices on the device and run the kernels, so
 they are `REQUIRES_GPU` (labeled `gpu`, excluded by `ctest -LE gpu`); the plan,

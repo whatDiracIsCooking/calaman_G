@@ -1,9 +1,11 @@
 // expm.cu
 //
-// The device-kernel half of calaman.expm: the four genuinely per-element pieces
-// of the scaling-and-squaring matrix exponential. Everything else in expm is a
-// host composition of wrapped BLAS (gemm/geam) and the wrapped LU solve
-// (getrf/getrs); these are the kernels those calls cannot
+// The device-kernel half of calaman.expm: the genuinely per-element pieces of
+// the matrix exponential -- the four the scaling-and-squaring driver needs, plus
+// the eigenvalue-exponential column scale the self-adjoint path (expm_herm)
+// needs. Everything else in expm is a host composition of wrapped BLAS
+// (gemm/geam), the wrapped LU solve (getrf/getrs) and the wrapped symmetric /
+// Hermitian eigensolver (syevd/heevd); these are the kernels those calls cannot
 // express. Shared unchanged between both backends, like lacpy.cu / gebal.cu: a
 // .cu is compiled by the backend compiler, so parallel_for's launch machinery,
 // calaman.reduce_columns's segmented reduce, the raw <<<>>> launch syntax and
@@ -158,6 +160,28 @@ struct PadeSplitFunctor {
   }
 };
 
+// ── M = U * diag(exp(w)): the middle step of the self-adjoint exponential ─────
+//
+// Column j of the eigenvectors U is scaled by the real scalar exp(w[j]). The
+// eigenvalues w are real (A is symmetric/Hermitian), so this is a real scale of
+// an element even for complex T -- elem_ops::scale(element, real). The exp is
+// taken through elem_ops<R>::exp, the same real exp the core carries.
+template<typename T, typename R>
+struct HermExpScaleFunctor {
+  using ops = elem_ops<T>;
+
+  const T *const d_U_;
+  const R *const d_w_;
+  T *const d_M_;
+  const int n_;
+
+  __device__ void operator()(const int idx) const {
+    const int col = idx / n_;
+    const R e = elem_ops<R>::exp(d_w_[col]);
+    d_M_[idx] = ops::scale(d_U_[idx], e);
+  }
+};
+
 // ── 1-norm support: a modulus pre-transform and a plus fold for reduce_columns ─
 
 template<typename T, typename R>
@@ -262,6 +286,16 @@ void pade_split(const wwr::wwrStream_t stream, const int n, const T *d_U, const 
 }
 
 template<typename T, typename R>
+void herm_exp_scale(const wwr::wwrStream_t stream, const int n, const T *d_U, const R *d_w,
+                    T *d_M) {
+  if (n < 1) {
+    return;
+  }
+  const HermExpScaleFunctor<T, R> functor{d_U, d_w, d_M, n};
+  wwr::extension::parallel_for<int>(stream, n * n, functor);
+}
+
+template<typename T, typename R>
 void abs_colsums(const wwr::wwrStream_t stream, const int n, const T *d_A, const int lda,
                  R *d_colsum) {
   if (n < 1) {
@@ -313,6 +347,16 @@ template void pade_split<wwrFloatComplex>(wwr::wwrStream_t, int, const wwrFloatC
 template void pade_split<wwrDoubleComplex>(wwr::wwrStream_t, int, const wwrDoubleComplex *,
                                            const wwrDoubleComplex *, wwrDoubleComplex *, int,
                                            wwrDoubleComplex *);
+
+template void herm_exp_scale<float, float>(wwr::wwrStream_t, int, const float *, const float *,
+                                           float *);
+template void herm_exp_scale<double, double>(wwr::wwrStream_t, int, const double *, const double *,
+                                             double *);
+template void herm_exp_scale<wwrFloatComplex, float>(wwr::wwrStream_t, int, const wwrFloatComplex *,
+                                                     const float *, wwrFloatComplex *);
+template void herm_exp_scale<wwrDoubleComplex, double>(wwr::wwrStream_t, int,
+                                                       const wwrDoubleComplex *, const double *,
+                                                       wwrDoubleComplex *);
 
 template void abs_colsums<float, float>(wwr::wwrStream_t, int, const float *, int, float *);
 template void abs_colsums<double, double>(wwr::wwrStream_t, int, const double *, int, double *);

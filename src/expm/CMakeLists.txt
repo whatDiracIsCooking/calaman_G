@@ -1,15 +1,18 @@
-# calaman.expm -- the matrix exponential exp(A) by scaling and squaring with a
-# diagonal Pade approximant (Higham's Algorithm 2.3). A shipped src/ module: a
-# host composition over wrapped BLAS (gemm/geam) and the wrapped LU solve
-# (getrf/getrs), plus four fused device kernels of its own,
-# written once against WarpWraps's `wwr*` names and built for either backend.
+# calaman.expm -- the matrix exponential exp(A). Two drivers: the general
+# scaling-and-squaring one (Higham's Algorithm 2.3) and expm_herm, the
+# eigendecomposition route for a symmetric/Hermitian A. A shipped src/ module: a
+# host composition over wrapped BLAS (gemm/geam), the wrapped LU solve
+# (getrf/getrs) and the wrapped symmetric/Hermitian eigensolver (syevd/heevd),
+# plus the fused device kernels of its own, written once against WarpWraps's
+# `wwr*` names and built for either backend.
 #
 # The matrix exponential is not a LAPACK routine (LAPACK ships no expm), so it
 # is its own module rather than a calaman.linalg partition, like calaman.horner.
 
-# The device-kernel library: the four genuinely per-element pieces (the fused
-# Pade evaluation, the numerator/denominator split, and the two halves of the
-# 1-norm). expm.cu launches its own functors
+# The device-kernel library: the genuinely per-element pieces (the fused Pade
+# evaluation, the numerator/denominator split, the two halves of the 1-norm, and
+# expm_herm's eigenvalue-exponential column scale). expm.cu launches its own
+# functors
 # through wwr.extension.parallel_for, defers the column sums to
 # calaman.reduce_columns's header, and takes its type-generic scalar arithmetic
 # from calaman.elem_ops's header, so it links all three PRIVATE: parallel_for
@@ -60,6 +63,7 @@ calaman_add_cxx_module_library(
   buffer_size.cppm
   pade.cppm
   expm.cppm
+  expm_herm.cppm
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
