@@ -129,10 +129,66 @@ real), and prefer **nvCOMP** (already in the CUDA image, GPU, on-identity) over
 adding CPU LZ4/Snappy as a new host dependency. zstd's ~15–20% edge over LZ4 is
 worth noting if nvCOMP's zstd path is available on both backends.
 
+## Lossy downcasting (`lossy_downcast.py`)
+
+A *lossy* extension: scale, then cast `fp64 -> {fp32, fp16}` before the usual
+transform + codec, round-trip back to fp64, and measure both ratio and error. The
+scale/unscale is exact (power-of-two exponent shift), so the **only** lossy step is
+the cast — error floors are fp32 `2^-24` (5.96e-8) and fp16 `2^-11` (4.88e-4).
+Ratio is vs the **original fp64** byte count, so the width reduction (2× / 4×) is
+part of the win.
+
+```bash
+uv run --with numpy --with cramjam \
+    experimental/compression_demo/lossy_downcast.py
+```
+
+### fp32 is a clean ~2× over the best lossless pipeline
+
+| dataset (zstd, transpose) | f64 lossless | fp32 | fp16 |
+|---|---|---|---|
+| geqp3 dense | 1.15 | 2.35 | 4.92 |
+| geqp3 rankdef_r64 | 9.01 | 18.63 | 36.83 |
+| noisy gaussian | 1.13 | 2.32 | 4.35 |
+
+Each precision halving roughly doubles the ratio; the stage ranking is unchanged
+(`transpose` wins, `xor_delta` helps only on smooth data). fp32 round-trips at a
+uniform **6e-8 with zero underflow** — its 8 exponent bits have ample headroom
+below 1.
+
+### fp16 is dangerous under *global* scaling — and per-element fixes it
+
+Global `/2^k` scaling is **wrong for fp16**: its 5-bit exponent bottoms out at
+~6.1e-5, so pinning the max below 1 drags small elements into subnormals/underflow.
+On the wide-dynamic-range geqp3 matrices the max relative error blows up to **1.0**
+(e.g. `rankdef_r256`: max 3262, min 3.2e-9, span ~10¹² — 4 elements underflow to 0).
+
+**Per-element (block-floating-point) scaling** — `frexp` each value into a mantissa
+∈ [0.5,1) plus its own integer exponent, downcast the mantissa, store exponents as a
+second int16 stream — removes the failure mode entirely: the mantissa is always a
+*normal* fpN, so there is no underflow and the error is a uniform ~roundoff:
+
+| fp16, zstd, transpose | global maxerr / uflow | per-element maxerr / uflow |
+|---|---|---|
+| geqp3 rankdef_r256 | **1.00** / 4 | **4.9e-4** / 0 |
+| geqp3 rankdef_r64 | 0.31 / 0 | 4.8e-4 / 0 |
+| geqp3 dense | 1.35e-2 / 0 | 4.9e-4 / 0 |
+
+The cost is ~10% ratio (the exponent side-stream, which compresses well). Its one
+downside: data sitting on a power-of-two boundary fragments into two exponent
+classes (`near-constant` 20165× → 17.6×). fp32 needs *neither* mode — global
+already gives uniform 6e-8.
+
+**Takeaway:** fp32 downcast is the biggest single lever found (~2× over lossless,
+bounded 6e-8 error). fp16 doubles that again but only via per-element
+block-floating-point, and only where a ~5e-4 relative error is acceptable; raw
+global-scaled fp16 is unsafe on general LA output.
+
 ## Files
 
 | File | What |
 |---|---|
-| `compression_demo.py` | the spike: numpy transforms + `_selfcheck` + ratio table |
+| `compression_demo.py` | the lossless spike: numpy transforms + `_selfcheck` + ratio/scaling/split tables |
+| `lossy_downcast.py` | lossy fp32/fp16 downcast, global vs per-element (block-FP) scaling |
 | `geqp3_dump.cpp` | standalone dumper of the geqp3 suite's matrices to raw f64 |
 | `data/*.f64` | generated column-major fp64 dumps (git-ignored) |
