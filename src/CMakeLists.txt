@@ -251,3 +251,13 @@ add_subdirectory(gehrd)
 # ladiv_scalar root-relative (#94 depends on #86), so it links no sibling module
 # -- only calaman.error_handling.
 add_subdirectory(laln2)
+
+# calaman.laqr5 -- one non-accumulated (KACC22 = 0) multishift QR sweep with
+# bulge chasing (LAPACK's ?laqr5), the inner engine of the multishift QR
+# iteration. One single-thread device kernel (per-reflector math is O(1); each
+# order-2/3 reflector touches O(N) rows/cols) that inlines the ?laqr1 shift
+# polynomial and ?larfg reflector generation -- calaman.laqr1 is a host module
+# unusable from a device kernel -- so, like laexc, it links no sibling LAPACK
+# module, only calaman.error_handling. Placed after laqr1, whose arithmetic it
+# reproduces. Structurally laexc's twin.
+add_subdirectory(laqr5)
