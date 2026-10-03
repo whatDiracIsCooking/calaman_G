@@ -62,6 +62,13 @@ add_subdirectory(laset)
 # for readability.
 add_subdirectory(lascl2)
 
+# calaman.lascl is lascl2's near-namesake and structural twin (the same
+# hand-launched per-element kernel), here LAPACK's ?lascl: scale a full matrix
+# by cto/cfrom via a host-side over/underflow-guarded multiplier chain rather
+# than a diagonal product. It shares no build edge with lascl2 -- added next to
+# it only for readability.
+add_subdirectory(lascl)
+
 # calaman.lartg is lacgv's structural sibling (a single per-element functor
 # through wwr.extension.parallel_for), here the batched lift of LAPACK's ?lartg:
 # n plane rotations (c, s, r) from n pairs (f, g). It links only
