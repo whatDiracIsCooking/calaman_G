@@ -1,15 +1,26 @@
 /**
  * @file workspace_builder.cppm
  * @brief The :workspace_builder partition of calaman.common -- size one device
- *        scratch buffer built from many aligned regions
+ *        scratch buffer built from many aligned regions, and carve the pointers
  *
  * Pure host byte arithmetic: no device code, no allocation, no WarpWraps. A
  * routine that needs several device buffers usually wants ONE allocation carved
  * into aligned regions rather than many calls to the device allocator.
- * WorkspaceBuilder computes how many bytes that single allocation needs; the
- * caller allocates `total()` bytes once and lays the regions out at offsets it
- * derives with the same calaman::align_up used here (from the :align_up
- * partition, which this unit imports).
+ *
+ * Two classes, for the two moments a workspace is touched:
+ *
+ *   - WorkspaceBuilder answers "how many bytes": add every region, read total().
+ *     The caller then lays the regions out itself at offsets it derives with the
+ *     same calaman::align_up used here.
+ *   - WorkspaceLayout answers "how many bytes" AND "where is each region": the
+ *     same add calls hand back the typed, aligned pointer. Constructed over the
+ *     real base it carves; over nullptr it only sizes -- so a routine writes its
+ *     layout ONCE and runs it twice (null base for its *_bufferSize, the real
+ *     base inside the routine), and the size query can never drift from the
+ *     carving the way a separately-maintained WorkspaceBuilder list can.
+ *
+ * Both take the aligned sizes from the :align_up partition, which this unit
+ * imports.
  *
  * Two kinds of region, because a workspace holds two kinds of buffer:
  *
@@ -86,6 +97,65 @@ public:
   }
 
   /// @brief Total bytes to allocate: every fixed region plus the largest scratch
+  [[nodiscard]] std::size_t total() const noexcept { return fixed_ + scratch_; }
+};
+
+/// @brief Lay out ONE device workspace buffer into aligned regions, SIZING the
+///        layout and handing back the typed pointer from the SAME calls
+///
+/// WorkspaceBuilder answers "how many bytes"; WorkspaceLayout also answers "where
+/// is each region". Construct it over the real base to carve, or over nullptr to
+/// size only -- every fixed()/scratch() returns nullptr in sizing mode but
+/// advances the offsets identically, so a routine writes its layout once and runs
+/// it twice: null base inside its *_bufferSize, the real base inside the routine.
+/// The size query therefore cannot drift from the carving.
+///
+/// The two region kinds are WorkspaceBuilder's: FIXED regions coexist and
+/// accumulate; SCRATCH regions alias, so they share one base and total() counts
+/// only the largest. ADD EVERY FIXED REGION BEFORE ANY SCRATCH REGION -- the
+/// scratch zone sits at the end of the fixed run, so a fixed() after a scratch()
+/// would overlap it. Each region is rounded up to `alignment` (default 256, the
+/// boundary a device allocator hands back, so a buffer from one starts aligned);
+/// successive offsets stay aligned as long as every region shares that alignment.
+/// Same overflow caveats as WorkspaceBuilder and align_up -- realistic workspace
+/// sizes, not adversarial inputs.
+export class WorkspaceLayout {
+  std::byte *base_;         ///< buffer base, or nullptr to size without carving
+  std::size_t fixed_ = 0;   ///< running end of the fixed run, in bytes
+  std::size_t scratch_ = 0; ///< largest scratch region seen, in bytes
+
+public:
+  /// @brief Size only (@p base null) or carve from @p base.
+  explicit WorkspaceLayout(void *const base) noexcept : base_(static_cast<std::byte *>(base)) {}
+
+  /// @brief Reserve a fixed region of @p count elements of T; returns its aligned
+  ///        base, or nullptr in sizing mode. The region stays live, so it
+  ///        accumulates.
+  template <typename T>
+  [[nodiscard]] T *fixed(const std::size_t count, const std::size_t alignment = 256) noexcept {
+    std::byte *const at = (base_ != nullptr) ? base_ + fixed_ : nullptr;
+    fixed_ += align_up(count * sizeof(T), alignment);
+    return reinterpret_cast<T *>(at);
+  }
+
+  /// @brief Reserve a scratch region of @p count elements of T; returns the base
+  ///        of the shared scratch zone, or nullptr in sizing mode. Every scratch()
+  ///        returns the SAME pointer -- the regions alias -- and total() reserves
+  ///        only the largest. Call after every fixed(), never before.
+  template <typename T>
+  [[nodiscard]] T *scratch(const std::size_t count, const std::size_t alignment = 256) noexcept {
+    scratch_ = std::max(scratch_, align_up(count * sizeof(T), alignment));
+    return (base_ != nullptr) ? reinterpret_cast<T *>(base_ + fixed_) : nullptr;
+  }
+
+  /// @brief The address the next fixed() would return, WITHOUT reserving it -- the
+  ///        base of a sub-layout a caller carves separately (e.g. expm's pade
+  ///        region). nullptr in sizing mode.
+  [[nodiscard]] void *cursor() const noexcept {
+    return (base_ != nullptr) ? base_ + fixed_ : nullptr;
+  }
+
+  /// @brief Total bytes the layout spans: every fixed region plus the largest scratch.
   [[nodiscard]] std::size_t total() const noexcept { return fixed_ + scratch_; }
 };
 

@@ -30,7 +30,7 @@ calaman_add_gpu_device_library(
 # LINK_PUBLIC is the union of what the exported paterson_stockmeyer() body
 # names: the gemm wrapper (wwr.wrappers.blas), the handle/status/op/GetStream
 # layer (wwr.blas), the wwrStream_t type the body hands to the launcher
-# (wwr.runtime_api) and calaman.common (kZero/kOne scalars, WorkspaceBuilder,
+# (wwr.runtime_api) and calaman.common (kZero/kOne scalars, WorkspaceLayout,
 # align_up). calaman.error_handling is additionally re-exported (export import)
 # because it supplies the Status return type, whose member functions a consumer
 # must see.

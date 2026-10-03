@@ -95,7 +95,7 @@ import wwr.complex; // wwrFloatComplex, wwrDoubleComplex, make_wwr*Complex (host
 import wwr.wrappers.common;           // usual_fp, complex_fp, ComplexToRealType
 import wwr.wrappers.blas;             // gemm, geam
 import wwr.wrappers.solver;           // getrf, getrf_bufferSize, getrs (legacy, int-dimensioned)
-import calaman.common;                // WorkspaceBuilder, align_up
+import calaman.common;                // WorkspaceLayout, align_up
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
@@ -122,23 +122,11 @@ T as_element(const wwr::ComplexToRealType<T> x) {
   }
 }
 
-/// @brief The largest pade_num_blocks over the whole ladder -- what expm() reserves.
-constexpr int pade_max_blocks() {
-  int best = 0;
-  for (int i = 0; i < kNumPadeDegrees; ++i) {
-    const int b = pade_num_blocks(kPadeDegrees[i]);
-    if (b > best) {
-      best = b;
-    }
-  }
-  return best;
-}
-
 /**
  * @brief Device workspace slices for pade(), all 256-aligned.
  *
  * The layout is positional, and how many n*n blocks it spans depends on the
- * degree -- pade_num_blocks(m), 3 at m = 3 and 6 at m = 9 and m = 13:
+ * degree -- 3 at m = 3 and 6 at m = 9 and m = 13:
  *
  *   [P[0] | n*n T]  A^2 ... then holds U = A*W once V and W are formed
  *   [P[1] | n*n T]  A^4, when the degree needs it
@@ -165,35 +153,25 @@ struct PadeWorkspace {
   int *ipiv = nullptr;
   T *work_getrf = nullptr;
 
-  static PadeWorkspace make(void *d_work, const int n, const int m) {
-    PadeWorkspace r;
-    auto *p = static_cast<std::byte *>(d_work);
-
-    const std::size_t mat = align_up(static_cast<std::size_t>(n) * n * sizeof(T), std::size_t{256});
-
+  /// @brief Carve the slices from @p layout, which sizes (null base) or carves
+  ///        (real base) identically -- so pade_bufferSize and pade() share this
+  ///        ONE region list and cannot drift. @p lwork_getrf is the getrf scratch
+  ///        length, the one region whose size the caller has to query first.
+  void carve(WorkspaceLayout &layout, const int n, const int m, const int lwork_getrf) {
+    const std::size_t nn = static_cast<std::size_t>(n) * n;
     const int np = pade_num_powers(m);
     for (int k = 0; k < np; ++k) {
-      r.P[k] = reinterpret_cast<T *>(p);
-      p += mat;
+      P[k] = layout.fixed<T>(nn);
     }
     if (m == 13) {
-      r.X = reinterpret_cast<T *>(p);
-      p += mat;
+      X = layout.fixed<T>(nn);
     }
-
-    r.V = reinterpret_cast<T *>(p);
-    p += mat;
-    r.W = reinterpret_cast<T *>(p);
-    p += mat;
-
-    r.ipiv = reinterpret_cast<int *>(p);
-    p += align_up(static_cast<std::size_t>(n) * sizeof(int), std::size_t{256});
-
-    r.work_getrf = reinterpret_cast<T *>(p);
-
-    r.U = r.P[0];
-    r.Q = r.V;
-    return r;
+    V = layout.fixed<T>(nn);
+    W = layout.fixed<T>(nn);
+    ipiv = layout.fixed<int>(static_cast<std::size_t>(n));
+    work_getrf = layout.fixed<T>(static_cast<std::size_t>(lwork_getrf));
+    U = P[0];
+    Q = V;
   }
 };
 
@@ -215,26 +193,14 @@ struct ExpmWorkspace {
   RealT *colsum = nullptr;
   void *pade_base = nullptr;
 
-  static ExpmWorkspace make(void *d_work, const int n) {
-    ExpmWorkspace r;
-    auto *p = static_cast<std::byte *>(d_work);
-
-    const auto bump = [&p](const std::size_t bytes) {
-      auto *here = p;
-      p += align_up(bytes, std::size_t{256});
-      return here;
-    };
-
-    const std::size_t nn = static_cast<std::size_t>(n) * n;
-    const std::size_t sn = static_cast<std::size_t>(n);
-
-    r.As = reinterpret_cast<T *>(bump(nn * sizeof(T)));
-    r.sq = r.As;
-
-    r.colsum = reinterpret_cast<RealT *>(bump(sn * sizeof(RealT)));
-
-    r.pade_base = p;
-    return r;
+  /// @brief Carve As and colsum from @p layout; pade_base is the layout cursor
+  ///        after them -- where pade() carves its own sub-layout (expm sizes that
+  ///        region for the worst degree, pade carves it for the chosen one).
+  void carve(WorkspaceLayout &layout, const int n) {
+    As = layout.fixed<T>(static_cast<std::size_t>(n) * n);
+    sq = As;
+    colsum = layout.fixed<RealT>(static_cast<std::size_t>(n));
+    pade_base = layout.cursor();
   }
 };
 
@@ -411,11 +377,10 @@ Status pade_bufferSize(wwr::wwrsolverDnHandle_t handle, const int m, const int n
   int lwork_getrf = 0;
   CLM_TRY(wwr::getrf_bufferSize<T>(handle, n, n, static_cast<T *>(nullptr), n, &lwork_getrf));
 
-  WorkspaceBuilder ws;
-  ws.add_fixed<T>(static_cast<std::size_t>(n) * n, static_cast<std::size_t>(pade_num_blocks(m)));
-  ws.add_fixed<int>(static_cast<std::size_t>(n));         // ipiv
-  ws.add_fixed<T>(static_cast<std::size_t>(lwork_getrf)); // getrf scratch
-  *lwork_bytes = ws.total();
+  WorkspaceLayout layout(nullptr); // null base: size only, from the same carve pade() runs
+  PadeWorkspace<T> ws;
+  ws.carve(layout, n, m, lwork_getrf);
+  *lwork_bytes = layout.total();
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
@@ -439,18 +404,22 @@ Status expm_bufferSize(wwr::wwrsolverDnHandle_t handle, const int n, std::size_t
   int lwork_getrf = 0;
   CLM_TRY(wwr::getrf_bufferSize<T>(handle, n, n, static_cast<T *>(nullptr), n, &lwork_getrf));
 
-  const std::size_t sn = static_cast<std::size_t>(n);
-  using RealT = wwr::ComplexToRealType<T>;
+  // As + colsum, then the pade region sized for the WORST degree on the ladder:
+  // run the same PadeWorkspace carve over every degree and take the largest, so
+  // expm() can carve any chosen degree into the region that follows.
+  WorkspaceLayout layout(nullptr);
+  ExpmWorkspace<T> ews;
+  ews.carve(layout, n);
 
-  WorkspaceBuilder ws;
-  ws.add_fixed<T>(sn * sn); // As (and, later, sq)
-  ws.add_fixed<RealT>(sn);  // colsum
-  // The pade region, sized for the worst degree on the ladder.
-  ws.add_fixed<T>(sn * sn, static_cast<std::size_t>(pade_max_blocks()));
-  ws.add_fixed<int>(sn);                                  // ipiv
-  ws.add_fixed<T>(static_cast<std::size_t>(lwork_getrf)); // getrf scratch
+  std::size_t worst_pade = 0;
+  for (int i = 0; i < kNumPadeDegrees; ++i) {
+    WorkspaceLayout pade_layout(nullptr);
+    PadeWorkspace<T> pws;
+    pws.carve(pade_layout, n, kPadeDegrees[i], lwork_getrf);
+    worst_pade = std::max(worst_pade, pade_layout.total());
+  }
 
-  *lwork_bytes = ws.total();
+  *lwork_bytes = layout.total() + worst_pade;
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
@@ -500,13 +469,18 @@ Status pade(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolve
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 
-  std::size_t required = 0;
-  CLM_TRY(pade_bufferSize<T>(cusolver_handle, m, n, &required));
-  if (lwork_bytes < required) {
+  int lwork_getrf = 0;
+  CLM_TRY(wwr::getrf_bufferSize<T>(cusolver_handle, n, n, static_cast<T *>(nullptr), n,
+                                   &lwork_getrf));
+
+  // One carve, sizing and laying out together: total() is the requirement, and
+  // the pointers are unused until after the lwork check below passes.
+  WorkspaceLayout layout(d_work);
+  PadeWorkspace<T> ws;
+  ws.carve(layout, n, m, lwork_getrf);
+  if (lwork_bytes < layout.total()) {
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
-
-  const auto ws = PadeWorkspace<T>::make(d_work, n, m);
   const int np = pade_num_powers(m);
 
   // The gemms use host scalars, so the handle must be in HOST pointer mode
@@ -664,7 +638,9 @@ Status expm(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolve
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
 
-  const auto ws = ExpmWorkspace<T>::make(d_work, n);
+  WorkspaceLayout layout(d_work);
+  ExpmWorkspace<T> ws;
+  ws.carve(layout, n);
 
   // HOST pointer mode for the host-scalar gemms/geams, restored on every exit.
   // A destructor, not a trailing lambda: CLM_TRY's bail-out is a bare `return`,

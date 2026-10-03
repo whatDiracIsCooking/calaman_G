@@ -12,7 +12,7 @@
  *
  * Two kinds of thing live here. The Pade COEFFICIENT TABLES and the little
  * constexpr helpers over them (pade_coeffs, pade_num_powers, pade_num_gemms,
- * pade_num_blocks, kPadeDegrees) are pure host arithmetic the interface reads to
+ * kPadeDegrees) are pure host arithmetic the interface reads to
  * drive the ladder; they name no device and no complex type, so a host GMF parse
  * is happy with them. The KERNEL LAUNCHERS are the four genuinely per-element
  * pieces of expm -- the fused Pade evaluation, the numerator/denominator split,
@@ -127,12 +127,6 @@ constexpr int pade_num_powers(const int m) { return (m == 13) ? 3 : (m - 1) / 2;
 /// and 1 more forms U = A * W. Degree 13 adds the two nested products.
 constexpr int pade_num_gemms(const int m) {
   return pade_num_powers(m) + 1 + ((m == 13) ? 2 : 0);
-}
-
-/// @brief n*n blocks pade() needs at degree @p m: the powers, V and W (plus the
-///        one scratch block degree 13's nested form uses).
-constexpr int pade_num_blocks(const int m) {
-  return pade_num_powers(m) + ((m == 13) ? 1 : 0) + 2;
 }
 
 namespace device {
