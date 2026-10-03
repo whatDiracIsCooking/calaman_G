@@ -270,3 +270,12 @@ add_subdirectory(laqr5)
 # its own (ormqr carries the device work). Links calaman.common (Side/Trans) and
 # calaman.error_handling; see its CMakeLists.txt for the wwr edges.
 add_subdirectory(ormhr)
+
+# calaman.orghr -- generate the orthogonal Q from ?gehrd's Householder
+# reflectors (LAPACK's ?orghr, real s/d), the step that turns gehd2's packed
+# output into an explicit Q for the nonsymmetric eigenproblem. A host driver
+# that shuffles the reflectors one column right with its own hand-launched
+# kernel (laset's layout) and hands the window block to wwr::orgqr; it owns no
+# sibling-LAPACK build edge and links only calaman.common and
+# calaman.error_handling (both added earlier).
+add_subdirectory(orghr)
