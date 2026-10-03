@@ -58,11 +58,10 @@
 module;
 
 #include "horner_bridge.h"
-
-// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
-// not by import. Resolved root-relative via the src/ root calaman.error_handling
-// exports; needs calaman::Status visible at expansion, which the import below
-// (export import) supplies.
+// CLM_TRY / CLM_REQUIRE -- macros, so they arrive by #include in the global
+// module fragment, not by import. Resolved root-relative via the src/ root
+// calaman.error_handling exports; need calaman::Status visible at expansion,
+// which the export import below supplies.
 #include "error_handling/error_macros.h"
 
 export module calaman.horner;
@@ -71,11 +70,12 @@ import std;
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_OP_N, WWRBLAS_STATUS_*
 import wwr.runtime_api;   // wwrStream_t (the type wwrblasGetStream writes)
 import wwr.wrappers.blas; // gemm
-import calaman.common;    // kZero<T> / kOne<T> (:constants), WorkspaceBuilder
+import calaman.common;    // kZero<T> / kOne<T> (:constants), WorkspaceBuilder, all_nonnull (:validation)
 
-// export import, not a plain import: horner RETURNS calaman::Status, so a
-// consumer of `import calaman.horner;` must see Status's member functions, not
-// just its name -- the same re-export diff_norm does.
+// export import, not a plain import: horner() RETURNS calaman::Status, whose
+// member functions (ok/name/message) a consumer of this module must see, not
+// just the type name -- the same reason calaman.diff_norm re-exports it. It also
+// supplies the ::calaman::Status that CLM_TRY/CLM_REQUIRE name at expansion.
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
@@ -157,16 +157,11 @@ export template<typename T>
 Status horner(wwr::wwrblasHandle_t handle, const int n, const T *d_coeffs, const int degree,
               const T *d_A, const int lda, T *d_P, const int ldp, void *d_work,
               const std::size_t work_bytes) {
-  if (n < 1 || degree < 0 || lda < n || ldp < n) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
-  if (d_coeffs == nullptr || d_A == nullptr || d_P == nullptr) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_REQUIRE(n >= 1 && degree >= 0 && lda >= n && ldp >= n, wwr::WWRBLAS_STATUS_NOT_INITIALIZED);
+  CLM_REQUIRE(all_nonnull(d_coeffs, d_A, d_P), wwr::WWRBLAS_STATUS_NOT_INITIALIZED);
   // Degree 0 is just c_0 * I: no product, so no scratch block.
-  if (degree > 0 && (d_work == nullptr || work_bytes < horner_bufferSize<T>(n))) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
-  }
+  CLM_REQUIRE(degree == 0 || (d_work != nullptr && work_bytes >= horner_bufferSize<T>(n)),
+              wwr::WWRBLAS_STATUS_NOT_INITIALIZED);
 
   // The diagonal-update launchers enqueue on the handle's own stream, the same
   // one the gemms run on, so the whole evaluation stays ordered on one stream.

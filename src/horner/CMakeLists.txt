@@ -30,9 +30,10 @@ calaman_add_gpu_device_library(
 # LINK_PUBLIC is the union of what the exported horner() body names: the gemm
 # wrapper (wwr.wrappers.blas), the handle/status/op-constant/GetStream layer
 # (wwr.blas), the wwrStream_t type the body hands to the launchers
-# (wwr.runtime_api) and calaman.common (kZero/kOne scalars, WorkspaceBuilder).
-# calaman.error_handling is additionally re-exported (export import) because it
-# supplies the Status return type, whose member functions a consumer must see.
+# (wwr.runtime_api) and calaman.common (kZero/kOne scalars, WorkspaceBuilder,
+# all_nonnull for the front-door check). calaman.error_handling is additionally
+# re-exported (export import) because it supplies the Status return type, whose
+# member functions a consumer must see.
 #   calaman.error_handling  Status, the cross-domain return type
 # LINK_PRIVATE wwr_backend is for the runtime.h that horner_bridge.h
 # pulls into the global module fragment: a GMF cannot `import`, so wwrStream_t
