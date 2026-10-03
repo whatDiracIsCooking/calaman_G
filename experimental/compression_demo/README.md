@@ -184,11 +184,62 @@ bounded 6e-8 error). fp16 doubles that again but only via per-element
 block-floating-point, and only where a ~5e-4 relative error is acceptable; raw
 global-scaled fp16 is unsafe on general LA output.
 
+## Bit-plane transpose (`bit_transpose_demo.py`)
+
+`byte_transpose` groups by *byte* significance (8 planes); `bit_transpose` goes one
+level finer — 64 planes, plane `b` holding bit `b` of every value, bit-packed (same
+total size when `n % 8 == 0`). The idea: an individual low-entropy bit (a constant
+sign bit, or a high exponent bit sharing a byte with varying neighbours) becomes a
+contiguous run of identical bits the codec collapses, which byte-planes can't isolate.
+
+```bash
+uv run --with numpy --with cramjam \
+    experimental/compression_demo/bit_transpose_demo.py
+```
+
+It is a **sharper tool that cuts both ways** (zstd):
+
+| dataset | byte T | bit T | winner |
+|---|---|---|---|
+| linspace | 37.4 | **142.7** | bit (≈4×) |
+| near-constant | 2.12 | **2.42** | bit |
+| geqp3 dense | **1.15** | 1.10 | byte |
+| geqp3 rankdef_r64 | **9.01** | 8.79 | byte |
+
+- **bit-transpose wins on smooth / structured data** (linspace, near-constant, sorted
+  — where bit positions have exploitable structure).
+- **it loses or ties on the real geqp3 (high-entropy) matrices**, and under **LZ4** it
+  actively *hurts* geqp3 (1.06 → 1.00): bit-packing destroys the byte-aligned runs
+  LZ4's match-finder needs. It's far safer under **zstd** than LZ4/Snappy.
+
+So for this project's workload `byte_transpose` stays the default (as good or better,
+at 1/8 the planes and no bit-packing); `bit_transpose` is a lever for smooth fp64
+(time series, parameter sweeps) under a strong codec — it reinforces rather than
+displaces the Phase-2 recommendation.
+
+### XOR-delta commutes with transpose — exactly
+
+Order is irrelevant for the XOR-delta + transpose pair: `transpose(xor_delta(x))` and
+`xor_delta_within_planes(transpose(x))` produce **bit-for-bit identical** output (hence
+identical ratio), verified across all datasets for both byte and bit transpose. The
+reason is algebraic — they act on orthogonal axes:
+
+- transpose is a *value-independent bit permutation* π (bit `j` of element `i` moves to
+  a slot fixed by `j`, keeping element `i`'s identity);
+- xor_delta is a *per-element bitwise XOR*, and XOR is carry-free, so
+  `bitⱼ(xᵢ ⊕ xᵢ₋₁) = bitⱼ(xᵢ) ⊕ bitⱼ(xᵢ₋₁)` — thus `π(xᵢ ⊕ xᵢ₋₁) = π(xᵢ) ⊕ π(xᵢ₋₁)`.
+
+**Caveat:** this is special to XOR. An *arithmetic* (subtraction) delta would **not**
+commute — its carries cross byte/bit boundaries. Practical upshot: a Phase-2
+implementation may order xor_delta and transpose purely for performance; the
+compressed result is guaranteed the same.
+
 ## Files
 
 | File | What |
 |---|---|
 | `compression_demo.py` | the lossless spike: numpy transforms + `_selfcheck` + ratio/scaling/split tables |
 | `lossy_downcast.py` | lossy fp32/fp16 downcast, global vs per-element (block-FP) scaling |
+| `bit_transpose_demo.py` | bit-plane vs byte-plane transpose + xor/transpose commutativity |
 | `geqp3_dump.cpp` | standalone dumper of the geqp3 suite's matrices to raw f64 |
 | `data/*.f64` | generated column-major fp64 dumps (git-ignored) |
