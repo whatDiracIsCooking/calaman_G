@@ -38,7 +38,7 @@ calaman_add_gpu_device_library(
 # memcpy/sync (wwr.runtime_api), the complex element types and their host
 # constructors (wwr.complex), the usual_fp/ComplexToRealType traits
 # (wwr.wrappers.common), the type-safe BLAS and solver wrappers
-# (wwr.wrappers.blas, wwr.wrappers.solver) and the WorkspaceBuilder/align_up
+# (wwr.wrappers.blas, wwr.wrappers.solver) and the WorkspaceLayout/align_up
 # (calaman.common). calaman.error_handling is additionally re-exported (export
 # import) because expm/pade RETURN calaman::Status.
 #   calaman.error_handling  Status, the cross-domain return type

@@ -86,7 +86,7 @@ import std;
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_OP_N, WWRBLAS_STATUS_*
 import wwr.runtime_api;   // wwrStream_t (the type wwrblasGetStream writes)
 import wwr.wrappers.blas; // gemm
-import calaman.common;    // kZero<T> / kOne<T> (:constants), WorkspaceBuilder, align_up
+import calaman.common;    // kZero<T> / kOne<T> (:constants), WorkspaceLayout, align_up
 
 // export import, not a plain import: paterson_stockmeyer RETURNS calaman::Status,
 // so a consumer of `import calaman.paterson_stockmeyer;` must see Status's member
@@ -213,10 +213,47 @@ export constexpr PatersonStockmeyerPlan paterson_stockmeyer_plan(const int degre
 // Workspace
 // ========================================================================
 
+/// @brief Elements between consecutive powers in the bank.
+///
+/// Each power is padded to the same 256-byte-aligned span the layout hands out,
+/// so every block in the bank is aligned, not just the first. The division is
+/// exact for every supported T (4 and 8 bytes both divide 256).
+///
+/// @tparam T Element type; one of the instantiated types (float, double)
+/// @param n  Order of the matrix
+export template<typename T>
+std::size_t paterson_stockmeyer_power_stride(const int n) {
+  const std::size_t order = static_cast<std::size_t>(n < 1 ? 1 : n);
+  return align_up(order * order * sizeof(T), std::size_t{256}) / sizeof(T);
+}
+
+/// @brief The two slices paterson_stockmeyer() carves from its one workspace.
+///
+/// Module-local. carve() sizes (null base) or carves (real base) identically, so
+/// paterson_stockmeyer_bufferSize() and paterson_stockmeyer() share this ONE
+/// region list -- the power bank (num_powers blocks, one power_stride apart, so
+/// one fixed() region of num_powers*stride elements) followed by the accumulator
+/// ping-pong block, present only when there is a Horner step to ping-pong across.
+template<typename T>
+struct PsWorkspace {
+  T *powers = nullptr;  ///< A^2, A^3, ... A^(num_powers+1), one power_stride apart
+  T *scratch = nullptr; ///< the outer-Horner accumulator's scratch half
+
+  void carve(WorkspaceLayout &layout, const PatersonStockmeyerPlan &plan, const int n) {
+    if (plan.num_powers > 0) {
+      const std::size_t stride = paterson_stockmeyer_power_stride<T>(n);
+      powers = layout.fixed<T>(static_cast<std::size_t>(plan.num_powers) * stride);
+    }
+    if (plan.r >= 1) {
+      scratch = layout.fixed<T>(static_cast<std::size_t>(n) * n);
+    }
+  }
+};
+
 /// @brief Device workspace required by paterson_stockmeyer(), in bytes.
 ///
 /// The power bank plus one accumulator block, each n-by-n and 256-byte aligned,
-/// and all live at once -- so they accumulate (add_fixed), not alias. Unlike
+/// and all live at once -- so they accumulate (fixed), not alias. Unlike
 /// horner(), this grows with the degree -- that is the trade the scheme makes.
 /// Use paterson_stockmeyer_plan() to see the block count directly.
 ///
@@ -228,28 +265,15 @@ export constexpr PatersonStockmeyerPlan paterson_stockmeyer_plan(const int degre
 export template<typename T>
 std::size_t paterson_stockmeyer_bufferSize(const int n, const int degree,
                                            const int s_requested = 0) {
-  const std::size_t order = static_cast<std::size_t>(n < 1 ? 1 : n);
+  const int order = n < 1 ? 1 : n;
   const PatersonStockmeyerPlan plan = paterson_stockmeyer_plan(degree, s_requested);
 
-  WorkspaceBuilder builder;
-  for (int block = 0; block < plan.num_blocks; ++block) {
-    builder.add_fixed<T>(order * order);
-  }
-  return builder.total();
-}
-
-/// @brief Elements between consecutive powers in the bank.
-///
-/// Each power is padded to the same 256-byte-aligned span the workspace builder
-/// hands out, so every block in the bank is aligned, not just the first. The
-/// division is exact for every supported T (4 and 8 bytes both divide 256).
-///
-/// @tparam T Element type; one of the instantiated types (float, double)
-/// @param n  Order of the matrix
-export template<typename T>
-std::size_t paterson_stockmeyer_power_stride(const int n) {
-  const std::size_t order = static_cast<std::size_t>(n < 1 ? 1 : n);
-  return align_up(order * order * sizeof(T), std::size_t{256}) / sizeof(T);
+  // Size through the SAME carve paterson_stockmeyer() runs (null base = size only),
+  // so the query and the evaluation cannot disagree on the layout.
+  WorkspaceLayout layout(nullptr);
+  PsWorkspace<T> ws;
+  ws.carve(layout, plan, order);
+  return layout.total();
 }
 
 // ========================================================================
@@ -327,13 +351,15 @@ Status paterson_stockmeyer(wwr::wwrblasHandle_t handle, const int n, const T *d_
 
   const std::size_t stride = paterson_stockmeyer_power_stride<T>(n);
 
-  // A^2, A^3, ... A^(num_powers+1), then the accumulator's scratch half. Both
-  // stay null when the plan needs no blocks, so no pointer is formed past the
-  // end of a workspace the caller was allowed to omit.
-  T *powers = (plan.num_powers > 0) ? static_cast<T *>(d_work) : nullptr;
-  T *scratch = (plan.r >= 1)
-                   ? static_cast<T *>(d_work) + static_cast<std::size_t>(plan.num_powers) * stride
-                   : nullptr;
+  // The power bank and the accumulator scratch, carved from the one workspace --
+  // the same slices paterson_stockmeyer_bufferSize() sizes. Both stay null when
+  // the plan needs no blocks, so no pointer is formed past the end of a workspace
+  // the caller was allowed to omit.
+  WorkspaceLayout layout(d_work);
+  PsWorkspace<T> ws;
+  ws.carve(layout, plan, n);
+  T *powers = ws.powers;
+  T *scratch = ws.scratch;
 
   // -- Build the power bank: A^k = A^(k-1) * A --------------------------------
   //

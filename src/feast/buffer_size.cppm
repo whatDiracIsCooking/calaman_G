@@ -5,13 +5,14 @@
  * The :buffer_size partition of calaman.feast.
  *
  * One caller-provided buffer. A single function, feast_detail::carve, both sizes
- * the layout (given a null base) and hands out the pointers (given the real
- * one), so the size query and the carving cannot drift apart. Every region
- * starts 256-byte aligned.
+ * the layout (given a null base) and hands out the pointers (given the real one)
+ * through calaman::WorkspaceLayout, so the size query and the carving cannot
+ * drift apart. Every region starts 256-byte aligned.
  *
  * The Ne resolvents dominate: Ne n^2 complex elements, 32 MiB at n = 512 in
  * double with Ne = 8. Everything else is O(n m0). The QR and eigensolver
- * workspaces are never live at the same time, so they share one region.
+ * workspaces are never live at the same time, so they share one region -- the
+ * single SCRATCH region in the layout, the rest being FIXED.
  *
  * STATUS TYPE. make_feast_slices / feast_bufferSize return a @ref calaman::Status,
  * like every other calaman.feast entry point: an argument fault surfaces as a BLAS
@@ -38,7 +39,7 @@ import wwr.blas;            // WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEigMode_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.wrappers.common; // real_fp, RealToComplexType
 import wwr.wrappers.solver; // syevd_bufferSize
-import calaman.common;      // align_up
+import calaman.common;      // align_up, WorkspaceLayout
 import calaman.orthogonalize; // orthogonalize_bufferSize
 export import calaman.error_handling; // Status -- the cross-domain return type
 
@@ -90,26 +91,20 @@ struct FeastSlices {
 
 namespace calaman::feast_detail {
 
-/// Lay out the workspace from @p d_work, or from address zero to size it when
-/// @p d_work is null. Returns the bytes the layout spans.
+/// Lay out the workspace from @p d_work, or size it when @p d_work is null.
+/// Returns the bytes the layout spans. The regions are all FIXED except the one
+/// shared QR/eigensolver SCRATCH block, carved last.
 template<wwr::real_fp T>
 std::size_t carve(void *d_work, const int n, const int m0, const int ne, const int lwork_qr,
                   const int lwork_eig, FeastSlices<T> *out) {
   using C = wwr::RealToComplexType<T>;
   constexpr std::size_t kAlign = 256;
 
-  auto *const base = static_cast<std::byte *>(d_work);
-  std::size_t offset = 0;
-  const auto take = [&](const std::size_t bytes) -> std::byte * {
-    std::byte *at = (base != nullptr) ? base + offset : nullptr;
-    offset += align_up(bytes, kAlign);
-    return at;
-  };
-
   const std::size_t nz = static_cast<std::size_t>(n);
   const std::size_t m0z = static_cast<std::size_t>(m0);
   const std::size_t nez = static_cast<std::size_t>(ne);
 
+  WorkspaceLayout layout(d_work);
   FeastSlices<T> s;
   s.lwork_qr = lwork_qr;
   s.lwork_eig = lwork_eig;
@@ -118,23 +113,23 @@ std::size_t carve(void *d_work, const int n, const int m0, const int ne, const i
   // are whole elements.
   s.resolvent_stride = align_up(nz * nz * sizeof(C), kAlign) / sizeof(C);
   s.rhs_stride = align_up(nz * m0z * sizeof(C), kAlign) / sizeof(C);
-  s.resolvents = reinterpret_cast<C *>(take(s.resolvent_stride * sizeof(C) * nez));
-  s.rhs = reinterpret_cast<C *>(take(s.rhs_stride * sizeof(C) * nez));
-  s.resolvent_ptrs = reinterpret_cast<C **>(take(nez * sizeof(C *)));
-  s.rhs_ptrs = reinterpret_cast<C **>(take(nez * sizeof(C *)));
-  s.ipiv = reinterpret_cast<int *>(take(nez * nz * sizeof(int)));
+  s.resolvents = layout.fixed<C>(s.resolvent_stride * nez);
+  s.rhs = layout.fixed<C>(s.rhs_stride * nez);
+  s.resolvent_ptrs = layout.fixed<C *>(nez);
+  s.rhs_ptrs = layout.fixed<C *>(nez);
+  s.ipiv = layout.fixed<int>(nez * nz);
 
-  s.basis = reinterpret_cast<T *>(take(nz * m0z * sizeof(T)));
-  s.a_basis = reinterpret_cast<T *>(take(nz * m0z * sizeof(T)));
-  s.a_ritz = reinterpret_cast<T *>(take(nz * m0z * sizeof(T)));
-  s.projected = reinterpret_cast<T *>(take(m0z * m0z * sizeof(T)));
-  s.rotated = reinterpret_cast<T *>(take(m0z * m0z * sizeof(T)));
-  s.ritz = reinterpret_cast<T *>(take(m0z * sizeof(T)));
-  s.residuals = reinterpret_cast<T *>(take(m0z * sizeof(T)));
-  s.colsum = reinterpret_cast<T *>(take(nz * sizeof(T)));
-  s.norm_a = reinterpret_cast<T *>(take(sizeof(T)));
+  s.basis = layout.fixed<T>(nz * m0z);
+  s.a_basis = layout.fixed<T>(nz * m0z);
+  s.a_ritz = layout.fixed<T>(nz * m0z);
+  s.projected = layout.fixed<T>(m0z * m0z);
+  s.rotated = layout.fixed<T>(m0z * m0z);
+  s.ritz = layout.fixed<T>(m0z);
+  s.residuals = layout.fixed<T>(m0z);
+  s.colsum = layout.fixed<T>(nz);
+  s.norm_a = layout.fixed<T>(1);
 
-  std::byte *const status = take(sizeof(device::FeastStatus<T>));
+  std::byte *const status = layout.fixed<std::byte>(sizeof(device::FeastStatus<T>));
   s.status = reinterpret_cast<device::FeastStatus<T> *>(status);
   if (status != nullptr) {
     s.lu_info = reinterpret_cast<int *>(status + offsetof(device::FeastStatus<T>, lu_info));
@@ -142,13 +137,14 @@ std::size_t carve(void *d_work, const int n, const int m0, const int ne, const i
     s.eig_info = reinterpret_cast<int *>(status + offsetof(device::FeastStatus<T>, eig_info));
   }
 
-  const int lwork = std::max(lwork_qr, lwork_eig);
-  s.scratch = reinterpret_cast<T *>(take(static_cast<std::size_t>(lwork) * sizeof(T)));
+  // One SCRATCH region: orthogonalize's workspace, then syevd's. They are never
+  // live together, so the block is sized to the larger and reused.
+  s.scratch = layout.scratch<T>(static_cast<std::size_t>(std::max(lwork_qr, lwork_eig)));
 
   if (out != nullptr) {
     *out = s;
   }
-  return offset;
+  return layout.total();
 }
 
 } // namespace calaman::feast_detail
