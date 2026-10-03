@@ -92,6 +92,12 @@ add_subdirectory(larf)
 # -- added next to it only for readability.
 add_subdirectory(larf1f)
 
+# calaman.larfx is calaman.larf's optimised twin (LAPACK ?larfx): a fused
+# workspace-free kernel for reflector order < 11, deferring to calaman.larf for
+# order >= 11. It LINKS calaman.larf (the fallback), so it follows it here so
+# that target exists when larfx links it.
+add_subdirectory(larfx)
+
 add_subdirectory(laqp2)
 add_subdirectory(laqps)
 add_subdirectory(geqp3)
