@@ -67,6 +67,12 @@ add_subdirectory(laqp2)
 add_subdirectory(laqps)
 add_subdirectory(geqp3)
 
+# calaman.nnls -- non-negative least squares (Lawson-Hanson active set). A host
+# driver over wrapped BLAS + wwr::ormqr that solves each passive-set subproblem
+# with calaman.geqp3, plus its own P/Z-bookkeeping kernels. Added after geqp3 so
+# that target exists when it links it.
+add_subdirectory(nnls)
+
 # calaman.expm -- the matrix exponential by scaling and squaring. A host
 # composition over wrapped BLAS + the LU solve + calaman.gebal, plus its own
 # fused kernels. Added after its calaman dependencies (common, gebal,
