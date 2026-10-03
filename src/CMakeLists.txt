@@ -184,6 +184,13 @@ add_subdirectory(lasrt)
 # It links only wwr.runtime_api and calaman.error_handling (added earlier).
 add_subdirectory(lanv2)
 
+# calaman.ladiv -- real-arithmetic complex division (LAPACK's ?ladiv), the
+# device scalar helper laln2 calls per-thread. The scalar routine is header-only
+# and host/device; the module batches n of them on the device (calaman.lartg's
+# sibling) so the oracle can exercise it on a card. Links only wwr.runtime_api
+# and calaman.error_handling (added earlier).
+add_subdirectory(ladiv)
+
 # calaman.lasy2 -- solve the order-(1..2) Sylvester equation
 # op(TL)*X + ISGN*X*op(TR) = SCALE*B, the GPU counterpart of LAPACK's ?lasy2. A
 # single single-thread device kernel (the whole solve is O(1), X at most 2x2),
