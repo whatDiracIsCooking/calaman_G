@@ -19,6 +19,11 @@ uv run --with numpy --with cramjam \
 The `.f64` dumps are git-ignored (regenerable, ~9 MB); step 1 recreates them. If
 `data/` is empty the demo still runs on the synthetic datasets and says so.
 
+For a run on a **real, production-shaped RI-DF matrix** (a multi-GB HDF5 CDERI
+tensor), see "Real RI-fit CDERI data" below — it is a separate driver
+(`cderi_demo.py`) because the dataset is far too large to live in `datasets()`
+alongside the 512 KiB synthetic arrays.
+
 ## Where the data comes from
 
 - **Synthetic patterns** — near-constant, monotonic/sorted, linspace, noisy,
@@ -29,6 +34,9 @@ The `.f64` dumps are git-ignored (regenerable, ~9 MB); step 1 recreates them. If
   compiled with the project's clang-20 + libc++, so the streams are bit-identical
   to the tests' — only scaled to 256–512 sizes, since the suite's own shapes
   (≤16) are too small for a meaningful ratio.
+- **RI-fit CDERI** — a real metric-contracted Cholesky 3-center integral tensor
+  from PySCF (see below). `.h5` inputs are git-ignored (multi-GB, regenerable
+  from PySCF).
 
 ## What the numbers say (LZ4, Snappy, and zstd as a strong-codec upper bound)
 
@@ -234,12 +242,76 @@ commute — its carries cross byte/bit boundaries. Practical upshot: a Phase-2
 implementation may order xor_delta and transpose purely for performance; the
 compressed result is guaranteed the same.
 
+## Real RI-fit CDERI data (`cderi_demo.py`)
+
+The synthetic + geqp3 arrays above are small and either random or structured by
+construction. `cderi_demo.py` runs the *same* transforms + codecs over a real
+density-fitting tensor: the metric-contracted Cholesky 3-center integrals PySCF
+writes to disk (`L^P_ij`, shape `(naux, npair)`, fp64), the exact object a
+RI/DF-based solver consumes. The reference run used `gly10` (glycine
+decapeptide, cc-pVDZ / cc-pVDZ-rifit): `(2744, 269745)` = **5.92 GB**.
+
+```bash
+uv run --with numpy --with cramjam --with h5py \
+    experimental/compression_demo/cderi_demo.py
+```
+
+It reuses the demo's faithful (C++-pinned) transforms, but swaps in a
+memory-safe plane-wise `byte_transpose` — the demo's vectorised version builds an
+`(8, n)` uint64 intermediate, which is ~47 GB at this `n` — and asserts it is
+bit-identical to the tested one on a slice before using it.
+
+### What the CDERI numbers say — the transforms barely matter; sparsity does
+
+The matrix is **57% exact zeros** (`nnz-frac 0.43`), values in `[-0.71, 1.93]`
+(RI-V metric contraction drives most AO-pair blocks to zero). That one fact sets
+the whole result: it is ~2.2–2.3× compressible *by the codec alone*, and no
+byte-level transform meaningfully improves on that.
+
+| codec | raw | xor | transpose | xor+transpose |
+|---|---|---|---|---|
+| LZ4 | **2.23** | 2.13 | 2.15 | 2.09 |
+| Snappy | **2.10** | 2.02 | 1.97 | 1.93 |
+| zstd | 2.28 | 2.25 | **2.29** | 2.20 |
+
+- **`raw` wins under LZ4 and Snappy**; `byte_transpose` edges it only under zstd,
+  and only by +0.4% (2.29 vs 2.28). Unlike the *dense* geqp3 matrices — where
+  transpose was the single robust winner — here the compressible structure is
+  the zero-runs, which a byte transform *scatters* across planes rather than
+  concentrates. So the transform's one home turf (dense high-entropy fp64) is
+  exactly what this data is not.
+- **`xor_delta` hurts everywhere**, as on the geqp3 data — its sequential-delta
+  assumption fights the sparsity, and the combination is worst of all.
+
+### Scaling and the frexp split don't help here either (zstd)
+
+|  base T | pow2+raw | pow2+xor | pow2+T | pow2+xorT | maxabs+T | mant/exp split |
+|---|---|---|---|---|---|---|
+| 2.29 | 2.28 | 2.25 | 2.29 | 2.20 | 2.29 | 2.19 |
+
+Lossless `/2^k` is confirmed exact (`pow2 exact? = yes`) and a complete wash
+(2.29 → 2.29), matching the synthetic finding — a constant exponent offset is
+free but buys nothing. The lossy `maxabs` is also 2.29 (no help, and it costs
+~1 ULP). The per-element frexp mant/exp split is lossless but a **net loss**
+(2.29 → 2.19, mantissa = 89% of the bytes): as on every other dataset, it merely
+relocates exponent bits the codec already handles and pays a second-stream tax.
+
+**Takeaway, reinforcing Phase 2:** this real RI-DF tensor confirms the thesis on
+production-scale data — the compression comes from *data structure* (here
+sparsity, as rank-deficiency drove the geqp3 win), which the codec captures with
+no transform; `byte_transpose` is at best a zstd-only tie-breaker and `xor_delta`
+is a liability. For sparse DF integrals specifically, a sparsity-aware path
+(drop the structural zeros before the codec) would dwarf any byte-plane
+transform. zstd again leads LZ4/Snappy (~2.28 vs 2.23).
+
 ## Files
 
 | File | What |
 |---|---|
 | `compression_demo.py` | the lossless spike: numpy transforms + `_selfcheck` + ratio/scaling/split tables |
+| `cderi_demo.py` | the same transforms + codecs over a real multi-GB PySCF RI-fit CDERI `.h5` |
 | `lossy_downcast.py` | lossy fp32/fp16 downcast, global vs per-element (block-FP) scaling |
 | `bit_transpose_demo.py` | bit-plane vs byte-plane transpose + xor/transpose commutativity |
 | `geqp3_dump.cpp` | standalone dumper of the geqp3 suite's matrices to raw f64 |
 | `data/*.f64` | generated column-major fp64 dumps (git-ignored) |
+| `*.h5` | real RI-fit CDERI input tensors read by `cderi_demo.py` (git-ignored, multi-GB) |
