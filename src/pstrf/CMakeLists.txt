@@ -19,7 +19,7 @@ calaman_add_gpu_device_library(
 )
 
 # All module links are PUBLIC because pstrf() is an exported template DEFINED in
-# the interface (like calaman.pstf2 / calaman.geqp3): a consumer instantiates the
+# the interface (like pstf2 / geqp3): a consumer instantiates the
 # body, so every module the body names -- including calaman.pstf2, the unblocked
 # fallback -- must reach it. pstrf.cppm's GMF includes pstrf_bridge.h
 # (INCLUDE_DIRS_PRIVATE, this directory), which pulls runtime.h; a GMF cannot

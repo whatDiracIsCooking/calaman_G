@@ -111,9 +111,9 @@ add_subdirectory(larft)
 add_subdirectory(pstf2)
 
 # calaman.pstrf -- the blocked (level-3) pivoted Cholesky driver. Inlines the
-# panel look-ahead over the wrapped BLAS (syrk trailing update) and falls back to
-# calaman.pstf2 for small n or a degenerate block size; added after pstf2 so that
-# target exists when it links it.
+# panel look-ahead over the wrapped BLAS (syrk trailing update) and falls back
+# to calaman.pstf2 for small n or a degenerate block size; added after pstf2 so
+# that target exists when it links it.
 add_subdirectory(pstrf)
 
 # calaman.nnls -- non-negative least squares (Lawson-Hanson active set). A host
