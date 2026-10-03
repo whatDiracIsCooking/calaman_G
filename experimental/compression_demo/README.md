@@ -300,9 +300,54 @@ relocates exponent bits the codec already handles and pays a second-stream tax.
 production-scale data — the compression comes from *data structure* (here
 sparsity, as rank-deficiency drove the geqp3 win), which the codec captures with
 no transform; `byte_transpose` is at best a zstd-only tie-breaker and `xor_delta`
-is a liability. For sparse DF integrals specifically, a sparsity-aware path
-(drop the structural zeros before the codec) would dwarf any byte-plane
-transform. zstd again leads LZ4/Snappy (~2.28 vs 2.23).
+is a liability. For sparse DF integrals specifically, a sparsity-aware path (drop
+the structural zeros before the codec) is the obvious next lever — measured
+directly below. zstd again leads LZ4/Snappy (~2.28 vs 2.23).
+
+### Stripping the exact zeros first (`cderi_nonzero_demo.py`)
+
+The in-place result hands the 57% zeros to the codec inline. The complementary
+move is to **strip them first** and compress only the dense nonzero stream — but
+losslessly, which means also storing a *presence bitmask* (1 bit/element) to put
+the zeros back. `cderi_nonzero_demo.py` measures both halves:
+
+```bash
+uv run --with numpy --with cramjam --with h5py \
+    experimental/compression_demo/cderi_nonzero_demo.py [path/to/cderi.h5]
+```
+
+**The nonzero values are essentially incompressible** — the zeros were the only
+structure. Intrinsic ratio of the 2.56 GB nonzero stream (vs its own size):
+
+| codec | raw | xor | transpose | xor+transpose |
+|---|---|---|---|---|
+| LZ4 | 1.00 | 1.00 | 1.07 | **1.08** |
+| Snappy | 1.00 | 1.00 | 1.06 | **1.06** |
+| zstd | 1.00 | 1.02 | **1.11** | 1.10 |
+
+**But splitting the zeros out still wins end-to-end**, because the *bitmask*
+compresses spectacularly. Lossless ratio vs the original 5.92 GB,
+`orig / [compress(values) + compress(mask)]`:
+
+| codec | values | mask | total | end-to-end | in-place (above) |
+|---|---|---|---|---|---|
+| LZ4 | 2.38 GB | 11.3 MB | 2.39 GB | **2.48×** | 2.23× |
+| Snappy | 2.40 GB | 15.1 MB | 2.42 GB | **2.45×** | 2.10× |
+| zstd | 2.31 GB | **0.1 MB** | 2.31 GB | **2.56×** | 2.29× |
+
+- **Sparse-split beats in-place on every codec** (+11% LZ4, +17% Snappy, +12%
+  zstd). The headline: the 92.5 MB presence mask crushes to **0.1 MB under zstd
+  (~925×)** — the zero pattern is highly structured (the packed lower-tri AO-pair
+  sparsity repeats across the 2744 aux vectors), so isolating it lets the entropy
+  coder exploit it fully. LZ4/Snappy manage only 11–15 MB on the same mask, which
+  is why zstd's margin widens.
+- **The win is bounded, and modestly so** — the earlier prediction that a
+  sparsity path would "dwarf" byte transforms was too strong. You still must
+  store ~2.56 GB of high-entropy nonzero doubles that *no* lossless transform
+  shrinks (~1.0–1.1×), so the lossless ceiling sits near the zero fraction
+  (~2.3–2.6×). Beating it needs a *lossy* attack on the values: fp32 downcast of
+  the nonzero stream (per `lossy_downcast.py`, ~2× at 6e-8 error) stacks on top
+  for ~5× total.
 
 ## Files
 
@@ -310,6 +355,7 @@ transform. zstd again leads LZ4/Snappy (~2.28 vs 2.23).
 |---|---|
 | `compression_demo.py` | the lossless spike: numpy transforms + `_selfcheck` + ratio/scaling/split tables |
 | `cderi_demo.py` | the same transforms + codecs over a real multi-GB PySCF RI-fit CDERI `.h5` |
+| `cderi_nonzero_demo.py` | strip exact zeros, compress the dense stream + a presence bitmask; sparse-split vs in-place |
 | `lossy_downcast.py` | lossy fp32/fp16 downcast, global vs per-element (block-FP) scaling |
 | `bit_transpose_demo.py` | bit-plane vs byte-plane transpose + xor/transpose commutativity |
 | `geqp3_dump.cpp` | standalone dumper of the geqp3 suite's matrices to raw f64 |
