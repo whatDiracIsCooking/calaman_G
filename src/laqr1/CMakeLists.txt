@@ -9,7 +9,7 @@
 # every module the body names must reach it. IMPORT_STD for std::abs.
 # calaman.error_handling is additionally re-exported (export import) because it
 # supplies the Status return type, whose member functions a consumer must see.
-#   wwr.runtime_api         wwrStream_t + wwrMemcpy(Async) for the H read/V write
+#   wwr.runtime_api         wwrStream_t + wwrMemcpy(Async) for H read/V write
 #   calaman.error_handling  Status, the cross-domain return type
 calaman_add_cxx_module_library(
   NAME

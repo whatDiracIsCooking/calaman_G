@@ -193,8 +193,9 @@ add_subdirectory(lasy2)
 
 # calaman.laqr1 -- LAPACK's ?laqr1, the scaled first column of the shift
 # polynomial (H-s1*I)(H-s2*I) that ?laqr5 uses to seed each bulge. Pure host
-# C++23 (O(1) scalar arithmetic on the top-left 3-by-3 of H), lanv2's sibling: it
-# shares no build edge with the rest of src/ and links only calaman.error_handling.
+# C++23 (O(1) scalar arithmetic on the top-left 3-by-3 of H), lanv2's sibling:
+# it shares no build edge with the rest of src/ and links only
+# calaman.error_handling.
 add_subdirectory(laqr1)
 
 # calaman.gehd2 -- the unblocked reduction of a general matrix to upper
