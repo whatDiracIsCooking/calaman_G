@@ -62,6 +62,14 @@ add_subdirectory(laset)
 # for readability.
 add_subdirectory(lascl2)
 
+# calaman.lartg is lacgv's structural sibling (a single per-element functor
+# through wwr.extension.parallel_for), here the batched lift of LAPACK's ?lartg:
+# n plane rotations (c, s, r) from n pairs (f, g). It links only
+# wwr.extension.parallel_for (its math goes through wwr.wrappers.math, no
+# elem_ops), so it shares no build edge with the rest of src/ -- added next to
+# the per-element family only for readability.
+add_subdirectory(lartg)
+
 add_subdirectory(orthogonalize)
 
 # calaman.random_unitary composes calaman.orthogonalize with a Gaussian fill, so
