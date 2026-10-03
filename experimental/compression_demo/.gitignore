@@ -1,0 +1,3 @@
+# Large external input datasets (PySCF RI-fit CDERI, etc.) -- not for git.
+# cderi_demo.py reads these; they are multi-GB and regenerable from PySCF.
+*.h5
