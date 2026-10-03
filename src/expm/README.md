@@ -207,9 +207,18 @@ with the hand-written kernel this port keeps.)
 
 ## Files
 
+The module is one interface partition per concern, re-exported by the primary
+`interface.cppm` (`:detail` excepted — it stays module-internal).
+
 | File | Role |
 |------|------|
-| `interface.cppm` | Module interface: the ladder, workspace layouts, `expm`, `pade`, `expm_plan`, `matrix_norm1` |
+| `interface.cppm` | Primary interface: the module overview and the re-exports |
+| `detail.cppm` | `:detail` — shared internals (`as_element`, `kMaxDim`, the two workspace layouts), not re-exported |
+| `plan.cppm` | `:plan` — the ladder: `pade_theta`, `ExpmPlan`, `expm_plan` |
+| `norm1.cppm` | `:norm1` — the induced matrix 1-norm, `matrix_norm1` |
+| `buffer_size.cppm` | `:buffer_size` — `pade_bufferSize`, `expm_bufferSize` |
+| `pade.cppm` | `:pade` — the unscaled Padé approximant, `pade` |
+| `expm.cppm` | `:expm` — the scaling-and-squaring driver, `expm` |
 | `expm_bridge.h` | Padé coefficient tables and the kernel-launcher declarations |
 | `expm.cu` | The five custom kernels |
 | `instantiations.cpp` | Explicit instantiations for the four element types |

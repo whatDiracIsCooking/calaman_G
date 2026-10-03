@@ -38,9 +38,11 @@ calaman_add_gpu_device_library(
 # memcpy/sync (wwr.runtime_api), the complex element types and their host
 # constructors (wwr.complex), the usual_fp/ComplexToRealType traits
 # (wwr.wrappers.common), the type-safe BLAS and solver wrappers
-# (wwr.wrappers.blas, wwr.wrappers.solver) and the WorkspaceLayout/align_up
-# (calaman.common). calaman.error_handling is additionally re-exported (export
-# import) because expm/pade RETURN calaman::Status.
+# (wwr.wrappers.blas, wwr.wrappers.solver), the ScopedPointerMode guard the
+# pade/expm bodies force host mode with (wwr.extension.blas) and the
+# WorkspaceLayout/align_up (calaman.common). calaman.error_handling is
+# additionally re-exported (export import) because expm/pade RETURN
+# calaman::Status -- and it carries PointerModeStatus, the guard's error policy.
 #   calaman.error_handling  Status, the cross-domain return type
 # LINK_PRIVATE wwr_backend is for the runtime.h that expm_bridge.h pulls into
 # the global module fragment: a GMF cannot `import`, so wwrStream_t arrives by
@@ -51,6 +53,13 @@ calaman_add_cxx_module_library(
   calaman.expm
   PRIMARY_INTERFACE
   interface.cppm
+  PARTITIONS
+  detail.cppm
+  plan.cppm
+  norm1.cppm
+  buffer_size.cppm
+  pade.cppm
+  expm.cppm
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
@@ -61,6 +70,7 @@ calaman_add_cxx_module_library(
   wwr.wrappers.common
   wwr.wrappers.blas
   wwr.wrappers.solver
+  wwr.extension.blas
   calaman.common
   calaman.error_handling
   LINK_PRIVATE
