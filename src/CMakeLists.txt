@@ -89,6 +89,13 @@ add_subdirectory(laqp2)
 add_subdirectory(laqps)
 add_subdirectory(geqp3)
 
+# calaman.larft -- the triangular factor T of a block reflector (LAPACK ?larft),
+# the piece larfb needs to apply a whole Householder block at once. A recursive
+# host composition of the wrapped BLAS-3 (trmm/gemm) plus geam; it shares no
+# build edge with the geqp3 call graph above and links only calaman.common
+# (Direct/StoreV) and calaman.error_handling, both added earlier.
+add_subdirectory(larft)
+
 # calaman.pstf2 -- the unblocked level-2 pivoted Cholesky panel of a symmetric
 # positive semidefinite matrix. A host composition of the wrapped BLAS plus its
 # own fused diagonal-and-pivot reduction; it shares no build edge with the geqp3

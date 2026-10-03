@@ -28,16 +28,18 @@ export module calaman.common:enums;
 // the purview so importers see them.
 export namespace calaman {
 
-using calaman::Jobz;
-using calaman::Uplo;
-using calaman::Region;
-using calaman::Trans;
-using calaman::Side;
 using calaman::Diag;
-using calaman::Range;
+using calaman::Direct;
 using calaman::JobSvd;
-using calaman::SortDir;
-using calaman::Norm;
+using calaman::Jobz;
 using calaman::MatrixNorm;
+using calaman::Norm;
+using calaman::Range;
+using calaman::Region;
+using calaman::Side;
+using calaman::SortDir;
+using calaman::StoreV;
+using calaman::Trans;
+using calaman::Uplo;
 
 } // namespace calaman

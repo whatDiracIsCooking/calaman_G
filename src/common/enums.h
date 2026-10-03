@@ -1,9 +1,9 @@
 /**
  * @file enums.h
  * @brief Scoped enums for the LAPACK-shaped selector arguments (Jobz, Uplo,
- *        Trans, Side, Diag, Range, JobSvd, Region, SortDir), the diff_norm Norm
- *        selector and the ?lange MatrixNorm selector, as a header shareable by
- *        device .cu code and module GMFs alike
+ *        Trans, Side, Diag, Direct, StoreV, Range, JobSvd, Region, SortDir), the
+ *        diff_norm Norm selector and the ?lange MatrixNorm selector, as a header
+ *        shareable by device .cu code and module GMFs alike
  *
  * A plain header, not a module unit, for the same reason constants.h and
  * align_up.h are: a scoped enum is a compile-time tag that both a device
@@ -41,15 +41,15 @@ namespace calaman {
 
 /// @brief Whether an eigen/SVD routine computes vectors (LAPACK `jobz`).
 enum class Jobz : std::uint8_t {
-    N, ///< Eigen/singular values only; no vectors.
-    V, ///< Compute eigen/singular values and vectors.
+  N, ///< Eigen/singular values only; no vectors.
+  V, ///< Compute eigen/singular values and vectors.
 };
 
 /// @brief Which triangle of a symmetric/Hermitian matrix is referenced
 ///        (LAPACK `uplo`).
 enum class Uplo : std::uint8_t {
-    U, ///< Upper triangle.
-    L, ///< Lower triangle.
+  U, ///< Upper triangle.
+  L, ///< Lower triangle.
 };
 
 /// @brief Which region of a general matrix a copy/fill touches -- LAPACK's
@@ -58,44 +58,58 @@ enum class Uplo : std::uint8_t {
 /// Distinct from Uplo on purpose: those two routines overload the `uplo` char
 /// with a third "all of the matrix" meaning, which no symmetric routine shares.
 enum class Region : std::uint8_t {
-    U, ///< Upper triangle/trapezoid: the diagonal and above.
-    L, ///< Lower triangle/trapezoid: the diagonal and below.
-    A, ///< All of the matrix: the whole m-by-n rectangle.
+  U, ///< Upper triangle/trapezoid: the diagonal and above.
+  L, ///< Lower triangle/trapezoid: the diagonal and below.
+  A, ///< All of the matrix: the whole m-by-n rectangle.
 };
 
 /// @brief Whether and how an operand is transposed (LAPACK `trans`).
 enum class Trans : std::uint8_t {
-    N, ///< No transpose: op(A) = A.
-    T, ///< Transpose: op(A) = A^T.
-    C, ///< Conjugate transpose: op(A) = A^H.
+  N, ///< No transpose: op(A) = A.
+  T, ///< Transpose: op(A) = A^T.
+  C, ///< Conjugate transpose: op(A) = A^H.
 };
 
 /// @brief Which side a (triangular/orthogonal) operand multiplies from
 ///        (LAPACK `side`).
 enum class Side : std::uint8_t {
-    L, ///< From the left: op(A) * B.
-    R, ///< From the right: B * op(A).
+  L, ///< From the left: op(A) * B.
+  R, ///< From the right: B * op(A).
 };
 
 /// @brief Whether a triangular matrix has a unit diagonal (LAPACK `diag`).
 enum class Diag : std::uint8_t {
-    N, ///< Non-unit: the diagonal is referenced.
-    U, ///< Unit: the diagonal is assumed to be all ones.
+  N, ///< Non-unit: the diagonal is referenced.
+  U, ///< Unit: the diagonal is assumed to be all ones.
+};
+
+/// @brief The order reflectors multiply to form a block reflector (LAPACK
+///        `direct`), which also fixes the triangular factor T's shape.
+enum class Direct : std::uint8_t {
+  F, ///< Forward: H = H(1) H(2) ... H(k); T is upper triangular.
+  B, ///< Backward: H = H(k) ... H(2) H(1); T is lower triangular.
+};
+
+/// @brief How the vectors defining a block reflector are stored (LAPACK
+///        `storev`): one reflector per column, or one per row.
+enum class StoreV : std::uint8_t {
+  C, ///< Columnwise: H(i) is column i of V; H = I - V T V^T.
+  R, ///< Rowwise: H(i) is row i of V; H = I - V^T T V.
 };
 
 /// @brief Which eigenvalues a selective eigensolver computes (LAPACK `range`).
 enum class Range : std::uint8_t {
-    A, ///< All eigenvalues.
-    V, ///< Those in a half-open value interval (vl, vu].
-    I, ///< Those with index in [il, iu].
+  A, ///< All eigenvalues.
+  V, ///< Those in a half-open value interval (vl, vu].
+  I, ///< Those with index in [il, iu].
 };
 
 /// @brief How much of U/V^T an SVD computes (LAPACK `jobu`/`jobvt`).
 enum class JobSvd : std::uint8_t {
-    A, ///< All columns/rows of U/V^T.
-    S, ///< The first min(m, n) columns/rows (the reduced factor).
-    O, ///< Overwrite the input with the singular vectors.
-    N, ///< No columns/rows computed.
+  A, ///< All columns/rows of U/V^T.
+  S, ///< The first min(m, n) columns/rows (the reduced factor).
+  O, ///< Overwrite the input with the singular vectors.
+  N, ///< No columns/rows computed.
 };
 
 /// @brief Sort direction for a 1-D sort -- LAPACK's `?lasrt` ID.
@@ -110,9 +124,9 @@ enum class SortDir : std::uint8_t {
 
 /// @brief Which norm of the difference diff_norm reports
 enum class Norm : std::uint8_t {
-    l1,  ///< ell_1: the sum of magnitudes, sum |y_i - x_i| (BLAS asum)
-    l2,  ///< ell_2: the Euclidean norm, sqrt(sum |y_i - x_i|^2) (BLAS nrm2)
-    inf, ///< ell_inf: the largest magnitude, max |y_i - x_i| (BLAS iamax + a read)
+  l1,  ///< ell_1: the sum of magnitudes, sum |y_i - x_i| (BLAS asum)
+  l2,  ///< ell_2: the Euclidean norm, sqrt(sum |y_i - x_i|^2) (BLAS nrm2)
+  inf, ///< ell_inf: the largest magnitude, max |y_i - x_i| (BLAS iamax + a read)
 };
 
 /// @brief Which matrix norm ?lange returns -- LAPACK's NORM char.
