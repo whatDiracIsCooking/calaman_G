@@ -68,6 +68,11 @@ add_subdirectory(reduce_columns)
 add_subdirectory(columnwise_ell1)
 add_subdirectory(columnwise_ell2)
 
+# calaman.lange -- the norm of a general matrix (LAPACK's ?lange), as a
+# two-stage reduction. Added after calaman.reduce_columns (its reduction engine,
+# which both stages defer to) so that target exists when its device lib uses it.
+add_subdirectory(lange)
+
 # The dense linear-algebra routines -- the geqp3 column-pivoted-QR call graph,
 # one directory and one module per LAPACK routine. Added in call-graph order so
 # each module's dependencies are declared before it: larfg/larf, then laqp2
