@@ -218,3 +218,11 @@ add_subdirectory(laqr1)
 # sibling of calaman.laqp2: it LINKS calaman.larfg and calaman.larf1f (both
 # added earlier in the reflector group), so it follows them here.
 add_subdirectory(gehd2)
+
+# calaman.laexc -- swap two adjacent 1x1 / 2x2 diagonal blocks of a real Schur
+# form by an orthogonal similarity (LAPACK's ?laexc), a Schur-reordering step.
+# One single-thread device kernel (the block math is O(1); the resulting
+# rotations/reflectors touch O(N) rows/cols) that inlines the ?lartg/?lasy2/
+# ?lanv2/?larfg auxiliaries, so it links no sibling LAPACK module -- only
+# calaman.error_handling. Structurally lasy2's twin.
+add_subdirectory(laexc)
