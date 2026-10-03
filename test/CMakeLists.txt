@@ -59,6 +59,7 @@ add_subdirectory(pstf2)
 add_subdirectory(pstrf)
 add_subdirectory(random_unitary)
 add_subdirectory(set_element)
+add_subdirectory(trevc3)
 add_subdirectory(trexc)
 
 # The experimental/ tier's suites, gated on the same option as the modules
