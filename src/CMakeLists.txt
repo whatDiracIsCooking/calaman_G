@@ -124,6 +124,12 @@ add_subdirectory(larft)
 # calaman.common (Uplo) and calaman.error_handling, both added earlier.
 add_subdirectory(pstf2)
 
+# calaman.pstrf -- the blocked (level-3) pivoted Cholesky driver. Inlines the
+# panel look-ahead over the wrapped BLAS (syrk trailing update) and falls back
+# to calaman.pstf2 for small n or a degenerate block size; added after pstf2 so
+# that target exists when it links it.
+add_subdirectory(pstrf)
+
 # calaman.nnls -- non-negative least squares (Lawson-Hanson active set). A host
 # driver over wrapped BLAS + wwr::ormqr that solves each passive-set subproblem
 # with calaman.geqp3, plus its own P/Z-bookkeeping kernels. Added after geqp3 so
