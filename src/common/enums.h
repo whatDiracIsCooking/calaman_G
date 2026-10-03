@@ -1,8 +1,8 @@
 /**
  * @file enums.h
  * @brief Scoped enums for the LAPACK-shaped selector arguments (Jobz, Uplo,
- *        Trans, Side, Diag, Range, JobSvd, Region) and the diff_norm Norm
- *        selector, as a header shareable by device .cu code and module GMFs alike
+ *        Trans, Side, Diag, Range, JobSvd, Region, SortDir) and the diff_norm
+ *        Norm selector, a header shareable by device .cu code and module GMFs alike
  *
  * A plain header, not a module unit, for the same reason constants.h and
  * align_up.h are: a scoped enum is a compile-time tag that both a device
@@ -95,6 +95,16 @@ enum class JobSvd : std::uint8_t {
     S, ///< The first min(m, n) columns/rows (the reduced factor).
     O, ///< Overwrite the input with the singular vectors.
     N, ///< No columns/rows computed.
+};
+
+/// @brief Sort direction for a 1-D sort -- LAPACK's `?lasrt` ID.
+///
+/// The enumerators mirror the LAPACK char, like Uplo and Jobz: I is 'I'
+/// (increasing), D is 'D' (decreasing). Shared with the device `.cu` through
+/// this header, the way Region is, because the sort runs entirely on the device.
+enum class SortDir : std::uint8_t {
+    I, ///< Increasing order: d(0) <= ... <= d(n-1).
+    D, ///< Decreasing order: d(0) >= ... >= d(n-1).
 };
 
 /// @brief Which norm of the difference diff_norm reports

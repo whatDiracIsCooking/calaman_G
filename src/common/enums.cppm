@@ -36,6 +36,7 @@ using calaman::Side;
 using calaman::Diag;
 using calaman::Range;
 using calaman::JobSvd;
+using calaman::SortDir;
 using calaman::Norm;
 
 } // namespace calaman

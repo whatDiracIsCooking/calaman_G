@@ -104,3 +104,10 @@ add_subdirectory(feast)
 # kernels. Added after expm and orthogonalize so those targets exist when
 # linked.
 add_subdirectory(cg_unitary)
+
+# calaman.lasrt -- sort a 1-D array (increasing or decreasing), the GPU
+# counterpart of LAPACK's ?lasrt. A single hand-launched device kernel
+# (quicksort/insertion), structurally laset's twin but functionally standalone:
+# it shares no build edge with the rest of src/ and links only calaman.common
+# (SortDir) and calaman.error_handling, both added earlier.
+add_subdirectory(lasrt)
