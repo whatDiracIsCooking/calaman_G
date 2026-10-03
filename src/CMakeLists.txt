@@ -141,3 +141,10 @@ add_subdirectory(cg_unitary)
 # it shares no build edge with the rest of src/ and links only calaman.common
 # (SortDir) and calaman.error_handling, both added earlier.
 add_subdirectory(lasrt)
+
+# calaman.lanv2 -- Schur-standardise a real 2-by-2 block (LAPACK's ?lanv2), the
+# 2-by-2 deflation step of the real Schur reduction. Pure host scalar arithmetic
+# with no BLAS: structurally calaman.larfg's slimmest sibling (an exported
+# header-only template) but taking only a stream, since it owns no device code.
+# It links only wwr.runtime_api and calaman.error_handling (added earlier).
+add_subdirectory(lanv2)
