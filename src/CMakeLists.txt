@@ -74,6 +74,12 @@ add_subdirectory(columnwise_ell2)
 # (larfg+larf) and laqps (larfg), then the geqp3 driver (laqp2+laqps).
 add_subdirectory(larfg)
 add_subdirectory(larf)
+
+# calaman.larf1f is calaman.larf's sibling: the same reflector applied with an
+# implicit unit v(1) (the form ?larfg emits). It shares no build edge with larf
+# -- added next to it only for readability.
+add_subdirectory(larf1f)
+
 add_subdirectory(laqp2)
 add_subdirectory(laqps)
 add_subdirectory(geqp3)
