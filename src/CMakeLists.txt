@@ -84,3 +84,9 @@ add_subdirectory(expm)
 # calaman.orthogonalize, plus its own fused kernels. Added after its calaman
 # dependencies (common, orthogonalize) so their targets exist when linked.
 add_subdirectory(feast)
+
+# calaman.cg_unitary -- Riemannian conjugate gradient on the unitary group U(n).
+# A host driver over wrapped BLAS, calaman.expm (the geodesic step) and
+# calaman.orthogonalize (optional reunitarization), plus its own line-search
+# kernels. Added after expm and orthogonalize so those targets exist when linked.
+add_subdirectory(cg_unitary)
