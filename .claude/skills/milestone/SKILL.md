@@ -70,6 +70,16 @@ imports A's new symbol, builds on a file A creates, or asserts against an
 interface A defines. Do **not** add edges for mere preference of ordering; a
 spurious edge serialises work that could have run at once.
 
+**Verify the edges against an authoritative source — do not trust a graph
+rebuilt from memory.** When the dependencies mirror an existing structure (a
+call graph, an import graph, an API), check each edge against that source, not
+your recollection or the plan's own prose: a DAG that reads as plausible is
+exactly the thing that is wrong in ways only the source reveals. In this repo
+the issue edges *are* the LAPACK call graph, checkable against the
+Reference-LAPACK Fortran (`grep CALL` in `SRC/<routine>.f`, or the raw file on
+GitHub) — doing so on a `geev` decomposition caught three wrong edges and a
+missing dependency that a confident from-memory draft had gotten wrong.
+
 Then compute **waves** (topological layers): wave 0 = every issue with no
 unmet dependency, wave 1 = issues whose deps are all in wave 0, and so on.
 Wide-and-shallow beats deep-and-narrow — if everything chains off one root,
@@ -128,30 +138,69 @@ EOF
 ```
 
 Keep a title→number map as you go so later issues can reference earlier ones.
+Capture each issue's **REST database id** too, not only its number — the
+`blocked_by` API in step 6a needs the id, not the `#number`:
+
+```bash
+url=$(gh issue create --title "…" --milestone "$MS_TITLE" --body "…")
+num="${url##*/}"                                         # #number (for body refs)
+id=$(gh api repos/{owner}/{repo}/issues/"$num" --jq '.id')   # database id (for the API)
+```
+
 Notes:
 
 - `--milestone` takes the milestone **title**, which must match what step 5
   created. It is `-m, --milestone name` — a bare number is not accepted.
-- Optional native links, if the user wants them beyond the body text: gh
-  **≥2.94** exposes `--parent <n>` for a true **sub-issue** (a parent/child
-  tree, not a general DAG — only use it when the relationship really is
-  containment). Check with `gh --version`; distro packages are often far
-  older than this (Ubuntu 24.04 ships 2.45), in which case the flag is absent
-  entirely and the body's `Depends on` line is all you have.
-- GitHub's newer many-to-many **issue dependencies** ("blocked by") are set via
-  the API, not a flag; the `Depends on #N` body line is the portable source of
-  truth, so add native dependencies only on request, on top of it — never
-  instead of it.
+- `--parent <n>` (gh **≥2.94**) makes a true **sub-issue** — a parent/child
+  *tree*, one parent per child, so it **cannot encode a DAG** where a node has
+  several blockers. Use it only for genuine containment (e.g. nesting every
+  issue under one tracking epic), never for the dependency edges. Check
+  `gh --version`; distro packages lag (Ubuntu 24.04 ships 2.45), and without it
+  the flag is simply absent.
+- The body's `Depends on #N` line is the **portable source of truth** and goes
+  in every time — it survives an old gh and reads fine without the API.
 - Labels are optional and must exist first (`gh label create`); a `wave-N`
   label is a cheap parallelism signal if the user wants one, but the body's
   `Depends on` is what actually encodes the graph.
+
+## 6a. Wire the DAG natively (blocked_by)
+
+The faithful native encoding of the dependency DAG is GitHub's many-to-many
+**issue dependencies**, not sub-issues: each edge is a "blocked by" link, and
+the UI then greys out blocked issues and shows Blocking/Blocked-by on each.
+There is no gh flag — it is the REST issue-dependencies API. Offer it on top of
+the body lines (the body line stays regardless); add it once the user is in.
+
+Do it as a **second pass, after all issues exist**, because each edge needs the
+database id of the *blocking* issue. First probe the endpoint read-only — a live
+repo returns `[]`, a repo without the feature errors — so you fail fast rather
+than half-wire the graph:
+
+```bash
+gh api repos/{owner}/{repo}/issues/<any-num>/dependencies/blocked_by   # -> [] if live
+```
+
+Then, for each edge "child **blocked_by** blocker", POST the blocker's **id**
+(use `-F` so it is sent as an integer, not a string):
+
+```bash
+gh api --method POST \
+  repos/{owner}/{repo}/issues/<child-num>/dependencies/blocked_by \
+  -F issue_id=<blocker-id> --silent
+```
+
+GitHub records the reciprocal "blocking" side automatically — POST only the
+`blocked_by` direction. Because the whole thing is ~1 create + 1 id-fetch per
+issue and 1 POST per edge, drive it from a single script that holds the
+`name→{num,id}` map in memory (separate `gh` calls do not share shell state),
+and log one line per edge so a failed POST is visible rather than silent.
 
 ## 7. Report
 
 Finish with the milestone URL and a short wave summary: which issues (by number
 now) are in each wave, and the explicit **"ready now"** list — the wave-0
 issues with no blocker. That is the answer to "what can we work on
-simultaneously."
+simultaneously." If step 6a ran, confirm the edge count wired with no failures.
 
 ## Undo, if it came out wrong
 
