@@ -430,6 +430,11 @@ option(
   OFF
 )
 
+# The experimental/ tier -- spikes and sketches not yet promoted to src/. OFF by
+# default so a default build (and CI) never sees it; turn it ON to configure the
+# experimental modules and their suites.
+option(CALAMAN_BUILD_EXPERIMENTAL "Build the experimental/ tier (unstable)" OFF)
+
 # Umbrella target for the compile-time tier. Each compile-time test directory
 # add_dependencies()'s its own targets onto it, so it is defined before those
 # directories are added.
@@ -460,6 +465,12 @@ add_subdirectory(src)
 
 # The in-tree examples, written the way a consumer would write them.
 #add_subdirectory(example)
+
+# The experimental/ tier, gated off by default (see CALAMAN_BUILD_EXPERIMENTAL
+# above). Added after src/ so an experimental module may link a shipped one.
+if(CALAMAN_BUILD_EXPERIMENTAL)
+  add_subdirectory(experimental)
+endif()
 
 add_subdirectory(test)
 
