@@ -19,20 +19,21 @@ module calaman.gebal;
 // is not re-exported through it -- the names in the signatures below are not
 // visible without these. The ComplexToRealType the bodies use is reachable
 // through the interface's own imports, so only the signature types are named.
+// The Status return type arrives through the interface's `export import
+// calaman.error_handling`.
 import wwr.runtime_api; // wwrStream_t, wwrError_t
 import wwr.complex;     // wwrFloatComplex, wwrDoubleComplex
 
 namespace calaman {
 
-template wwr::wwrError_t gebal<float>(wwr::wwrStream_t, GebalJob, int, float *, int, int *, int *,
-                                      float *, int *, int);
-template wwr::wwrError_t gebal<double>(wwr::wwrStream_t, GebalJob, int, double *, int, int *, int *,
-                                       double *, int *, int);
-template wwr::wwrError_t gebal<wwr::wwrFloatComplex>(wwr::wwrStream_t, GebalJob, int,
-                                                    wwr::wwrFloatComplex *, int, int *, int *,
-                                                    float *, int *, int);
-template wwr::wwrError_t gebal<wwr::wwrDoubleComplex>(wwr::wwrStream_t, GebalJob, int,
-                                                     wwr::wwrDoubleComplex *, int, int *, int *,
-                                                     double *, int *, int);
+template Status gebal<float>(wwr::wwrStream_t, GebalJob, int, float *, int, int *, int *, float *,
+                             int *, int);
+template Status gebal<double>(wwr::wwrStream_t, GebalJob, int, double *, int, int *, int *,
+                              double *, int *, int);
+template Status gebal<wwr::wwrFloatComplex>(wwr::wwrStream_t, GebalJob, int, wwr::wwrFloatComplex *,
+                                            int, int *, int *, float *, int *, int);
+template Status gebal<wwr::wwrDoubleComplex>(wwr::wwrStream_t, GebalJob, int,
+                                             wwr::wwrDoubleComplex *, int, int *, int *, double *,
+                                             int *, int);
 
 } // namespace calaman

@@ -129,9 +129,11 @@ void check(Region region, int m, int n, int lda, T alpha, T beta, const char *ct
       ref_laset(uplo_char(region), m, n, alpha, beta, ref.data(), lda);
   ASSERT_EQ(info, 0) << ctx << ": reference ?laset reported info=" << info;
 
-  calaman::laset<T>(handle->stream().get(), region, static_cast<std::size_t>(m),
-                    static_cast<std::size_t>(n), alpha, beta, d_a.data(),
-                    static_cast<std::size_t>(lda));
+  const auto status =
+      calaman::laset<T>(handle->stream().get(), region, static_cast<std::size_t>(m),
+                        static_cast<std::size_t>(n), alpha, beta, d_a.data(),
+                        static_cast<std::size_t>(lda));
+  EXPECT_TRUE(status.ok()) << ctx << ": laset returned status=" << status.name();
   wwr::wwrStreamSynchronize(handle->stream().get());
   const auto got = from_device(handle, d_a, size);
 

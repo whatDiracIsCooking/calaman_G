@@ -92,7 +92,9 @@ struct traits<wwr::wwrFloatComplex> {
     return wwr::make_wwrFloatComplex(static_cast<float>(re), static_cast<float>(im));
   }
   static compute to(wwr::wwrFloatComplex x) { return {wwr::wwrCrealf(x), wwr::wwrCimagf(x)}; }
-  static wwr::wwrFloatComplex from(compute c) { return wwr::make_wwrFloatComplex(c.real(), c.imag()); }
+  static wwr::wwrFloatComplex from(compute c) {
+    return wwr::make_wwrFloatComplex(c.real(), c.imag());
+  }
 };
 
 template<>
@@ -213,15 +215,14 @@ real_t<T> elem_tol(const std::vector<compute_t<T>> &oracle, int n, real_t<T> fac
 }
 
 template<typename T>
-void expect_close(const std::vector<T> &got, const std::vector<compute_t<T>> &oracle, int n,
-                  int ld, real_t<T> factor, const char *what) {
+void expect_close(const std::vector<T> &got, const std::vector<compute_t<T>> &oracle, int n, int ld,
+                  real_t<T> factor, const char *what) {
   const real_t<T> tol = elem_tol<T>(oracle, n, factor);
   for (int j = 0; j < n; ++j) {
     for (int i = 0; i < n; ++i) {
       const compute_t<T> g = traits<T>::to(got[static_cast<std::size_t>(j) * ld + i]);
       const compute_t<T> o = oracle[static_cast<std::size_t>(j) * n + i];
-      EXPECT_LE(std::abs(g - o), tol)
-          << what << " at (" << i << "," << j << ") n=" << n;
+      EXPECT_LE(std::abs(g - o), tol) << what << " at (" << i << "," << j << ") n=" << n;
     }
   }
 }
@@ -252,9 +253,8 @@ void destroy_handles(Handles &h) {
 // with @p out_seed so a padded leading dimension can be checked. Returns status;
 // writes the read-back result (length lde*n) into @p out_seed.
 template<typename T>
-wwr::wwrblasStatus_t run_expm(std::shared_ptr<DeviceHandle> handle, Handles &h, int n,
-                              const std::vector<T> &a, int lda, int lde, std::vector<T> &out_seed,
-                              ExpmPlan *info) {
+Status run_expm(std::shared_ptr<DeviceHandle> handle, Handles &h, int n, const std::vector<T> &a,
+                int lda, int lde, std::vector<T> &out_seed, ExpmPlan *info) {
   auto d_a = to_device(handle, a);
   auto d_e = to_device(handle, out_seed);
 
@@ -347,8 +347,12 @@ void check_plan_ladder() {
   EXPECT_EQ(big.num_gemms, 6 + big.s);
 }
 
-TEST(ExpmPlanTests, LadderDouble) { check_plan_ladder<double>(); }
-TEST(ExpmPlanTests, LadderFloat) { check_plan_ladder<float>(); }
+TEST(ExpmPlanTests, LadderDouble) {
+  check_plan_ladder<double>();
+}
+TEST(ExpmPlanTests, LadderFloat) {
+  check_plan_ladder<float>();
+}
 
 TEST(ExpmThetaTests, OffLadderIsZero) {
   EXPECT_EQ(pade_theta<double>(4), 0.0);
@@ -376,8 +380,8 @@ TEST(ExpmArgCheckTests, RejectsBadArgumentsBeforeTouchingTheDevice) {
   wwr::wwrsolverDnHandle_t null_solver{};
 
   auto call = [&](int nn, int lda, int lde, void *w) {
-    return expm<double>(null_blas, null_solver, wwr::wwrStream_t{}, nn, a.data(), lda, e.data(), lde,
-                        w, work.size() * sizeof(double), info_dev, nullptr);
+    return expm<double>(null_blas, null_solver, wwr::wwrStream_t{}, nn, a.data(), lda, e.data(),
+                        lde, w, work.size() * sizeof(double), info_dev, nullptr);
   };
   EXPECT_EQ(call(0, n, n, work.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "n < 1";
   EXPECT_EQ(call(n, n - 1, n, work.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "lda < n";
@@ -409,8 +413,12 @@ void check_zero_is_identity(int n) {
   destroy_handles(h);
 }
 
-TEST(ExpmClosedFormTests, ZeroIsIdentityFloat) { check_zero_is_identity<float>(5); }
-TEST(ExpmClosedFormTests, ZeroIsIdentityDouble) { check_zero_is_identity<double>(6); }
+TEST(ExpmClosedFormTests, ZeroIsIdentityFloat) {
+  check_zero_is_identity<float>(5);
+}
+TEST(ExpmClosedFormTests, ZeroIsIdentityDouble) {
+  check_zero_is_identity<double>(6);
+}
 TEST(ExpmClosedFormTests, ZeroIsIdentityComplexFloat) {
   check_zero_is_identity<wwr::wwrFloatComplex>(4);
 }
@@ -446,9 +454,15 @@ void check_diagonal(int n, unsigned seed) {
   destroy_handles(h);
 }
 
-TEST(ExpmClosedFormTests, DiagonalFloat) { check_diagonal<float>(5, 1); }
-TEST(ExpmClosedFormTests, DiagonalDouble) { check_diagonal<double>(6, 2); }
-TEST(ExpmClosedFormTests, DiagonalComplexDouble) { check_diagonal<wwr::wwrDoubleComplex>(5, 3); }
+TEST(ExpmClosedFormTests, DiagonalFloat) {
+  check_diagonal<float>(5, 1);
+}
+TEST(ExpmClosedFormTests, DiagonalDouble) {
+  check_diagonal<double>(6, 2);
+}
+TEST(ExpmClosedFormTests, DiagonalComplexDouble) {
+  check_diagonal<wwr::wwrDoubleComplex>(5, 3);
+}
 
 template<typename T>
 void check_nilpotent(int n, unsigned seed) {
@@ -493,8 +507,12 @@ void check_nilpotent(int n, unsigned seed) {
   destroy_handles(h);
 }
 
-TEST(ExpmClosedFormTests, NilpotentDouble) { check_nilpotent<double>(5, 10); }
-TEST(ExpmClosedFormTests, NilpotentComplexFloat) { check_nilpotent<wwr::wwrFloatComplex>(4, 11); }
+TEST(ExpmClosedFormTests, NilpotentDouble) {
+  check_nilpotent<double>(5, 10);
+}
+TEST(ExpmClosedFormTests, NilpotentComplexFloat) {
+  check_nilpotent<wwr::wwrFloatComplex>(4, 11);
+}
 
 // ========================================================================
 // Device: identities any exponential satisfies
@@ -527,8 +545,12 @@ void check_inverse_identity(int n, double target, unsigned seed) {
   destroy_handles(h);
 }
 
-TEST(ExpmIdentityTests, InverseFloat) { check_inverse_identity<float>(5, 0.7, 20); }
-TEST(ExpmIdentityTests, InverseDouble) { check_inverse_identity<double>(6, 1.5, 21); }
+TEST(ExpmIdentityTests, InverseFloat) {
+  check_inverse_identity<float>(5, 0.7, 20);
+}
+TEST(ExpmIdentityTests, InverseDouble) {
+  check_inverse_identity<double>(6, 1.5, 21);
+}
 TEST(ExpmIdentityTests, InverseComplexDouble) {
   check_inverse_identity<wwr::wwrDoubleComplex>(5, 1.2, 22);
 }
@@ -557,7 +579,9 @@ void check_half_squared(int n, double target, unsigned seed) {
   destroy_handles(h);
 }
 
-TEST(ExpmIdentityTests, HalfSquaredDouble) { check_half_squared<double>(6, 3.0, 30); }
+TEST(ExpmIdentityTests, HalfSquaredDouble) {
+  check_half_squared<double>(6, 3.0, 30);
+}
 TEST(ExpmIdentityTests, HalfSquaredComplexFloat) {
   check_half_squared<wwr::wwrFloatComplex>(4, 2.0, 31);
 }
@@ -585,8 +609,7 @@ void check_degree_ladder(int n) {
 
     std::vector<T> got(static_cast<std::size_t>(n) * n, traits<T>::make(0.0, 0.0));
     ExpmPlan info{};
-    ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info),
-              wwr::WWRBLAS_STATUS_SUCCESS);
+    ASSERT_EQ(run_expm<T>(handle, h, n, a, n, n, got, &info), wwr::WWRBLAS_STATUS_SUCCESS);
     EXPECT_EQ(info.s, 0) << "rung " << degrees[i] << " must not scale";
     EXPECT_LE(info.m, degrees[i]);
 
@@ -596,9 +619,15 @@ void check_degree_ladder(int n) {
   destroy_handles(h);
 }
 
-TEST(ExpmLadderTests, LadderDouble) { check_degree_ladder<double>(5); }
-TEST(ExpmLadderTests, LadderFloat) { check_degree_ladder<float>(5); }
-TEST(ExpmLadderTests, LadderComplexDouble) { check_degree_ladder<wwr::wwrDoubleComplex>(4); }
+TEST(ExpmLadderTests, LadderDouble) {
+  check_degree_ladder<double>(5);
+}
+TEST(ExpmLadderTests, LadderFloat) {
+  check_degree_ladder<float>(5);
+}
+TEST(ExpmLadderTests, LadderComplexDouble) {
+  check_degree_ladder<wwr::wwrDoubleComplex>(4);
+}
 
 // ========================================================================
 // Device: padded leading dimensions and pointer-mode restoration

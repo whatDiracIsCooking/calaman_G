@@ -133,9 +133,8 @@ T poly_tol(const std::vector<T> &a, const std::vector<T> &c, int degree, int n) 
 // query asks for (null when degree is 0, exercising that accepted case), read P
 // back into @p p_inout. Returns horner()'s status.
 template<typename T>
-calaman::Status run_horner(std::shared_ptr<DeviceHandle> handle, int n, const std::vector<T> &c,
-                           int degree, const std::vector<T> &a, int lda, int ldp,
-                           std::vector<T> &p_inout) {
+Status run_horner(std::shared_ptr<DeviceHandle> handle, int n, const std::vector<T> &c, int degree,
+                  const std::vector<T> &a, int lda, int ldp, std::vector<T> &p_inout) {
   wwr::wwrblasHandle_t blas{};
   EXPECT_EQ(wwr::wwrblasCreate(&blas), wwr::WWRBLAS_STATUS_SUCCESS);
   EXPECT_EQ(wwr::wwrblasSetStream(blas, handle->stream().get()), wwr::WWRBLAS_STATUS_SUCCESS);

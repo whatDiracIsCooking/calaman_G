@@ -16,6 +16,9 @@
 #   wwr.runtime_api              wwrStream_t (for the fill's stream)
 #   wwr.rand                     wwrrandState (the caller's generator states)
 #   wwr.wrappers.common          usual_fp + wwrFloatComplex/wwrDoubleComplex
+#   calaman.error_handling       Status, the cross-domain return type
+#                                (re-exported; its src/ root also resolves the
+#                                CLM_TRY header "error_handling/error_macros.h")
 calaman_add_cxx_module_library(
   NAME
   calaman.random_unitary
@@ -30,5 +33,6 @@ calaman_add_cxx_module_library(
   wwr.runtime_api
   wwr.rand
   wwr.wrappers.common
+  calaman.error_handling
   IMPORT_STD
 )

@@ -38,10 +38,12 @@ calaman_add_gpu_device_library(
 # handle/status/enum layers (wwr.blas, wwr.solver), the usual_fp/real_fp and
 # RealToComplexType traits (wwr.wrappers.common), the type-safe BLAS and
 # eigensolver wrappers (wwr.wrappers.blas, wwr.wrappers.solver), the typed
-# constants kOne/kZero/kPi and align_up (calaman.common) and the QR
-# orthonormalizer (calaman.orthogonalize). wwr.complex is not listed: no
-# partition names the vendor complex type, and RealToComplexType's target is
-# reachable transitively through wwr.wrappers.common.
+# constants kOne/kZero/kPi and align_up (calaman.common), the QR
+# orthonormalizer (calaman.orthogonalize) and
+#   calaman.error_handling  Status, the cross-domain return type
+# (every entry point returns it). wwr.complex is not listed: no partition names
+# the vendor complex type, and RealToComplexType's target is reachable
+# transitively through wwr.wrappers.common.
 #
 # LINK_PRIVATE wwr_backend is for the runtime.h that feast_bridge.h pulls into
 # each partition's global module fragment: a GMF cannot `import`, so wwrStream_t
@@ -68,6 +70,7 @@ calaman_add_cxx_module_library(
   wwr.wrappers.solver
   calaman.common
   calaman.orthogonalize
+  calaman.error_handling
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE

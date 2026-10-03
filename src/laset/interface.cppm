@@ -32,7 +32,7 @@
  * body that names the .cu-side launcher declared only in the GMF.
  *
  * Usage:
- *   import calaman.laset;      // also re-exports calaman::Region
+ *   import calaman.laset;      // also re-exports calaman::Region and Status
  *   import wwr.runtime_api;   // wwrStream_t, wwrStreamCreate
  *   wwr::wwrStream_t stream{};
  *   wwr::wwrStreamCreate(&stream);
@@ -43,6 +43,12 @@
 
 module;
 
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 #include "laset_bridge.h"
 
 export module calaman.laset;
@@ -50,6 +56,11 @@ export module calaman.laset;
 import std;
 import wwr.runtime_api;
 import calaman.common; // Region (:enums) -- the typed replacement for DLASET UPLO
+
+// export import, not a plain import: laset RETURNS calaman::Status, so a consumer
+// of `import calaman.laset;` must see Status's member functions, not just its
+// name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -78,18 +89,23 @@ export using calaman::Region;
 /// @param beta The constant written to the diagonal elements
 /// @param d_a Device matrix to set, column-major, leading dimension @p lda
 /// @param lda Leading dimension of A; lda >= m
+/// @return Success, or the runtime error the kernel launch reported
 export template<typename T>
-void laset(const wwr::wwrStream_t stream, const Region region, const std::size_t m,
-           const std::size_t n, const T alpha, const T beta, T *d_a, const std::size_t lda) {
+Status laset(const wwr::wwrStream_t stream, const Region region, const std::size_t m,
+             const std::size_t n, const T alpha, const T beta, T *d_a, const std::size_t lda) {
   if (m == 0 || n == 0) {
-    return;
+    return wwr::wwrSuccess;
   }
   device::laset(stream, region, m, n, alpha, beta, d_a, lda);
+  // The launcher returns void, so the only way to catch a bad launch is the
+  // runtime's sticky error -- checked the moment it is enqueued, as gebal does.
+  CLM_TRY(wwr::wwrGetLastError());
+  return wwr::wwrSuccess;
 }
 
-extern template void laset<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t, float, float,
-                                  float *, std::size_t);
-extern template void laset<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t, double,
-                                   double, double *, std::size_t);
+extern template Status laset<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t, float,
+                                    float, float *, std::size_t);
+extern template Status laset<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t, double,
+                                     double, double *, std::size_t);
 
 } // namespace calaman

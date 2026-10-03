@@ -19,8 +19,7 @@
 #   wwr.runtime_api      wwrMemcpy(Async), wwrStreamSynchronize, wwrSuccess
 #   calaman.laqp2        calaman::laqp2
 #   calaman.laqps        calaman::laqps
-#   calaman.error_handling  Status, the cross-domain return type (re-exported),
-#                        and the CLM_TRY macro its src/ include root publishes
+#   calaman.error_handling  Status, the cross-domain return type (re-exported)
 calaman_add_cxx_module_library(
   NAME
   calaman.geqp3

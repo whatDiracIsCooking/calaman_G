@@ -26,9 +26,9 @@ import calaman.common; // Region
 
 namespace calaman {
 
-template void laset<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t, float, float,
-                           float *, std::size_t);
-template void laset<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t, double, double,
-                            double *, std::size_t);
+template Status laset<float>(wwr::wwrStream_t, Region, std::size_t, std::size_t, float, float,
+                             float *, std::size_t);
+template Status laset<double>(wwr::wwrStream_t, Region, std::size_t, std::size_t, double, double,
+                              double *, std::size_t);
 
 } // namespace calaman

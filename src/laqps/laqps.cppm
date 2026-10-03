@@ -71,7 +71,11 @@
 module;
 
 #include "laqps_bridge.h"
-#include "error_handling/error_macros.h" // CLM_TRY -- a macro, arrives by #include, not import
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
 
 export module calaman.laqps;
 
@@ -81,12 +85,10 @@ import wwr.wrappers.blas; // iamax, swap, nrm2, gemv, gemm
 import calaman.larfg;     // calaman::larfg
 import std;               // std::sqrt, std::min, std::vector
 
-// export import, not a plain import: laqps() RETURNS calaman::Status, whose
-// member functions a consumer must see, and it is the ::calaman::Status CLM_TRY
-// names at expansion. Unlike the siblings' wwrblasStatus_t return, Status lets a
-// device-copy failure here report its OWN runtime error instead of the stand-in
-// WWRBLAS_STATUS_NOT_INITIALIZED these routines used to force.
-export import calaman.error_handling; // calaman::Status -- the cross-domain return type
+// export import, not a plain import: laqps RETURNS calaman::Status, so a consumer
+// of `import calaman.laqps;` must see Status's member functions, not just its
+// name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -106,10 +108,10 @@ namespace laqps_detail {
 /// Pivot bookkeeping swaps vn1[k]/vn1[pvt] (and vn2) a scalar at a time; there is
 /// no BLAS swap of length one worth a kernel launch, so this reads both back,
 /// exchanges them on the host, and writes them returned -- blocking, like the
-/// larfg scalar reads. Returns the first failing copy's runtime error as a
-/// Status (carrying the true wwrError_t), or success.
+/// larfg scalar reads. Returns the first failing copy's (runtime-domain) Status,
+/// otherwise success.
 template<typename T>
-calaman::Status swap_device_scalar(wwr::wwrStream_t stream, T *a, T *b) {
+Status swap_device_scalar(wwr::wwrStream_t stream, T *a, T *b) {
   T ha{};
   T hb{};
   CLM_TRY(wwr::wwrMemcpyAsync(&ha, a, sizeof(T), wwr::wwrMemcpyDeviceToHost, stream));
@@ -118,17 +120,15 @@ calaman::Status swap_device_scalar(wwr::wwrStream_t stream, T *a, T *b) {
   CLM_TRY(wwr::wwrMemcpyAsync(a, &hb, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
   CLM_TRY(wwr::wwrMemcpyAsync(b, &ha, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
   CLM_TRY(wwr::wwrStreamSynchronize(stream));
-  return wwr::wwrSuccess;
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 /// @brief Write one device scalar from a host value on @p stream, blocking
-///
-/// Returns the failing copy's runtime error as a Status, or success.
 template<typename T>
-calaman::Status set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &value) {
+Status set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &value) {
   CLM_TRY(wwr::wwrMemcpyAsync(dst, &value, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
   CLM_TRY(wwr::wwrStreamSynchronize(stream));
-  return wwr::wwrSuccess;
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 } // namespace laqps_detail
@@ -142,11 +142,10 @@ calaman::Status set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &valu
 /// block to the rest of the trailing matrix with ONE deferred gemm. The degraded
 /// trailing columns are recomputed after that gemm via the device mask @p flags.
 ///
-/// Short-circuits: the first failing BLAS / larfg / device-copy status is
-/// returned and the factorization stops there. Returns success with kb = 0 when
-/// the panel is empty. A device-read/write failure surfaces its OWN runtime
-/// error through the Status return, not the stand-in WWRBLAS_STATUS_NOT_INITIALIZED
-/// a wwrblasStatus_t return once forced.
+/// Short-circuits: the first failing step's Status is returned and the
+/// factorization stops there. Returns success with kb = 0 when the panel is
+/// empty. Each device read/write now returns its OWN domain's Status (the copies
+/// a runtime one) rather than masquerading as a BLAS code.
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param handle GPU BLAS handle in host pointer mode; all device pointers live on its device
@@ -165,12 +164,11 @@ calaman::Status set_device_scalar(wwr::wwrStream_t stream, T *dst, const T &valu
 /// @param ldf Leading dimension of F (>= n)
 /// @param auxv Device workspace, length >= nb; the per-step accumulated-F intermediate
 /// @param flags Device int mask, length >= n; the degraded-column flags (written here)
-/// @return A calaman::Status: the failing step's status (in its own error
-///         domain), otherwise success
+/// @return The Status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
 export template<typename T>
-calaman::Status laqps(wwr::wwrblasHandle_t handle, const int m, const int n, const int offset,
-                      const int nb, int *kb, T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2,
-                      T *F, const int ldf, T *auxv, int *flags) {
+Status laqps(wwr::wwrblasHandle_t handle, const int m, const int n, const int offset, const int nb,
+             int *kb, T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2, T *F, const int ldf,
+             T *auxv, int *flags) {
   *kb = 0;
   if (m <= 0 || n <= 0 || nb <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
@@ -201,8 +199,8 @@ calaman::Status laqps(wwr::wwrblasHandle_t handle, const int m, const int n, con
 
   int k = 0;
   for (; k < block; ++k) {
-    const int rk = offset + k;   // pivot row in A
-    const int rows = m - rk;     // reflector length / trailing-block rows at/below rk
+    const int rk = offset + k; // pivot row in A
+    const int rows = m - rk;   // reflector length / trailing-block rows at/below rk
 
     // --- 1. Pivot over vn1[k:n] (host pointer mode writes a host int). iamax is
     // 1-based into the tail, so the global pivot column is k + (idx - 1).
@@ -258,7 +256,8 @@ calaman::Status laqps(wwr::wwrblasHandle_t handle, const int m, const int n, con
     // 4b, F(k,k) stays 0). Explicitly zero F(0:k+1, k) first so the accumulate in
     // 4b lands on a clean slate and the deferred gemm reads a well-defined F.
     for (int i = 0; i <= k && trail >= 0; ++i) {
-      CLM_TRY(laqps_detail::set_device_scalar<T>(stream, F + static_cast<size_t>(k) * ldf + i, zero));
+      CLM_TRY(
+          laqps_detail::set_device_scalar<T>(stream, F + static_cast<size_t>(k) * ldf + i, zero));
     }
     if (trail > 0) {
       CLM_TRY(wwr::gemv<T>(handle, wwr::WWRBLAS_OP_T, rows, trail, &host_tau,
@@ -298,9 +297,9 @@ calaman::Status laqps(wwr::wwrblasHandle_t handle, const int m, const int n, con
     // there is a sub-diagonal trailing part left to recompute later).
     if (trail > 0 && rk + 1 < m) {
       const size_t count = static_cast<size_t>(trail);
-      device::laqps_downdate<T>(stream, count,
-                                A + static_cast<size_t>(k + 1) * lda + rk, static_cast<size_t>(lda),
-                                vn1 + k + 1, vn2 + k + 1, flags + k + 1, tol3z);
+      device::laqps_downdate<T>(stream, count, A + static_cast<size_t>(k + 1) * lda + rk,
+                                static_cast<size_t>(lda), vn1 + k + 1, vn2 + k + 1, flags + k + 1,
+                                tol3z);
     }
   }
 

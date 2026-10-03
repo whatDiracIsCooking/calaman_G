@@ -148,7 +148,7 @@ struct GebalRun {
   std::vector<RealOf<T>> scale;  // D diagonal inside [ilo,ihi], swap index outside
   int ilo = 0;
   int ihi = 0;
-  wwr::wwrError_t status{};
+  Status status{wwr::wwrSuccess}; // overwritten by run(); Status has no default ctor
 };
 
 // ldexp as a power-of-two literal of the element's real type.

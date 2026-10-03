@@ -32,8 +32,8 @@ the 1-based index that position was exchanged with.
 **`gebal` synchronizes `stream`.** Both stages branch on device data — which row
 is isolated next, whether a sweep changed anything — so the routine is
 host-driven and returns with its outputs complete and nothing left queued.
-`GebalJob::None` is the one path that stays asynchronous. It returns
-`wwr::wwrError_t` (`wwrSuccess`, or the first runtime error).
+`GebalJob::None` is the one path that stays asynchronous. It returns a
+`calaman::Status` (a success, or the first runtime error).
 
 ## Why complex is a first-class path here
 
@@ -51,7 +51,7 @@ Kept: the name, `ilo`/`ihi` and their 1-based convention, and the dual `scale`
 encoding (both are facts of the `?gebak` contract, not Fortran accommodations).
 Changed, per `docs/architecture.md` §4: `CHARACTER*1 JOB` becomes the typed
 `GebalJob` enum, the `s/d/c/z` variants become one template over `T`, and `INFO`
-becomes a returned `wwr::wwrError_t`.
+becomes a returned `calaman::Status`.
 
 ### Differences from a modern reference LAPACK
 

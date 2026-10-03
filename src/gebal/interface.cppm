@@ -51,6 +51,11 @@
 module;
 
 #include "gebal_bridge.h"
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
 
 export module calaman.gebal;
 
@@ -58,6 +63,7 @@ import std;
 import wwr.runtime_api;      // wwrStream_t, wwrError_t, wwrSuccess, wwrMemcpy/Memset/Sync
 import wwr.complex;          // wwrFloatComplex, wwrDoubleComplex (extern template list)
 import wwr.wrappers.common;  // usual_fp, ComplexToRealType
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -83,18 +89,10 @@ void gebal_bufferSize(const int n, int *lwork) {
   *lwork = device::gebal_workspace_ints(n);
 }
 
-// A launch-error check must return the first failure, so it is a macro (an early
-// `return` cannot be hidden behind a helper). Defined in the purview, used only
-// by gebal's body, and #undef'd below; macros are never exported, so this does
-// not leak to importers.
-#define CLM_GEBAL_CHECK(expr)                                                                       \
-  do {                                                                                              \
-    const wwr::wwrError_t gebal_err_ = (expr);                                                      \
-    if (gebal_err_ != wwr::wwrSuccess) {                                                            \
-      return gebal_err_;                                                                            \
-    }                                                                                               \
-  } while (0)
-#define CLM_GEBAL_CHECK_LAUNCH() CLM_GEBAL_CHECK(wwr::wwrGetLastError())
+// Launch-error checks early-return the first failure via the shared CLM_TRY
+// (error_handling/error_macros.h), included in the GMF above. It is a plain
+// `#pragma once` header macro, intentionally not #undef'd -- there is no local
+// macro here to leak.
 
 /// @brief Balance a general n-by-n matrix by a similarity transformation (?gebal)
 ///
@@ -124,11 +122,11 @@ void gebal_bufferSize(const int n, int *lwork) {
 ///                match LAPACK, so the array feeds ?gebak unchanged.
 /// @param d_work  Device scratch of at least gebal_bufferSize<T>(n) ints
 /// @param max_sweeps Safety cap on scaling sweeps
-/// @return wwrSuccess, or the first runtime error encountered
+/// @return A success Status, or the first runtime error encountered
 export template<wwr::usual_fp T>
-wwr::wwrError_t gebal(wwr::wwrStream_t stream, const GebalJob job, const int n, T *d_A,
-                      const int lda, int *ilo, int *ihi, wwr::ComplexToRealType<T> *d_scale,
-                      int *d_work, const int max_sweeps = device::kGebalDefaultMaxSweeps) {
+Status gebal(wwr::wwrStream_t stream, const GebalJob job, const int n, T *d_A, const int lda,
+             int *ilo, int *ihi, wwr::ComplexToRealType<T> *d_scale, int *d_work,
+             const int max_sweeps = device::kGebalDefaultMaxSweeps) {
   using R = wwr::ComplexToRealType<T>;
 
   const bool do_permute = (job == GebalJob::Permute) || (job == GebalJob::Both);
@@ -151,7 +149,7 @@ wwr::wwrError_t gebal(wwr::wwrStream_t stream, const GebalJob job, const int n, 
   // scale[] starts at 1 everywhere; the permutation stage overwrites only the
   // entries it isolates, which is what leaves 1s across [ilo, ihi].
   device::gebal_fill_ones<R>(stream, n, d_scale);
-  CLM_GEBAL_CHECK_LAUNCH();
+  CLM_TRY(wwr::wwrGetLastError());
 
   if (!do_permute && !do_scale) {
     return wwr::wwrSuccess;
@@ -174,60 +172,60 @@ wwr::wwrError_t gebal(wwr::wwrStream_t stream, const GebalJob job, const int n, 
         *ihi = 1;
         return wwr::wwrSuccess;
       }
-      CLM_GEBAL_CHECK(wwr::wwrMemsetAsync(d_row_flag, 0, flag_bytes, stream));
+      CLM_TRY(wwr::wwrMemsetAsync(d_row_flag, 0, flag_bytes, stream));
       device::gebal_mark_nonzero<T>(stream, d_A, lda, 0, l, 0, l, d_row_flag, d_col_flag);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
 
       device::gebal_set_int(stream, d_pick, -1);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
       device::gebal_pick_max_unflagged(stream, d_row_flag, 0, l, d_pick);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
 
       int j = -1;
-      CLM_GEBAL_CHECK(
+      CLM_TRY(
           wwr::wwrMemcpyAsync(&j, d_pick, sizeof(int), wwr::wwrMemcpyDeviceToHost, stream));
-      CLM_GEBAL_CHECK(wwr::wwrStreamSynchronize(stream));
+      CLM_TRY(wwr::wwrStreamSynchronize(stream));
       if (j < 0) {
         break;
       }
 
       device::gebal_record_perm<R>(stream, d_scale, l, j + 1);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
       if (j != l) {
         device::gebal_swap_cols<T>(stream, d_A, lda, n, j, l);
-        CLM_GEBAL_CHECK_LAUNCH();
+        CLM_TRY(wwr::wwrGetLastError());
         device::gebal_swap_rows<T>(stream, d_A, lda, n, j, l);
-        CLM_GEBAL_CHECK_LAUNCH();
+        CLM_TRY(wwr::wwrGetLastError());
       }
       --l;
     }
 
     // Push columns that isolate an eigenvalue to the left.
     while (k <= l) {
-      CLM_GEBAL_CHECK(wwr::wwrMemsetAsync(d_row_flag, 0, flag_bytes, stream));
+      CLM_TRY(wwr::wwrMemsetAsync(d_row_flag, 0, flag_bytes, stream));
       device::gebal_mark_nonzero<T>(stream, d_A, lda, k, l, k, l, d_row_flag, d_col_flag);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
 
       device::gebal_set_int(stream, d_pick, n);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
       device::gebal_pick_min_unflagged(stream, d_col_flag, k, l, d_pick);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
 
       int j = n;
-      CLM_GEBAL_CHECK(
+      CLM_TRY(
           wwr::wwrMemcpyAsync(&j, d_pick, sizeof(int), wwr::wwrMemcpyDeviceToHost, stream));
-      CLM_GEBAL_CHECK(wwr::wwrStreamSynchronize(stream));
+      CLM_TRY(wwr::wwrStreamSynchronize(stream));
       if (j >= n) {
         break;
       }
 
       device::gebal_record_perm<R>(stream, d_scale, k, j + 1);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
       if (j != k) {
         device::gebal_swap_cols<T>(stream, d_A, lda, n, j, k);
-        CLM_GEBAL_CHECK_LAUNCH();
+        CLM_TRY(wwr::wwrGetLastError());
         device::gebal_swap_rows<T>(stream, d_A, lda, n, j, k);
-        CLM_GEBAL_CHECK_LAUNCH();
+        CLM_TRY(wwr::wwrGetLastError());
       }
       ++k;
     }
@@ -239,14 +237,14 @@ wwr::wwrError_t gebal(wwr::wwrStream_t stream, const GebalJob job, const int n, 
   if (do_scale && k <= l) {
     const device::scale_limits<R> lim = device::make_scale_limits<R>();
     for (int sweep = 0; sweep < max_sweeps; ++sweep) {
-      CLM_GEBAL_CHECK(wwr::wwrMemsetAsync(d_pick, 0, sizeof(int), stream));
+      CLM_TRY(wwr::wwrMemsetAsync(d_pick, 0, sizeof(int), stream));
       device::gebal_sweep<T, R>(stream, n, d_A, lda, k, l, d_scale, d_pick, lim);
-      CLM_GEBAL_CHECK_LAUNCH();
+      CLM_TRY(wwr::wwrGetLastError());
 
       int noconv = 0;
-      CLM_GEBAL_CHECK(
+      CLM_TRY(
           wwr::wwrMemcpyAsync(&noconv, d_pick, sizeof(int), wwr::wwrMemcpyDeviceToHost, stream));
-      CLM_GEBAL_CHECK(wwr::wwrStreamSynchronize(stream));
+      CLM_TRY(wwr::wwrStreamSynchronize(stream));
       if (noconv == 0) {
         break;
       }
@@ -256,22 +254,19 @@ wwr::wwrError_t gebal(wwr::wwrStream_t stream, const GebalJob job, const int n, 
   return wwr::wwrSuccess;
 }
 
-#undef CLM_GEBAL_CHECK_LAUNCH
-#undef CLM_GEBAL_CHECK
-
 // Paired with instantiations.cpp: gebal is instantiated once inside this library
 // (its body names the .cu-side launchers declared only in the GMF), so an
 // importer never re-instantiates it. gebal_bufferSize is a trivial constexpr
 // forward and is left to implicit instantiation.
-extern template wwr::wwrError_t gebal<float>(wwr::wwrStream_t, GebalJob, int, float *, int, int *,
-                                             int *, float *, int *, int);
-extern template wwr::wwrError_t gebal<double>(wwr::wwrStream_t, GebalJob, int, double *, int, int *,
-                                              int *, double *, int *, int);
-extern template wwr::wwrError_t gebal<wwr::wwrFloatComplex>(wwr::wwrStream_t, GebalJob, int,
-                                                           wwr::wwrFloatComplex *, int, int *, int *,
-                                                           float *, int *, int);
-extern template wwr::wwrError_t gebal<wwr::wwrDoubleComplex>(wwr::wwrStream_t, GebalJob, int,
-                                                            wwr::wwrDoubleComplex *, int, int *,
-                                                            int *, double *, int *, int);
+extern template Status gebal<float>(wwr::wwrStream_t, GebalJob, int, float *, int, int *, int *,
+                                    float *, int *, int);
+extern template Status gebal<double>(wwr::wwrStream_t, GebalJob, int, double *, int, int *, int *,
+                                     double *, int *, int);
+extern template Status gebal<wwr::wwrFloatComplex>(wwr::wwrStream_t, GebalJob, int,
+                                                   wwr::wwrFloatComplex *, int, int *, int *,
+                                                   float *, int *, int);
+extern template Status gebal<wwr::wwrDoubleComplex>(wwr::wwrStream_t, GebalJob, int,
+                                                    wwr::wwrDoubleComplex *, int, int *, int *,
+                                                    double *, int *, int);
 
 } // namespace calaman

@@ -53,11 +53,24 @@
  *                         d_w);
  */
 
+module;
+
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.larf;
 
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_OP_*, WWRBLAS_STATUS_*
 import wwr.wrappers.blas; // gemv, ger
 import calaman.common;    // kZero<T>, kOne<T> (:constants), Side (:enums)
+
+// export import, not a plain import: larf RETURNS calaman::Status, so a consumer
+// of `import calaman.larf;` must see Status's member functions, not just its
+// name -- the same re-export diff_norm does.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -87,10 +100,10 @@ export using calaman::Side;
 /// @param ldc Leading dimension of C (>= m)
 /// @param w Device workspace vector, length n (side L) or m (side R), stride 1;
 ///          overwritten with the intermediate C^T*v / C*v
-/// @return The gemv status if it failed, otherwise the ger status
+/// @return The gemv Status if it failed, otherwise the ger Status
 export template<typename T>
-wwr::wwrblasStatus_t larf(wwr::wwrblasHandle_t handle, const Side side, const int m, const int n,
-                          const T *v, const int incv, const T tau, T *C, const int ldc, T *w) {
+Status larf(wwr::wwrblasHandle_t handle, const Side side, const int m, const int n, const T *v,
+            const int incv, const T tau, T *C, const int ldc, T *w) {
   if (m == 0 || n == 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
@@ -98,11 +111,7 @@ wwr::wwrblasStatus_t larf(wwr::wwrblasHandle_t handle, const Side side, const in
   // gemv: w := op(C) * v. side L takes op = C^T (trans = T, w length n); side R
   // takes op = C (trans = N, w length m). m and n are always C's dimensions.
   const wwr::wwrblasOperation_t trans = side == Side::L ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_N;
-  const auto gemv_status =
-      wwr::gemv<T>(handle, trans, m, n, &kOne<T>, C, ldc, v, incv, &kZero<T>, w, 1);
-  if (gemv_status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return gemv_status;
-  }
+  CLM_TRY(wwr::gemv<T>(handle, trans, m, n, &kOne<T>, C, ldc, v, incv, &kZero<T>, w, 1));
 
   // ger: C := C - tau * (column)(row)^T. side L is v * w^T (v the column), side R
   // is w * v^T (w the column). alpha = -tau is a host scalar (host pointer mode).

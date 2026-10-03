@@ -12,6 +12,9 @@
 #   wwr.wrappers.solver  geqrf/orgqr/ungqr (+ bufferSize), usual_fp, complex ts
 #   wwr.solver           wwrsolverDnHandle_t / wwrsolverStatus_t / the status
 #   calaman.common       align_up (the 256-element tau rounding)
+#   calaman.error_handling  Status, the cross-domain return type (re-exported;
+#                           its src/ root also resolves the CLM_TRY header the
+#                           GMF includes, "error_handling/error_macros.h")
 calaman_add_cxx_module_library(
   NAME
   calaman.orthogonalize
@@ -23,5 +26,6 @@ calaman_add_cxx_module_library(
   wwr.wrappers.solver
   wwr.solver
   calaman.common
+  calaman.error_handling
   IMPORT_STD
 )

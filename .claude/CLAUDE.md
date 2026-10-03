@@ -226,6 +226,13 @@ carries that cost instead.
   climb**. The standard library, the vendor SDKs and LAPACKE use angle brackets.
   A non-module header a `.cppm` includes from its global module fragment must
   have its include root exported (PUBLIC/INTERFACE), not PRIVATE.
+- **Documentation under `src/`/`cmake/` follows the `docstyle` skill — apply it
+  when you write or edit a header, declaration, or CMake comment, not only when
+  asked to review.** Its budget (25-line header, 5-line declaration) is enforced
+  by nothing at commit or in CI, so an unchecked edit is exactly how headers
+  bloat; run the skill's budget check after touching one. The judgement the skill
+  encodes — constraint vs story, invariant vs mechanism — only constrains if it is
+  exercised at the keystroke.
 - Python ≥3.13, `from __future__ import annotations` everywhere.
 - Lint is deliberately narrow (`E,F,I,UP,B`) with **no formatter hook**. `ruff
   check .` is clean — the pre-commit hook fails on any finding in a file you

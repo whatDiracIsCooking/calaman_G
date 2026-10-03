@@ -90,7 +90,11 @@
 
 module;
 
-#include "error_handling/error_macros.h" // CLM_TRY -- a macro, arrives by #include, not import
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
 
 export module calaman.geqp3;
 
@@ -101,13 +105,13 @@ import wwr.wrappers.blas;   // nrm2, wwrblasSideMode_t, wwrblasOperation_t
 import wwr.wrappers.solver; // geqrf, geqrf_bufferSize, ormqr, ormqr_bufferSize
 import calaman.laqp2;       // calaman::laqp2
 import calaman.laqps;       // calaman::laqps
-import std;                // std::min
+import std;                 // std::min
 
-// export import, not plain: the geqp3 drivers RETURN calaman::Status, whose
-// member functions a consumer must see, and it supplies the ::calaman::Status
-// CLM_TRY names. (calaman.laqps already re-exports it, but geqp3 names the type
-// directly, so it declares the dependency itself.)
-export import calaman.error_handling; // calaman::Status -- the return type
+// export import, not a plain import: geqp3 RETURNS calaman::Status, so a consumer
+// of `import calaman.geqp3;` must see Status's member functions, not just its
+// name -- the same re-export diff_norm does. Both solver and runtime failures now
+// flow through it in their own domain, not a BLAS masquerade.
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
@@ -145,10 +149,10 @@ export inline constexpr std::size_t geqp3_work_size(const int m, const int n) {
   }
   const int nb = std::min(kBlockSize, std::min(m, n));
   const std::size_t nn = static_cast<std::size_t>(n);
-  return nn                                              // larf / laqp2 scratch
-         + nn * static_cast<std::size_t>(nb)             // F
-         + static_cast<std::size_t>(nb)                  // auxv
-         + nn;                                           // flags (ints in T slots)
+  return nn                                  // larf / laqp2 scratch
+         + nn * static_cast<std::size_t>(nb) // F
+         + static_cast<std::size_t>(nb)      // auxv
+         + nn;                               // flags (ints in T slots)
 }
 
 /// @brief Upper bound (in T elements) on the solver workspace the fixed-prefix
@@ -179,8 +183,8 @@ int geqp3_solver_work_size(wwr::wwrsolverDnHandle_t solver, const int m, const i
     return 1;
   }
   if (wwr::ormqr_bufferSize<T>(solver, wwr::WWRBLAS_SIDE_LEFT, wwr::WWRBLAS_OP_T, m, n, mn, nullptr,
-                               m, nullptr, nullptr, m, &ormqr_lwork) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
+                               m, nullptr, nullptr, m,
+                               &ormqr_lwork) != wwr::WWRSOLVER_STATUS_SUCCESS) {
     return 1;
   }
   return std::max(std::max(geqrf_lwork, ormqr_lwork), 1);
@@ -194,10 +198,10 @@ int geqp3_solver_work_size(wwr::wwrsolverDnHandle_t solver, const int m, const i
 /// then factors in laqps blocks of @p nb columns (finishing the tail with
 /// laqp2) when min(m,n) > kCrossoverBlockSize, else as one laqp2 panel.
 ///
-/// Short-circuits: the first failing nrm2 / upload / panel status is returned and
-/// the factorization stops there. Returns success and writes nothing when the
-/// matrix is empty (m <= 0 or n <= 0). A device-read/write failure surfaces its
-/// own runtime error through the Status return.
+/// Short-circuits: the first failing step's Status is returned and the
+/// factorization stops there. Returns success and writes nothing when the matrix
+/// is empty (m <= 0 or n <= 0). Each device read/write now returns its OWN
+/// domain's Status (the uploads a runtime one) rather than a BLAS masquerade.
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param handle GPU BLAS handle in host pointer mode; A, tau, vn1, vn2, work live on its device
@@ -212,8 +216,7 @@ int geqp3_solver_work_size(wwr::wwrsolverDnHandle_t solver, const int m, const i
 /// @param work Device workspace, length >= geqp3_work_size(m, n)
 /// @param nb Block width override; 0 (the default) uses kBlockSize. A value past
 ///           min(m,n) forces the single-laqp2 tail -- the crossover fallback
-/// @return A calaman::Status: the failing step's status (in its own error
-///         domain), otherwise success
+/// @return The Status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
 namespace detail {
 
 /// @brief Factor the free panel A(start:m, start:n) with Businger-Golub pivoting
@@ -229,9 +232,9 @@ namespace detail {
 /// now sits there); the caller remaps it to true original indices. For the
 /// all-free overload start == 0 and that local permutation IS the answer.
 template<typename T>
-calaman::Status factor_free_panel(wwr::wwrblasHandle_t handle, const int m, const int n,
-                                  const int start, T *A, const int lda, int *jpvt, T *tau, T *vn1,
-                                  T *vn2, T *work, const int block) {
+Status factor_free_panel(wwr::wwrblasHandle_t handle, const int m, const int n, const int start,
+                         T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2, T *work,
+                         const int block) {
   const int mn = std::min(m - start, n - start); // pivot steps over the free panel
   if (mn <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
@@ -313,9 +316,9 @@ calaman::Status factor_free_panel(wwr::wwrblasHandle_t handle, const int m, cons
 /// both partial-norm arrays on @p stream. @p start is the first row the norm
 /// counts (0 for the all-free seed, nfxd for the free tail after ormqr).
 template<typename T>
-calaman::Status seed_free_norms(wwr::wwrblasHandle_t handle, wwr::wwrStream_t stream, const int m,
-                                const int n, const int start, const int c0, T *A, const int lda,
-                                T *vn1, T *vn2) {
+Status seed_free_norms(wwr::wwrblasHandle_t handle, wwr::wwrStream_t stream, const int m,
+                       const int n, const int start, const int c0, T *A, const int lda, T *vn1,
+                       T *vn2) {
   const int rows = m - start;
   for (int j = c0; j < n; ++j) {
     T norm = T{0};
@@ -332,8 +335,8 @@ calaman::Status seed_free_norms(wwr::wwrblasHandle_t handle, wwr::wwrStream_t st
 } // namespace detail
 
 export template<typename T>
-calaman::Status geqp3(wwr::wwrblasHandle_t handle, const int m, const int n, T *A, const int lda,
-                      int *jpvt, T *tau, T *vn1, T *vn2, T *work, const int nb = 0) {
+Status geqp3(wwr::wwrblasHandle_t handle, const int m, const int n, T *A, const int lda, int *jpvt,
+             T *tau, T *vn1, T *vn2, T *work, const int nb = 0) {
   if (m <= 0 || n <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
@@ -368,10 +371,10 @@ calaman::Status geqp3(wwr::wwrblasHandle_t handle, const int m, const int n, T *
 /// straight to the all-free overload.
 ///
 /// Short-circuits on the first failing step. Returns success and writes nothing
-/// for an empty matrix. A geqrf/ormqr status that is not success surfaces through
-/// the Status return in its OWN (solver) domain, no longer flattened to a BLAS
-/// stand-in. @p info is the geqrf/ormqr devInfo scratch (0 on a well-formed QR,
-/// which an unpivoted leading block always is).
+/// for an empty matrix. A geqrf/ormqr failure now surfaces as its OWN
+/// solver-domain Status (not a WWRBLAS_STATUS_NOT_INITIALIZED masquerade), so the
+/// caller sees the true solver code. @p info is the geqrf/ormqr devInfo scratch
+/// (0 on a well-formed QR, which an unpivoted leading block always is).
 ///
 /// @tparam T Element type; one of the instantiated types (float, double)
 /// @param handle GPU BLAS handle in host pointer mode; the device arrays live on its stream
@@ -389,12 +392,11 @@ calaman::Status geqp3(wwr::wwrblasHandle_t handle, const int m, const int n, T *
 /// @param lwork_solver Length of @p swork in T elements
 /// @param info Device int; the geqrf/ormqr devInfo (0 on success)
 /// @param nb Block width override forwarded to the free-tail factorization
-/// @return A calaman::Status: the failing step's status (in its own error
-///         domain), otherwise success
+/// @return The Status of the failing step, otherwise WWRBLAS_STATUS_SUCCESS
 export template<typename T>
-calaman::Status geqp3(wwr::wwrblasHandle_t handle, wwr::wwrsolverDnHandle_t solver, const int m,
-                      const int n, T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2, T *work,
-                      T *swork, const int lwork_solver, int *info, const int nb = 0) {
+Status geqp3(wwr::wwrblasHandle_t handle, wwr::wwrsolverDnHandle_t solver, const int m, const int n,
+             T *A, const int lda, int *jpvt, T *tau, T *vn1, T *vn2, T *work, T *swork,
+             const int lwork_solver, int *info, const int nb = 0) {
   if (m <= 0 || n <= 0) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }

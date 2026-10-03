@@ -24,26 +24,33 @@
  * n m0^2 flops instead of n^2 m0.
  *
  * Every function here expects the handles' streams to be @p stream. A non-success
- * eigensolver result surfaces as WWRBLAS_STATUS_INTERNAL_ERROR (calaman.expm's
- * convention); a kernel-launch failure through wwr::wwrGetLastError().
+ * eigensolver result surfaces as its own Status (solver domain); a kernel-launch
+ * failure through wwr::wwrGetLastError() (runtime domain).
  */
 
 module;
 
 #include "feast_bridge.h"
 
+// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
+// not by import. Resolved root-relative via the src/ root calaman.error_handling
+// exports; needs calaman::Status visible at expansion, which the import below
+// (export import) supplies.
+#include "error_handling/error_macros.h"
+
 export module calaman.feast:rayleigh_ritz;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.blas;            // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_*, pointer-mode get/set
-import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_STATUS_SUCCESS, WWRSOLVER_EIG_MODE_VECTOR
+import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, pointer-mode get/set
+import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.wrappers.common; // real_fp
 import wwr.wrappers.blas;   // symm, gemm
 import wwr.wrappers.solver; // syevd
 import calaman.common;      // kOne, kZero
 import calaman.orthogonalize; // orthogonalize
 import :buffer_size;
+export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman::feast_detail {
 
@@ -87,12 +94,11 @@ export namespace calaman {
  * @param d_X  Out: n x m0, leading dimension n.
  */
 template<wwr::real_fp T>
-wwr::wwrblasStatus_t feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
-                                         wwr::wwrsolverDnHandle_t cusolver_handle,
-                                         wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo,
-                                         const int n, const T *d_A, const int lda, const int m0,
-                                         const T Emin, const T Emax, const FeastSlices<T> &s,
-                                         T *d_lambda, T *d_X) {
+Status feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
+                           wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
+                           const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
+                           const int lda, const int m0, const T Emin, const T Emax,
+                           const FeastSlices<T> &s, T *d_lambda, T *d_X) {
   const feast_detail::HostPointerMode mode(cublas_handle);
   if (!mode.ok()) {
     return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
@@ -101,40 +107,25 @@ wwr::wwrblasStatus_t feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
   orthogonalize<T>(cusolver_handle, n, m0, s.basis, s.scratch, s.lwork_qr, s.qr_info,
                    s.qr_info + 1);
 
-  if (wwr::symm<T, int>(cublas_handle, wwr::WWRBLAS_SIDE_LEFT, uplo, n, m0, &kOne<T>, d_A, lda,
-                        s.basis, n, &kZero<T>, s.a_basis, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::symm<T, int>(cublas_handle, wwr::WWRBLAS_SIDE_LEFT, uplo, n, m0, &kOne<T>, d_A, lda,
+                            s.basis, n, &kZero<T>, s.a_basis, n));
 
-  if (wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_T, wwr::WWRBLAS_OP_N, m0, m0, n, &kOne<T>,
-                        s.basis, n, s.a_basis, n, &kZero<T>, s.projected, m0) !=
-      wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_T, wwr::WWRBLAS_OP_N, m0, m0, n,
+                            &kOne<T>, s.basis, n, s.a_basis, n, &kZero<T>, s.projected, m0));
 
   // H is symmetric to roundoff; syevd reads only its lower triangle.
-  if (wwr::syevd<T>(cusolver_handle, wwr::WWRSOLVER_EIG_MODE_VECTOR, wwr::WWRBLAS_FILL_MODE_LOWER, m0,
-                    s.projected, m0, s.ritz, s.scratch, s.lwork_eig, s.eig_info) !=
-      wwr::WWRSOLVER_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::syevd<T>(cusolver_handle, wwr::WWRSOLVER_EIG_MODE_VECTOR,
+                        wwr::WWRBLAS_FILL_MODE_LOWER, m0, s.projected, m0, s.ritz, s.scratch,
+                        s.lwork_eig, s.eig_info));
 
   device::feast_select(stream, m0, Emin, Emax, s.ritz, s.projected, d_lambda, s.rotated, s.status);
-  if (wwr::wwrGetLastError() != wwr::wwrSuccess) {
-    return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
-  }
+  CLM_TRY(wwr::wwrGetLastError());
 
-  if (wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, m0, m0, &kOne<T>,
-                        s.basis, n, s.rotated, m0, &kZero<T>, d_X, n) !=
-      wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, m0, m0,
+                            &kOne<T>, s.basis, n, s.rotated, m0, &kZero<T>, d_X, n));
 
-  if (wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, m0, m0, &kOne<T>,
-                        s.a_basis, n, s.rotated, m0, &kZero<T>, s.a_ritz, n) !=
-      wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, m0, m0,
+                            &kOne<T>, s.a_basis, n, s.rotated, m0, &kZero<T>, s.a_ritz, n));
 
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
@@ -144,13 +135,12 @@ wwr::wwrblasStatus_t feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
  *        Once per solve.
  */
 template<wwr::real_fp T>
-wwr::wwrblasStatus_t feast_matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo,
-                                       const int n, const T *d_A, const int lda,
-                                       const FeastSlices<T> &s) {
+Status feast_matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
+                         const T *d_A, const int lda, const FeastSlices<T> &s) {
   device::feast_sym_norm1(stream, uplo == wwr::WWRBLAS_FILL_MODE_LOWER, n, d_A, lda, s.colsum,
                           s.norm_a);
-  return wwr::wwrGetLastError() == wwr::wwrSuccess ? wwr::WWRBLAS_STATUS_SUCCESS
-                                                   : wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
+  CLM_TRY(wwr::wwrGetLastError());
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 /**
@@ -164,11 +154,11 @@ wwr::wwrblasStatus_t feast_matrix_norm(wwr::wwrStream_t stream, const wwr::wwrbl
  * reads the same whatever the scale of A or of the interval.
  */
 template<wwr::real_fp T>
-wwr::wwrblasStatus_t feast_residuals(wwr::wwrStream_t stream, const int n, const int m0,
-                                     const T *d_X, const T *d_lambda, const FeastSlices<T> &s) {
+Status feast_residuals(wwr::wwrStream_t stream, const int n, const int m0, const T *d_X,
+                       const T *d_lambda, const FeastSlices<T> &s) {
   device::feast_residuals(stream, n, m0, d_X, s.a_ritz, d_lambda, s.norm_a, s.residuals, s.status);
-  return wwr::wwrGetLastError() == wwr::wwrSuccess ? wwr::WWRBLAS_STATUS_SUCCESS
-                                                   : wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
+  CLM_TRY(wwr::wwrGetLastError());
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 } // namespace calaman

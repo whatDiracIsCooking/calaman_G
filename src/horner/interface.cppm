@@ -58,7 +58,11 @@
 module;
 
 #include "horner_bridge.h"
-#include "error_handling/error_macros.h" // CLM_TRY / CLM_REQUIRE -- macros arrive by #include, not import
+// CLM_TRY / CLM_REQUIRE -- macros, so they arrive by #include in the global
+// module fragment, not by import. Resolved root-relative via the src/ root
+// calaman.error_handling exports; need calaman::Status visible at expansion,
+// which the export import below supplies.
+#include "error_handling/error_macros.h"
 
 export module calaman.horner;
 
@@ -140,19 +144,19 @@ std::size_t horner_bufferSize(const int n) {
 /// @param ldp        Leading dimension of @p d_P; ldp >= n
 /// @param d_work     Device workspace, 256-byte aligned; may be null if degree is 0
 /// @param work_bytes Size of @p d_work; at least horner_bufferSize<T>(n)
-/// @return A calaman::Status: success, the first failing gemm's status, or
-///         WWRBLAS_STATUS_NOT_INITIALIZED (the neutral bad-argument code
-///         calaman.diff_norm documents) for bad dimensions, a null pointer or an
-///         undersized workspace
+/// @return A successful Status, the first failing gemm status, or a Status
+///         carrying WWRBLAS_STATUS_NOT_INITIALIZED for bad dimensions, a null
+///         pointer or an undersized workspace (the only neutral non-success code
+///         WarpWraps exposes, as calaman.diff_norm documents)
 ///
 /// @pre @p d_A, @p d_P and @p d_work must not overlap -- each Horner step is a
 ///      gemm, which requires its output distinct from both inputs.
 /// @pre The handle is in default (host) pointer mode: the gemm scalars kOne and
 ///      kZero are passed by host address, like calaman.laqps / calaman.geqp3.
 export template<typename T>
-calaman::Status horner(wwr::wwrblasHandle_t handle, const int n, const T *d_coeffs,
-                       const int degree, const T *d_A, const int lda, T *d_P, const int ldp,
-                       void *d_work, const std::size_t work_bytes) {
+Status horner(wwr::wwrblasHandle_t handle, const int n, const T *d_coeffs, const int degree,
+              const T *d_A, const int lda, T *d_P, const int ldp, void *d_work,
+              const std::size_t work_bytes) {
   CLM_REQUIRE(n >= 1 && degree >= 0 && lda >= n && ldp >= n, wwr::WWRBLAS_STATUS_NOT_INITIALIZED);
   CLM_REQUIRE(all_nonnull(d_coeffs, d_A, d_P), wwr::WWRBLAS_STATUS_NOT_INITIALIZED);
   // Degree 0 is just c_0 * I: no product, so no scratch block.
@@ -192,11 +196,9 @@ calaman::Status horner(wwr::wwrblasHandle_t handle, const int n, const T *d_coef
 extern template std::size_t horner_bufferSize<float>(int);
 extern template std::size_t horner_bufferSize<double>(int);
 
-extern template calaman::Status horner<float>(wwr::wwrblasHandle_t, int, const float *, int,
-                                               const float *, int, float *, int, void *,
-                                               std::size_t);
-extern template calaman::Status horner<double>(wwr::wwrblasHandle_t, int, const double *, int,
-                                               const double *, int, double *, int, void *,
-                                               std::size_t);
+extern template Status horner<float>(wwr::wwrblasHandle_t, int, const float *, int, const float *,
+                                     int, float *, int, void *, std::size_t);
+extern template Status horner<double>(wwr::wwrblasHandle_t, int, const double *, int,
+                                      const double *, int, double *, int, void *, std::size_t);
 
 } // namespace calaman

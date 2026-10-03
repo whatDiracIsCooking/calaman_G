@@ -76,7 +76,7 @@ import wwr.blas;   // wwrblasHandle_t
 
 const std::size_t work_bytes = calaman::horner_bufferSize<T>(n);   // one n*n block
 
-wwr::wwrblasStatus_t calaman::horner<T>(
+calaman::Status calaman::horner<T>(
     wwr::wwrblasHandle_t handle, int n,
     const T* d_coeffs, int degree,  // ascending: c_k * A^k
     const T* d_A, int lda,

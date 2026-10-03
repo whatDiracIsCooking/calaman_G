@@ -6,9 +6,12 @@
 # All links are PUBLIC because larfg() is an exported template DEFINED in the
 # interface (like calaman.diff_norm): a consumer instantiates the body itself,
 # so every module the body names must reach it. IMPORT_STD for std::sqrt / abs.
+# calaman.error_handling is additionally re-exported (export import) because it
+# supplies the Status return type, whose member functions a consumer must see.
 #   wwr.wrappers.blas   nrm2, scal
 #   wwr.blas            wwrblasHandle_t / wwrblasStatus_t / WWRBLAS_STATUS_*
 #   wwr.runtime_api     wwrMemcpy(Async) + wwrSuccess for the alpha read/write
+#   calaman.error_handling  Status, the cross-domain return type
 calaman_add_cxx_module_library(
   NAME
   calaman.larfg
@@ -18,5 +21,6 @@ calaman_add_cxx_module_library(
   wwr.wrappers.blas
   wwr.blas
   wwr.runtime_api
+  calaman.error_handling
   IMPORT_STD
 )

@@ -31,7 +31,11 @@ calaman_add_gpu_device_library(
 # names: the gemm wrapper (wwr.wrappers.blas), the handle/status/op/GetStream
 # layer (wwr.blas), the wwrStream_t type the body hands to the launcher
 # (wwr.runtime_api) and calaman.common (kZero/kOne scalars, WorkspaceBuilder,
-# align_up). LINK_PRIVATE wwr_backend is for the runtime.h that
+# align_up). calaman.error_handling is additionally re-exported (export import)
+# because it supplies the Status return type, whose member functions a consumer
+# must see.
+#   calaman.error_handling  Status, the cross-domain return type
+# LINK_PRIVATE wwr_backend is for the runtime.h that
 # paterson_stockmeyer_bridge.h pulls into the global module fragment: a GMF
 # cannot `import`, so wwrStream_t arrives by #include and selected_backend.h
 # behind it reads WWR_GPU_BACKEND_*. INCLUDE_DIRS_PRIVATE is the source dir for
@@ -48,6 +52,7 @@ calaman_add_cxx_module_library(
   wwr.blas
   wwr.runtime_api
   calaman.common
+  calaman.error_handling
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE
