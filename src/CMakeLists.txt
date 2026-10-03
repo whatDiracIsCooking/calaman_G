@@ -261,3 +261,12 @@ add_subdirectory(laln2)
 # module, only calaman.error_handling. Placed after laqr1, whose arithmetic it
 # reproduces. Structurally laexc's twin.
 add_subdirectory(laqr5)
+
+# calaman.ormhr -- multiply a general matrix by the orthogonal Q from ?gehrd
+# (LAPACK's ?ormhr: Q*C, Q^T*C, C*Q, C*Q^T), the back-transform step of the
+# nonsymmetric eigenproblem. A pure host index shift over wwr::ormqr -- the
+# gehrd reflectors are geqrf's layout shifted one row, so ormhr forwards them to
+# one ormqr over the shifted C submatrix. Real only (float/double); no .cu of
+# its own (ormqr carries the device work). Links calaman.common (Side/Trans) and
+# calaman.error_handling; see its CMakeLists.txt for the wwr edges.
+add_subdirectory(ormhr)
