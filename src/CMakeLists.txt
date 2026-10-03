@@ -286,3 +286,15 @@ add_subdirectory(orghr)
 # bubbles the block one adjacent swap at a time, so it LINKS calaman.laexc (the
 # swap, added just above) and must follow it here.
 add_subdirectory(trexc)
+
+# calaman.trevc3 -- the left/right eigenvectors of a real quasi-triangular
+# (Schur) matrix by back-substitution (LAPACK's ?trevc3, HOWMNY = 'A'), the
+# eigenvector step of the real nonsymmetric eigensolver. One single-thread
+# device kernel (the per-block scaled solve is O(1); each back-substitution
+# update touches O(N) entries) that inlines the ?laln2 solve -- calaman.laln2
+# is a launch functor unusable from a device kernel -- so, like laexc and
+# laqr5, it links no sibling LAPACK module, only calaman.error_handling. Its
+# inlined solve reaches calaman.ladiv's header-only ladiv_scalar root-relative,
+# as laln2 does. Structurally laqr5's twin; placed after laln2, whose
+# arithmetic it reproduces.
+add_subdirectory(trevc3)
