@@ -44,6 +44,12 @@ add_subdirectory(lacpy)
 # shares no build edge with lacpy -- added next to it only for readability.
 add_subdirectory(laset)
 
+# calaman.lascl2 is laset's structural twin (a hand-launched per-element kernel
+# over a column-major matrix), here diagonal row-scaling x <-- D * x rather than
+# a constant fill. It shares no build edge with laset -- added next to it only
+# for readability.
+add_subdirectory(lascl2)
+
 add_subdirectory(orthogonalize)
 
 # calaman.random_unitary composes calaman.orthogonalize with a Gaussian fill, so
