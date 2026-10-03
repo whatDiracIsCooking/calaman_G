@@ -36,6 +36,13 @@ add_subdirectory(set_element)
 
 add_subdirectory(diff_norm)
 add_subdirectory(gebal)
+
+# calaman.gebak is gebal's back-transformation companion (undo the balancing
+# similarity on a matrix of eigenvectors). It shares no build edge with gebal --
+# it consumes gebal's scale/ilo/ihi at the call site, not at link -- so it is
+# added next to it only for readability.
+add_subdirectory(gebak)
+
 add_subdirectory(horner)
 
 # calaman.paterson_stockmeyer is the asymptotically-cheaper twin of
