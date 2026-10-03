@@ -11,7 +11,7 @@
 # takes a wwrblasHandle_t plus a wwrsolverDnHandle_t (the geodesic step's expm),
 # hence wwr.blas and wwr.solver for the test's own handle creation.
 if(NOT TARGET calaman::lapack_reference)
-  message(STATUS "calaman::lapack_reference not found; skipping cg_unitary tests")
+  message(STATUS "calaman::lapack_reference not found; skipping cg_unitary")
   return()
 endif()
 
