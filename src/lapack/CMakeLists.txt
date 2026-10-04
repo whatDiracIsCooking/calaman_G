@@ -15,7 +15,8 @@
 #
 # This directory is added from src/CMakeLists.txt AFTER the utilities these
 # modules link (common, error_handling, elem_ops, diff_norm, reduce_columns) and
-# BEFORE the one utility that links back into here (calaman.nnls -> calaman.geqp3).
+# BEFORE the one utility that links back into here (calaman.nnls, which links
+# calaman.geqp3).
 # Modules below are added in call-graph order so each one's dependencies are
 # declared first -- the same discipline src/CMakeLists.txt keeps.
 
@@ -100,7 +101,7 @@ add_subdirectory(larft)
 # host composition of the wrapped BLAS-3 (trmm/gemm) plus geam for the block
 # copies and the rank-k subtraction; it takes T as input rather than calling
 # larft, so it shares no build edge with it and links only calaman.common
-# (Side/Trans/Direct/StoreV) and calaman.error_handling, both added one level up.
+# (Side/Trans/Direct/StoreV) and calaman.error_handling, both one level up.
 add_subdirectory(larfb)
 
 # calaman.lahr2 -- LAPACK's ?lahr2, reduce the first nb columns of a panel to

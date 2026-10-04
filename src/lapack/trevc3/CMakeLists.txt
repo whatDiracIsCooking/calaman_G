@@ -9,8 +9,8 @@
 # unusable from inside a device kernel, so -- exactly as laexc inlines its
 # auxiliaries -- the sweep links no sibling LAPACK module. Its inlined solve's
 # complex divisions reach calaman.ladiv's header-only host/device ladiv_scalar
-# root-relative ("lapack/ladiv/ladiv.h") off the src/ root, included not imported: a
-# kernel reaches it by #include, not import.
+# root-relative ("lapack/ladiv/ladiv.h") off the src/ root, included not
+# imported: a kernel reaches it by #include, not import.
 
 # The device-kernel library. trevc3.cu launches its functor through
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which

@@ -67,8 +67,8 @@ add_subdirectory(lapack)
 add_subdirectory(nnls)
 
 # calaman.expm -- the matrix exponential by scaling and squaring. A host
-# composition over wrapped BLAS + the LU solve, plus its own fused kernels. Added
-# after its calaman dependencies (common, elem_ops, error_handling,
+# composition over wrapped BLAS + the LU solve, plus its own fused kernels.
+# Added after its calaman dependencies (common, elem_ops, error_handling,
 # reduce_columns) so their targets exist when it links them.
 add_subdirectory(expm)
 
