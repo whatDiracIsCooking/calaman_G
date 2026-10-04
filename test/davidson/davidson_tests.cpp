@@ -56,7 +56,6 @@ template<typename T>
 using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbort, DeviceHandle>;
 
 constexpr int kInvalidValue = static_cast<int>(wwr::WWRBLAS_STATUS_INVALID_VALUE);
-constexpr int kNotSupported = static_cast<int>(wwr::WWRBLAS_STATUS_NOT_SUPPORTED);
 
 // ── argument checking (host-only; the handle is never dereferenced) ──────────
 
@@ -89,11 +88,12 @@ TEST(DavidsonArgCheckTests, RejectsBadGuessCount) {
   EXPECT_EQ(solve(9).code, kInvalidValue); // above max_subspace
 }
 
-TEST(DavidsonArgCheckTests, RejectsMetricPath) {
-  // A non-empty metric selects the generalized path, which is not yet
-  // implemented; it is rejected before any handle use rather than silently
+TEST(DavidsonArgCheckTests, RejectsMetricWithoutMetricWorkspace) {
+  // A non-empty metric selects the generalized path, which needs a workspace
+  // sized with_metric; a default (Euclidean) DavidsonSlices has null metric
+  // regions, so it is rejected before any handle use rather than silently
   // solving the wrong (Euclidean) problem.
-  DavidsonSlices<double> s;
+  DavidsonSlices<double> s; // all-null: not sized with_metric
   DavidsonResult<double> result;
   DavidsonMetricFn<double> metric = [](wwr::wwrStream_t, int, const double *, double *) -> Status {
     return wwr::WWRBLAS_STATUS_SUCCESS;
@@ -101,7 +101,7 @@ TEST(DavidsonArgCheckTests, RejectsMetricPath) {
   const Status st = davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
                                            wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4, s, {}, {},
                                            nullptr, &result, {}, metric);
-  EXPECT_EQ(st.code, kNotSupported);
+  EXPECT_EQ(st.code, kInvalidValue);
 }
 
 // ── shared device plumbing ───────────────────────────────────────────────────
@@ -373,6 +373,167 @@ void check_reference() {
 
 TEST(DavidsonReferenceTests, LowestEigenpairsDouble) { check_reference<double>(); }
 TEST(DavidsonReferenceTests, LowestEigenpairsFloat) { check_reference<float>(); }
+
+// ── generalized (metric) solve vs the reference LAPACK (REQUIRES_GPU) ─────────
+//
+// The metric path solves the generalized problem A x = lambda M x (A symmetric,
+// M SPD) by presenting the operator Sigma = M^{-1} A, which is self-adjoint in
+// the M-inner-product: davidson's Ritz values are the generalized eigenvalues.
+// The oracle is LAPACKE_?sygvd on (A, M); Sigma is precomputed on the host
+// (LAPACKE_?posv solving M Sigma = A) so the sigma/metric callbacks are plain
+// gemms. All oracle arithmetic is in double.
+
+template<typename T>
+std::vector<T> spd_matrix(int n, double diag, double eps, unsigned seed) {
+  std::mt19937 rng(seed);
+  std::uniform_real_distribution<double> dist(-1.0, 1.0);
+  std::vector<T> m(static_cast<std::size_t>(n) * n, T{0});
+  for (int j = 0; j < n; ++j) {
+    for (int i = j; i < n; ++i) {
+      const double v = (i == j) ? diag : eps * dist(rng); // diag-dominant => SPD
+      m[static_cast<std::size_t>(j) * n + i] = static_cast<T>(v);
+      m[static_cast<std::size_t>(i) * n + j] = static_cast<T>(v);
+    }
+  }
+  return m;
+}
+
+// Sigma = M^{-1} A via LAPACKE_?posv (solves M X = A, X overwrites the RHS).
+lapack_int call_posv(int n, double *m, double *a) {
+  return LAPACKE_dposv(LAPACK_COL_MAJOR, 'L', n, n, m, n, a, n);
+}
+// Generalized eigenvalues of A x = lambda M x (itype 1), ascending.
+lapack_int call_sygvd(int n, double *a, double *m, double *w) {
+  return LAPACKE_dsygvd(LAPACK_COL_MAJOR, 1, 'N', 'L', n, a, n, m, n, w);
+}
+
+template<typename T>
+std::vector<T> cast_vec(const std::vector<double> &v) {
+  std::vector<T> out(v.size());
+  for (std::size_t i = 0; i < v.size(); ++i) {
+    out[i] = static_cast<T>(v[i]);
+  }
+  return out;
+}
+
+template<typename T>
+void check_reference_metric() {
+  constexpr int n = 40;
+  constexpr int n_roots = 3;
+  constexpr int max_subspace = 18;
+  const bool is_float = std::is_same_v<T, float>;
+  const T res_tol = is_float ? T{1e-3} : T{1e-8};
+  const double eig_tol = is_float ? 2e-2 : 1e-5;
+
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+
+  const auto a_d = diag_plus_perturbation<double>(n, 0.05, 20261004u);
+  const auto m_d = spd_matrix<double>(n, 4.0, 0.03, 77u);
+
+  // Reference generalized eigenvalues (copies: sygvd overwrites both operands).
+  std::vector<double> ref(static_cast<std::size_t>(n));
+  {
+    auto a_copy = a_d;
+    auto m_copy = m_d;
+    ASSERT_EQ(call_sygvd(n, a_copy.data(), m_copy.data(), ref.data()), 0);
+  }
+
+  // Sigma = M^{-1} A (copies: posv overwrites both operands; Sigma lands in a_copy).
+  std::vector<double> sigma_d = a_d;
+  {
+    auto m_copy = m_d;
+    ASSERT_EQ(call_posv(n, m_copy.data(), sigma_d.data()), 0);
+  }
+  std::vector<double> diag_sigma(static_cast<std::size_t>(n));
+  for (int j = 0; j < n; ++j) {
+    diag_sigma[static_cast<std::size_t>(j)] = sigma_d[static_cast<std::size_t>(j) * n + j];
+  }
+
+  DeviceBuffer<T> d_sigma = to_device(handle, cast_vec<T>(sigma_d));
+  DeviceBuffer<T> d_m = to_device(handle, cast_vec<T>(m_d));
+
+  std::vector<T> guess_host(static_cast<std::size_t>(n) * n_roots, T{0});
+  for (int c = 0; c < n_roots; ++c) {
+    guess_host[static_cast<std::size_t>(c) * n + c] = T{1};
+  }
+  DeviceBuffer<T> d_guess = to_device(handle, guess_host);
+  DeviceBuffer<T> d_vecs(static_cast<std::size_t>(n) * n_roots, handle);
+
+  std::size_t lwork = 0;
+  ASSERT_TRUE(davidson_bufferSize<T>(h.solver, n, n_roots, max_subspace, true, &lwork).ok());
+  DeviceBuffer<std::byte> work(lwork, handle);
+  DavidsonSlices<T> s;
+  ASSERT_TRUE(
+      make_davidson_slices<T>(h.solver, n, n_roots, max_subspace, true, work.data(), &s, &lwork)
+          .ok());
+
+  DavidsonSigmaFn<T> sigma = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
+    const T one{1};
+    const T zero{0};
+    return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
+                             d_sigma.data(), n, b, n, &zero, out, n);
+  };
+  DavidsonMetricFn<T> metric = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
+    const T one{1};
+    const T zero{0};
+    return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
+                             d_m.data(), n, b, n, &zero, out, n);
+  };
+  DavidsonPreconditionFn<T> precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
+                                               const T *residual, T *correction) -> Status {
+    const std::size_t cnt = static_cast<std::size_t>(n) * roots;
+    std::vector<T> rbuf(cnt);
+    std::vector<T> cbuf(cnt);
+    if (const Status st{wwr::wwrMemcpyAsync(rbuf.data(), residual, sizeof(T) * cnt,
+                                            wwr::wwrMemcpyDeviceToHost, stream)};
+        !st.ok()) {
+      return st;
+    }
+    wwr::wwrStreamSynchronize(stream);
+    for (int i = 0; i < roots; ++i) {
+      for (int j = 0; j < n; ++j) {
+        T denom = theta[i] - static_cast<T>(diag_sigma[static_cast<std::size_t>(j)]);
+        if (std::abs(denom) < T{1e-3}) {
+          denom = denom < T{0} ? T{-1e-3} : T{1e-3};
+        }
+        cbuf[static_cast<std::size_t>(i) * n + j] =
+            rbuf[static_cast<std::size_t>(i) * n + j] / denom;
+      }
+    }
+    const Status st{wwr::wwrMemcpyAsync(correction, cbuf.data(), sizeof(T) * cnt,
+                                        wwr::wwrMemcpyHostToDevice, stream)};
+    wwr::wwrStreamSynchronize(stream);
+    return st;
+  };
+
+  DavidsonOptions<T> options;
+  options.residual_tolerance = res_tol;
+  options.max_iterations = 400;
+
+  DavidsonResult<T> result;
+  const Status st =
+      davidson_solve<T>(h.blas, h.solver, handle->stream().get(), n, n_roots, max_subspace,
+                        d_guess.data(), n_roots, s, sigma, precondition, d_vecs.data(), &result,
+                        options, metric);
+
+  EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
+  EXPECT_TRUE(result.converged);
+  ASSERT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(n_roots));
+  for (int i = 0; i < n_roots; ++i) {
+    EXPECT_NEAR(static_cast<double>(result.eigenvalues[static_cast<std::size_t>(i)]),
+                ref[static_cast<std::size_t>(i)], eig_tol);
+  }
+
+  destroy_handles(h);
+}
+
+TEST(DavidsonMetricReferenceTests, GeneralizedLowestEigenpairsDouble) {
+  check_reference_metric<double>();
+}
+TEST(DavidsonMetricReferenceTests, GeneralizedLowestEigenpairsFloat) {
+  check_reference_metric<float>();
+}
 
 } // namespace
 } // namespace calaman

@@ -5,8 +5,8 @@
 # wrapped BLAS and the wrapped symmetric eigensolver. Not a LAPACK routine, so
 # it is its own module like calaman.feast.
 #
-# :buffer_size is the workspace layout/sizing; :solve is the Euclidean
-# iteration (the generalized/metric sygvd path is still a follow-up).
+# :buffer_size is the workspace layout/sizing; :solve is the iteration, both the
+# standard (syevd) and the generalized/metric (sygvd) problem.
 #
 # The template surface is header-only (like the geqp3 family and feast),
 # instantiated on use, so there is no instantiations.cpp.

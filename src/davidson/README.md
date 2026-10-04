@@ -6,12 +6,11 @@ operator known only through a matrix-vector-product callback.
 Not a LAPACK routine (LAPACK ships no Davidson), so it is its own module rather
 than a partition of a LAPACK-named one, like `calaman.feast` and `calaman.expm`.
 
-> **Status: Euclidean solver live.** `:buffer_size` (the workspace layout) and
-> the **Euclidean** `davidson_solve` are complete and tested against the
-> reference LAPACK. The **generalized (metric, `sygvd`) path is not yet
-> implemented** — passing a non-empty `metric` is rejected with
-> `WWRBLAS_STATUS_NOT_SUPPORTED`. The workspace already reserves the metric
-> regions `with_metric`, so that path is a `:solve` change, not a layout one.
+> **Status: complete.** `davidson_solve` handles both the standard (Euclidean,
+> `syevd`) and the generalized (metric, `sygvd`) problem, selected by whether a
+> `metric` callback is supplied; both are tested against the reference LAPACK
+> (`?syevd` and `?sygvd`). A non-empty `metric` requires a workspace sized
+> `with_metric` (else `INVALID_VALUE`).
 
 ## Module
 

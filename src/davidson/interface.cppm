@@ -10,8 +10,9 @@
  * backend. Not a LAPACK routine (LAPACK ships no Davidson), so it is its own
  * module, like calaman.feast and calaman.expm.
  *
- * davidson_solve implements the EUCLIDEAN problem; the generalized (metric,
- * sygvd) path is still to come and a non-empty metric is rejected. See README.md.
+ * davidson_solve handles both the standard (Euclidean, syevd) problem and the
+ * generalized (metric, sygvd) one, selected by whether a metric callback is
+ * supplied. See README.md.
  *
  * Usage:
  *   import calaman.davidson;

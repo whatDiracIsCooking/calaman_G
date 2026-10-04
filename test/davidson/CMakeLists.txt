@@ -50,5 +50,6 @@ calaman_add_gtest_suite_tests(
   SUITES
   DavidsonBufferSizeTests
   DavidsonReferenceTests
+  DavidsonMetricReferenceTests
   REQUIRES_GPU
 )
