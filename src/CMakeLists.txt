@@ -318,3 +318,13 @@ add_subdirectory(laqr2)
 # ?laqr2 -- not the recursive ?laqr3 -- bounds the recursion. Placed last: it
 # links lahqr, laqr2 and laqr5, so all three must already be defined.
 add_subdirectory(laqr4)
+
+# calaman.laqr3 -- aggressive early deflation (LAPACK's ?laqr3, the recursive
+# variant whose window Schur form is the multishift ?laqr4 when JW > NMIN = 75,
+# else ?lahqr). A host composition: because ?laqr4 is a host loop no device
+# kernel can call, it splits ?laqr2's single AED kernel into laqr3_setup /
+# laqr3_finish halves with calaman.laqr4 driven between them on the host, and
+# delegates the JW <= NMIN regime (where ?laqr3 == ?laqr2) whole to
+# calaman.laqr2. Placed last: it links both laqr2 and laqr4, so both must
+# already be defined.
+add_subdirectory(laqr3)
