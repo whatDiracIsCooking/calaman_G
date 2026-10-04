@@ -5,8 +5,8 @@
 # wrapped BLAS and the wrapped symmetric eigensolver. Not a LAPACK routine, so
 # it is its own module like calaman.feast.
 #
-# SKELETON: :buffer_size is complete; :solve pins the interface and returns
-# WWRBLAS_STATUS_NOT_SUPPORTED until the iteration lands in a follow-up PR.
+# :buffer_size is the workspace layout/sizing; :solve is the Euclidean
+# iteration (the generalized/metric sygvd path is still a follow-up).
 #
 # The template surface is header-only (like the geqp3 family and feast),
 # instantiated on use, so there is no instantiations.cpp.
@@ -14,13 +14,12 @@
 # LINK_PUBLIC is the union of what the exported surface names: the runtime
 # stream (wwr.runtime_api), the BLAS and solver handle/status/enum layers
 # (wwr.blas, wwr.solver), the real_fp trait (wwr.wrappers.common), the
-# eigensolver buffer-size wrappers (wwr.wrappers.solver --
-# syevd_bufferSize/sygvd_bufferSize), the WorkspaceLayout/align_up workspace
-# carving (calaman.common), and
+# level-1/3 BLAS wrappers the iteration drives (wwr.wrappers.blas --
+# gemm/axpy/dot/nrm2/scal) and the eigensolver wrappers (wwr.wrappers.solver --
+# syevd and the *_bufferSize queries), the kOne/kZero/kNegativeOne constants and
+# WorkspaceLayout/align_up carving (calaman.common), and
 #   calaman.error_handling  Status, the cross-domain return type
-# (every entry point returns it). The level-1/3 BLAS wrappers the iteration will
-# call are deliberately NOT listed yet -- :solve names none of them -- and
-# arrive with the implementation.
+# (every entry point returns it).
 calaman_add_cxx_module_library(
   NAME
   calaman.davidson
@@ -34,6 +33,7 @@ calaman_add_cxx_module_library(
   wwr.blas
   wwr.solver
   wwr.wrappers.common
+  wwr.wrappers.blas
   wwr.wrappers.solver
   calaman.common
   calaman.error_handling

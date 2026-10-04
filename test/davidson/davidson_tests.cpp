@@ -1,18 +1,25 @@
-// Suite for calaman.davidson (skeleton). Two things are testable before the
-// iteration lands:
+// Suite for calaman.davidson. Three things are checked:
 //
 //   * the argument-checking contract of davidson_bufferSize /
-//     make_davidson_slices -- a bad shape or a null out-pointer is rejected with
-//     WWRBLAS_STATUS_INVALID_VALUE before any handle use (host-only);
+//     make_davidson_slices / davidson_solve -- a bad shape, a null out-pointer, a
+//     bad guess_count, or a (not-yet-implemented) metric callback is rejected
+//     before any handle use (host-only);
 //   * the workspace sizing and carving -- a valid shape sizes to a positive byte
 //     count that grows with the subspace and with the metric path, and carving a
 //     real buffer hands back non-null, 256-aligned, in-range pointers, with the
-//     metric regions present only when sized with_metric (REQUIRES_GPU: it needs
-//     a cuSOLVER handle for syevd_bufferSize and a device buffer to carve).
+//     metric regions present only when sized with_metric (REQUIRES_GPU);
+//   * the Euclidean solve against the reference LAPACK -- on a diagonally
+//     dominant symmetric operator driven through a gemv callback with a diagonal
+//     preconditioner, davidson_solve converges the lowest n_roots eigenvalues to
+//     LAPACKE_?syevd's, over float and double (REQUIRES_GPU).
 //
-// davidson_solve is a NOT_SUPPORTED stub and is not exercised here.
+// Guarded on calaman::lapack_reference (see CMakeLists.txt): the reference suite
+// is the solver's natural oracle, and bundling the rest in the same binary keeps
+// one target. The host arithmetic is done in double regardless of T.
 
 #include <gtest/gtest.h>
+
+#include <lapacke.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +30,7 @@ import wwr.blas;
 import wwr.solver;
 import wwr.runtime_api;
 import wwr.wrappers.common;
+import wwr.wrappers.blas;
 import wwr.extension.memory_buffer;
 import calaman.davidson;
 import calaman.error_handling;
@@ -34,16 +42,21 @@ namespace calaman {
 namespace {
 
 using wwr::extension::DeviceBufferWrapper;
+using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
 using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
+using HostAbort = AbortPolicy<wwr::extension::stdHostMemoryError_t>;
+template<typename T>
+using HostBuffer = HostBufferWrapper<T, HostAbort, HostAbort>;
 template<typename T>
 using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbort, DeviceHandle>;
 
 constexpr int kInvalidValue = static_cast<int>(wwr::WWRBLAS_STATUS_INVALID_VALUE);
+constexpr int kNotSupported = static_cast<int>(wwr::WWRBLAS_STATUS_NOT_SUPPORTED);
 
 // ── argument checking (host-only; the handle is never dereferenced) ──────────
 
@@ -51,14 +64,10 @@ TEST(DavidsonArgCheckTests, RejectsBadShape) {
   const wwr::wwrsolverDnHandle_t no_handle{}; // never touched on the rejection path
   std::size_t lwork = 0;
 
-  // n and n_roots must be positive.
   EXPECT_EQ(davidson_bufferSize<double>(no_handle, 0, 1, 2, false, &lwork).code, kInvalidValue);
   EXPECT_EQ(davidson_bufferSize<double>(no_handle, 4, 0, 2, false, &lwork).code, kInvalidValue);
-  // n_roots must not exceed n.
   EXPECT_EQ(davidson_bufferSize<double>(no_handle, 4, 5, 8, false, &lwork).code, kInvalidValue);
-  // max_subspace must be at least 2 * n_roots ...
   EXPECT_EQ(davidson_bufferSize<double>(no_handle, 16, 4, 7, false, &lwork).code, kInvalidValue);
-  // ... and at most n.
   EXPECT_EQ(davidson_bufferSize<double>(no_handle, 8, 2, 16, false, &lwork).code, kInvalidValue);
 }
 
@@ -67,18 +76,35 @@ TEST(DavidsonArgCheckTests, RejectsNullOutPointer) {
   EXPECT_EQ(davidson_bufferSize<double>(no_handle, 16, 4, 8, false, nullptr).code, kInvalidValue);
 }
 
-TEST(DavidsonArgCheckTests, SolveStubReportsNotSupported) {
-  // The skeleton's solve is explicitly unimplemented; pin that it says so.
+TEST(DavidsonArgCheckTests, RejectsBadGuessCount) {
+  // guess_count outside [n_roots, max_subspace] is rejected before any handle use.
   DavidsonSlices<double> s;
   DavidsonResult<double> result;
-  const Status st = davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
-                                           wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4, s, {}, {},
-                                           nullptr, &result);
-  EXPECT_FALSE(st.ok());
-  EXPECT_EQ(st.code, static_cast<int>(wwr::WWRBLAS_STATUS_NOT_SUPPORTED));
+  const auto solve = [&](int guess_count) {
+    return davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
+                                  wwr::wwrStream_t{}, 16, 4, 8, nullptr, guess_count, s, {}, {},
+                                  nullptr, &result);
+  };
+  EXPECT_EQ(solve(3).code, kInvalidValue); // below n_roots
+  EXPECT_EQ(solve(9).code, kInvalidValue); // above max_subspace
 }
 
-// ── sizing and carving (REQUIRES_GPU) ────────────────────────────────────────
+TEST(DavidsonArgCheckTests, RejectsMetricPath) {
+  // A non-empty metric selects the generalized path, which is not yet
+  // implemented; it is rejected before any handle use rather than silently
+  // solving the wrong (Euclidean) problem.
+  DavidsonSlices<double> s;
+  DavidsonResult<double> result;
+  DavidsonMetricFn<double> metric = [](wwr::wwrStream_t, int, const double *, double *) -> Status {
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  };
+  const Status st = davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
+                                           wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4, s, {}, {},
+                                           nullptr, &result, {}, metric);
+  EXPECT_EQ(st.code, kNotSupported);
+}
+
+// ── shared device plumbing ───────────────────────────────────────────────────
 
 struct Handles {
   wwr::wwrblasHandle_t blas{};
@@ -101,11 +127,25 @@ void destroy_handles(Handles &h) {
 }
 
 template<typename T>
+DeviceBuffer<T> to_device(std::shared_ptr<DeviceHandle> handle, const std::vector<T> &host) {
+  const std::size_t n = host.size();
+  HostBuffer<T> staging(n == 0 ? 1 : n);
+  for (std::size_t i = 0; i < n; ++i) {
+    staging.data()[i] = host[i];
+  }
+  DeviceBuffer<T> device(n == 0 ? 1 : n, handle);
+  wwr::extension::copy(device, staging, handle->stream().get());
+  wwr::wwrStreamSynchronize(handle->stream().get());
+  return device;
+}
+
+// ── sizing and carving (REQUIRES_GPU) ────────────────────────────────────────
+
+template<typename T>
 std::size_t size_for(wwr::wwrsolverDnHandle_t solver, int n, int n_roots, int max_subspace,
                      bool with_metric) {
   std::size_t lwork = 0;
-  const Status st =
-      davidson_bufferSize<T>(solver, n, n_roots, max_subspace, with_metric, &lwork);
+  const Status st = davidson_bufferSize<T>(solver, n, n_roots, max_subspace, with_metric, &lwork);
   EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
   return lwork;
 }
@@ -115,16 +155,10 @@ void check_sizing(wwr::wwrsolverDnHandle_t solver) {
   constexpr int n = 64;
   constexpr int n_roots = 4;
 
-  // A valid shape sizes to a positive byte count.
   const std::size_t small = size_for<T>(solver, n, n_roots, 2 * n_roots, false);
   EXPECT_GT(small, 0u);
-
-  // Growing the subspace does not shrink the workspace (V/Sigma_V scale with it).
   const std::size_t large = size_for<T>(solver, n, n_roots, 4 * n_roots, false);
   EXPECT_GE(large, small);
-
-  // The metric path carves M V, V^T M V and a metric scratch block on top, so it
-  // is strictly larger than the Euclidean path at the same shape.
   const std::size_t euclid = size_for<T>(solver, n, n_roots, 4 * n_roots, false);
   const std::size_t metric = size_for<T>(solver, n, n_roots, 4 * n_roots, true);
   EXPECT_GT(metric, euclid);
@@ -138,8 +172,6 @@ TEST(DavidsonBufferSizeTests, SizingIsPositiveAndMonotone) {
   destroy_handles(h);
 }
 
-// Every slice pointer that must be live is non-null, 256-aligned, and inside the
-// reported workspace; the metric slices follow with_metric.
 template<typename T>
 void check_carve(std::shared_ptr<DeviceHandle> handle, wwr::wwrsolverDnHandle_t solver,
                  bool with_metric) {
@@ -148,8 +180,7 @@ void check_carve(std::shared_ptr<DeviceHandle> handle, wwr::wwrsolverDnHandle_t 
   constexpr int max_subspace = 4 * n_roots;
 
   std::size_t lwork = 0;
-  ASSERT_TRUE(
-      davidson_bufferSize<T>(solver, n, n_roots, max_subspace, with_metric, &lwork).ok());
+  ASSERT_TRUE(davidson_bufferSize<T>(solver, n, n_roots, max_subspace, with_metric, &lwork).ok());
   ASSERT_GT(lwork, 0u);
 
   DeviceBuffer<std::byte> work(lwork, handle);
@@ -204,6 +235,144 @@ TEST(DavidsonBufferSizeTests, CarveMetric) {
   check_carve<double>(handle, h.solver, true);
   destroy_handles(h);
 }
+
+// ── Euclidean solve vs the reference LAPACK (REQUIRES_GPU) ────────────────────
+
+// A = diag(1..n) + eps*(R + R^T): symmetric, diagonally dominant so its lowest
+// eigenvalues are well separated (near 1, 2, 3, ...), which the diagonal
+// preconditioner resolves quickly. Full (both triangles), column-major.
+template<typename T>
+std::vector<T> diag_plus_perturbation(int n, double eps, unsigned seed) {
+  std::mt19937 rng(seed);
+  std::uniform_real_distribution<double> dist(-1.0, 1.0);
+  std::vector<T> a(static_cast<std::size_t>(n) * n, T{0});
+  for (int j = 0; j < n; ++j) {
+    for (int i = j; i < n; ++i) {
+      const double v = (i == j) ? static_cast<double>(j + 1) : eps * dist(rng);
+      a[static_cast<std::size_t>(j) * n + i] = static_cast<T>(v);
+      a[static_cast<std::size_t>(i) * n + j] = static_cast<T>(v);
+    }
+  }
+  return a;
+}
+
+lapack_int call_syevd(int n, float *a, float *w) {
+  return LAPACKE_ssyevd(LAPACK_COL_MAJOR, 'N', 'L', n, a, n, w);
+}
+lapack_int call_syevd(int n, double *a, double *w) {
+  return LAPACKE_dsyevd(LAPACK_COL_MAJOR, 'N', 'L', n, a, n, w);
+}
+
+template<typename T>
+std::vector<T> reference_eigenvalues(int n, std::vector<T> a) {
+  std::vector<T> w(n);
+  EXPECT_EQ(call_syevd(n, a.data(), w.data()), 0);
+  return w; // ascending
+}
+
+template<typename T>
+void check_reference() {
+  constexpr int n = 48;
+  constexpr int n_roots = 4;
+  constexpr int max_subspace = 20;
+  const bool is_float = std::is_same_v<T, float>;
+  const T res_tol = is_float ? T{1e-4} : T{1e-8};
+  const double eig_tol = is_float ? 5e-3 : 1e-6;
+
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+
+  const auto a = diag_plus_perturbation<T>(n, 0.05, 20261004u);
+  const auto ref = reference_eigenvalues<T>(n, a);
+
+  std::vector<double> diagd(static_cast<std::size_t>(n));
+  for (int i = 0; i < n; ++i) {
+    diagd[static_cast<std::size_t>(i)] = static_cast<double>(a[static_cast<std::size_t>(i) * n + i]);
+  }
+
+  std::vector<T> guess_host(static_cast<std::size_t>(n) * n_roots, T{0});
+  for (int c = 0; c < n_roots; ++c) {
+    guess_host[static_cast<std::size_t>(c) * n + c] = T{1}; // orthonormal unit vectors
+  }
+
+  DeviceBuffer<T> d_a = to_device(handle, a);
+  DeviceBuffer<T> d_guess = to_device(handle, guess_host);
+  DeviceBuffer<T> d_vecs(static_cast<std::size_t>(n) * n_roots, handle);
+
+  std::size_t lwork = 0;
+  ASSERT_TRUE(davidson_bufferSize<T>(h.solver, n, n_roots, max_subspace, false, &lwork).ok());
+  DeviceBuffer<std::byte> work(lwork, handle);
+  DavidsonSlices<T> s;
+  ASSERT_TRUE(
+      make_davidson_slices<T>(h.solver, n, n_roots, max_subspace, false, work.data(), &s, &lwork)
+          .ok());
+
+  // sigma(B) = A B via a single gemm; the solver holds the handle in host
+  // pointer mode for the whole call, so host scalar pointers are correct here.
+  DavidsonSigmaFn<T> sigma = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
+    const T one{1};
+    const T zero{0};
+    return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
+                             d_a.data(), n, b, n, &zero, out, n);
+  };
+
+  // Diagonal Davidson preconditioner correction = residual / (theta - diag),
+  // computed on the host (no kernel needed for a test), guarding the near-zero
+  // denominator when a Ritz value approaches its own diagonal entry.
+  DavidsonPreconditionFn<T> precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
+                                               const T *residual, T *correction) -> Status {
+    const std::size_t cnt = static_cast<std::size_t>(n) * roots;
+    std::vector<T> rbuf(cnt);
+    std::vector<T> cbuf(cnt);
+    if (const Status st{wwr::wwrMemcpyAsync(rbuf.data(), residual, sizeof(T) * cnt,
+                                            wwr::wwrMemcpyDeviceToHost, stream)};
+        !st.ok()) {
+      return st;
+    }
+    wwr::wwrStreamSynchronize(stream);
+    for (int i = 0; i < roots; ++i) {
+      for (int j = 0; j < n; ++j) {
+        T denom = theta[i] - static_cast<T>(diagd[static_cast<std::size_t>(j)]);
+        if (std::abs(denom) < T{1e-3}) {
+          denom = denom < T{0} ? T{-1e-3} : T{1e-3};
+        }
+        cbuf[static_cast<std::size_t>(i) * n + j] =
+            rbuf[static_cast<std::size_t>(i) * n + j] / denom;
+      }
+    }
+    const Status st{wwr::wwrMemcpyAsync(correction, cbuf.data(), sizeof(T) * cnt,
+                                        wwr::wwrMemcpyHostToDevice, stream)};
+    wwr::wwrStreamSynchronize(stream);
+    return st;
+  };
+
+  DavidsonOptions<T> options;
+  options.residual_tolerance = res_tol;
+  options.max_iterations = 300;
+
+  DavidsonResult<T> result;
+  const Status st = davidson_solve<T>(h.blas, h.solver, handle->stream().get(), n, n_roots,
+                                      max_subspace, d_guess.data(), n_roots, s, sigma, precondition,
+                                      d_vecs.data(), &result, options);
+
+  EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
+  EXPECT_TRUE(result.converged);
+  ASSERT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(n_roots));
+  for (int i = 0; i < n_roots; ++i) {
+    // ascending, and matching the reference's lowest n_roots.
+    EXPECT_NEAR(static_cast<double>(result.eigenvalues[static_cast<std::size_t>(i)]),
+                static_cast<double>(ref[static_cast<std::size_t>(i)]), eig_tol);
+    if (i > 0) {
+      EXPECT_LE(result.eigenvalues[static_cast<std::size_t>(i - 1)],
+                result.eigenvalues[static_cast<std::size_t>(i)] + static_cast<T>(eig_tol));
+    }
+  }
+
+  destroy_handles(h);
+}
+
+TEST(DavidsonReferenceTests, LowestEigenpairsDouble) { check_reference<double>(); }
+TEST(DavidsonReferenceTests, LowestEigenpairsFloat) { check_reference<float>(); }
 
 } // namespace
 } // namespace calaman

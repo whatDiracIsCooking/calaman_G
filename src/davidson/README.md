@@ -6,12 +6,12 @@ operator known only through a matrix-vector-product callback.
 Not a LAPACK routine (LAPACK ships no Davidson), so it is its own module rather
 than a partition of a LAPACK-named one, like `calaman.feast` and `calaman.expm`.
 
-> **Status: skeleton.** `:buffer_size` (the device workspace layout and its
-> sizing) is complete and tested. `:solve` pins the public interface — the
-> callback shapes, the `DavidsonOptions`/`DavidsonResult` types, and the
-> `davidson_solve` signature — but the iteration is **not yet implemented**:
-> `davidson_solve` returns `WWRBLAS_STATUS_NOT_SUPPORTED`. The solve body lands
-> in a follow-up PR.
+> **Status: Euclidean solver live.** `:buffer_size` (the workspace layout) and
+> the **Euclidean** `davidson_solve` are complete and tested against the
+> reference LAPACK. The **generalized (metric, `sygvd`) path is not yet
+> implemented** — passing a non-empty `metric` is rejected with
+> `WWRBLAS_STATUS_NOT_SUPPORTED`. The workspace already reserves the metric
+> regions `with_metric`, so that path is a `:solve` change, not a layout one.
 
 ## Module
 
@@ -78,7 +78,9 @@ make_davidson_slices<double>(cusolver, n, n_roots, max_subspace, false, d_work, 
 DavidsonResult<double> result;
 davidson_solve<double>(cublas, cusolver, stream, n, n_roots, max_subspace,
                        d_guess, guess_count, s, sigma, precondition,
-                       d_eigenvectors, &result);   // returns NOT_SUPPORTED today
+                       d_eigenvectors, &result);
+// result.eigenvalues[0 .. n_roots) are the lowest eigenvalues, ascending,
+// and result.converged says whether they met residual_tolerance.
 ```
 
 Both handles must already be set to `stream`.
