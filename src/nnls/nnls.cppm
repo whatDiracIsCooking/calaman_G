@@ -40,7 +40,7 @@ import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_STATUS_SUCCESS
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpy(Async)/wwrMemsetAsync, wwrSuccess
 import wwr.wrappers.blas;   // gemv, trsv, nrm2
 import wwr.wrappers.solver; // ormqr, ormqr_bufferSize
-import calaman.common;      // align_up, WorkspaceBuilder
+import calaman.common;      // WorkspaceLayout, carve_workspace
 import calaman.geqp3;       // geqp3, geqp3_work_size
 
 namespace calaman {
@@ -74,85 +74,78 @@ int ormqr_work_len(wwr::wwrsolverDnHandle_t solver, const int m, const int n) {
 /// @brief Device workspace regions carved from the caller's buffer
 template<typename T>
 struct NnlsWorkspace {
-  int *order;         ///< P/Z partition: order[0:p) = P, order[p:n) = Z
-  int *order_scratch; ///< scratch for the P/Z compaction, n ints
-  int *jpvt0;         ///< geqp3's pivot (0-based) uploaded for the scatter, n ints
+  int *order = nullptr;         ///< P/Z partition: order[0:p) = P, order[p:n) = Z
+  int *order_scratch = nullptr; ///< scratch for the P/Z compaction, n ints
+  int *jpvt0 = nullptr;         ///< geqp3's pivot (0-based) uploaded for the scatter, n ints
 
-  T *r;   ///< residual b - Ax, m
-  T *w;   ///< dual A^T r, n
-  T *AP;  ///< gathered then geqp3-factored passive columns, m-by-n
-  T *tau; ///< geqp3 reflector scalars, min(m,n)
-  T *qb;  ///< copy of b, becomes Q^T b then the pivoted-local z, m
-  T *z;   ///< full n-length candidate, zero off P
-  T *vn1; ///< geqp3 partial-norm scratch, n
-  T *vn2; ///< geqp3 partial-norm scratch, n
+  T *r = nullptr;   ///< residual b - Ax, m
+  T *w = nullptr;   ///< dual A^T r, n
+  T *AP = nullptr;  ///< gathered then geqp3-factored passive columns, m-by-n
+  T *tau = nullptr; ///< geqp3 reflector scalars, min(m,n)
+  T *qb = nullptr;  ///< copy of b, becomes Q^T b then the pivoted-local z, m
+  T *z = nullptr;   ///< full n-length candidate, zero off P
+  T *vn1 = nullptr; ///< geqp3 partial-norm scratch, n
+  T *vn2 = nullptr; ///< geqp3 partial-norm scratch, n
 
-  T *geqp3_work;               ///< geqp3's own workspace on the P subproblem
-  std::size_t geqp3_work_len;  ///< its length in T elements
+  T *geqp3_work = nullptr;        ///< geqp3's own workspace on the P subproblem
+  std::size_t geqp3_work_len = 0; ///< its length in T elements
 
-  int *rank;       ///< numerical rank of the P subproblem
-  int *arg_pos;    ///< masked-argmax result: position within order
-  int *infeasible; ///< masked-min-ratio result: any z_j <= 0 on P
-  int *new_p;      ///< P/Z compaction result
-  int *devInfo;    ///< ormqr's devInfo
+  int *rank = nullptr;       ///< numerical rank of the P subproblem
+  int *arg_pos = nullptr;    ///< masked-argmax result: position within order
+  int *infeasible = nullptr; ///< masked-min-ratio result: any z_j <= 0 on P
+  int *new_p = nullptr;      ///< P/Z compaction result
+  int *devInfo = nullptr;    ///< ormqr's devInfo
 
-  T *max_val; ///< masked-argmax result: the max value
-  T *alpha;   ///< masked-min-ratio result: the step length
+  T *max_val = nullptr; ///< masked-argmax result: the max value
+  T *alpha = nullptr;   ///< masked-min-ratio result: the step length
 
-  T *ormqr_work;  ///< workspace for ormqr on the P subproblem
-  int ormqr_lwork;
+  T *ormqr_work = nullptr; ///< workspace for ormqr on the P subproblem
+  int ormqr_lwork = 0;
+
+  /// @brief Lay the regions out from @p layout -- the ONLY description of the
+  ///        layout, run for sizing and carving alike (see carve_workspace).
+  ///        Sized for the worst case (a fully passive solution, p == n).
+  void carve(WorkspaceLayout &layout, const int m, const int n, const std::size_t geqp3_len,
+             const int ormqr_len) {
+    const std::size_t rows = m < 1 ? 1 : static_cast<std::size_t>(m);
+    const std::size_t cols = n < 1 ? 1 : static_cast<std::size_t>(n);
+    const int k = m < n ? m : n;
+    const std::size_t kk = k < 1 ? 1 : static_cast<std::size_t>(k);
+
+    order = layout.fixed<int>(cols);
+    order_scratch = layout.fixed<int>(cols);
+    jpvt0 = layout.fixed<int>(cols);
+    r = layout.fixed<T>(rows);
+    w = layout.fixed<T>(cols);
+    AP = layout.fixed<T>(rows * cols);
+    tau = layout.fixed<T>(kk);
+    qb = layout.fixed<T>(rows);
+    z = layout.fixed<T>(cols);
+    vn1 = layout.fixed<T>(cols);
+    vn2 = layout.fixed<T>(cols);
+
+    geqp3_work_len = geqp3_len;
+    geqp3_work = layout.fixed<T>(geqp3_len);
+
+    int *const ints = layout.fixed<int>(5);
+    rank = ints;
+    if (ints != nullptr) {
+      arg_pos = ints + 1;
+      infeasible = ints + 2;
+      new_p = ints + 3;
+      devInfo = ints + 4;
+    }
+
+    T *const scalars = layout.fixed<T>(2);
+    max_val = scalars;
+    if (scalars != nullptr) {
+      alpha = scalars + 1;
+    }
+
+    ormqr_lwork = ormqr_len;
+    ormqr_work = layout.fixed<T>(static_cast<std::size_t>(ormqr_len));
+  }
 };
-
-/// @brief Partition a buffer into the regions nnls() uses, mirroring
-///        nnls_bufferSize's accounting; every region is 256-byte aligned
-template<typename T>
-NnlsWorkspace<T> nnls_map_workspace(wwr::wwrsolverDnHandle_t solver, void *d_work, const int m,
-                                    const int n) {
-  const std::size_t rows = m < 1 ? 1 : static_cast<std::size_t>(m);
-  const std::size_t cols = n < 1 ? 1 : static_cast<std::size_t>(n);
-  const int k = m < n ? m : n;
-  const std::size_t kk = k < 1 ? 1 : static_cast<std::size_t>(k);
-
-  auto *base = static_cast<std::byte *>(d_work);
-  std::size_t offset = 0;
-  const auto take = [&](const std::size_t bytes) -> std::byte * {
-    std::byte *region = base + offset;
-    offset += align_up(bytes, std::size_t{256});
-    return region;
-  };
-
-  NnlsWorkspace<T> ws{};
-  ws.order         = reinterpret_cast<int *>(take(cols * sizeof(int)));
-  ws.order_scratch = reinterpret_cast<int *>(take(cols * sizeof(int)));
-  ws.jpvt0         = reinterpret_cast<int *>(take(cols * sizeof(int)));
-  ws.r             = reinterpret_cast<T *>(take(rows * sizeof(T)));
-  ws.w             = reinterpret_cast<T *>(take(cols * sizeof(T)));
-  ws.AP            = reinterpret_cast<T *>(take(rows * cols * sizeof(T)));
-  ws.tau           = reinterpret_cast<T *>(take(kk * sizeof(T)));
-  ws.qb            = reinterpret_cast<T *>(take(rows * sizeof(T)));
-  ws.z             = reinterpret_cast<T *>(take(cols * sizeof(T)));
-  ws.vn1           = reinterpret_cast<T *>(take(cols * sizeof(T)));
-  ws.vn2           = reinterpret_cast<T *>(take(cols * sizeof(T)));
-
-  ws.geqp3_work_len = geqp3_work_size(m, n);
-  ws.geqp3_work     = reinterpret_cast<T *>(take(ws.geqp3_work_len * sizeof(T)));
-
-  int *ints = reinterpret_cast<int *>(take(5 * sizeof(int)));
-  ws.rank       = ints;
-  ws.arg_pos    = ints + 1;
-  ws.infeasible = ints + 2;
-  ws.new_p      = ints + 3;
-  ws.devInfo    = ints + 4;
-
-  T *scalars = reinterpret_cast<T *>(take(2 * sizeof(T)));
-  ws.max_val = scalars;
-  ws.alpha   = scalars + 1;
-
-  ws.ormqr_lwork = ormqr_work_len<T>(solver, m, n);
-  ws.ormqr_work  = reinterpret_cast<T *>(take(static_cast<std::size_t>(ws.ormqr_lwork) * sizeof(T)));
-
-  return ws;
-}
 
 } // namespace nnls_detail
 
@@ -199,28 +192,8 @@ struct NnlsInfo {
 /// @param n      Columns of A
 export template<typename T>
 std::size_t nnls_bufferSize(wwr::wwrsolverDnHandle_t solver, const int m, const int n) {
-  const std::size_t rows = m < 1 ? 1 : static_cast<std::size_t>(m);
-  const std::size_t cols = n < 1 ? 1 : static_cast<std::size_t>(n);
-  const int k = m < n ? m : n;
-  const std::size_t kk = k < 1 ? 1 : static_cast<std::size_t>(k);
-
-  WorkspaceBuilder wb;
-  wb.add_fixed<int>(cols);              // order
-  wb.add_fixed<int>(cols);              // order_scratch
-  wb.add_fixed<int>(cols);              // jpvt0
-  wb.add_fixed<T>(rows);                // r
-  wb.add_fixed<T>(cols);                // w
-  wb.add_fixed<T>(rows * cols);         // AP
-  wb.add_fixed<T>(kk);                  // tau
-  wb.add_fixed<T>(rows);                // qb
-  wb.add_fixed<T>(cols);                // z
-  wb.add_fixed<T>(cols);                // vn1
-  wb.add_fixed<T>(cols);                // vn2
-  wb.add_fixed<T>(geqp3_work_size(m, n));            // geqp3 workspace
-  wb.add_fixed<int>(5);                 // rank, arg_pos, infeasible, new_p, devInfo
-  wb.add_fixed<T>(2);                   // max_val, alpha
-  wb.add_fixed<T>(static_cast<std::size_t>(nnls_detail::ormqr_work_len<T>(solver, m, n)));
-  return wb.total();
+  return carve_workspace<nnls_detail::NnlsWorkspace<T>>(
+      nullptr, nullptr, m, n, geqp3_work_size(m, n), nnls_detail::ormqr_work_len<T>(solver, m, n));
 }
 
 // ========================================================================
@@ -263,7 +236,10 @@ wwr::wwrblasStatus_t nnls(wwr::wwrblasHandle_t blas, wwr::wwrsolverDnHandle_t so
   if (A == nullptr || b == nullptr || x == nullptr || work == nullptr) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
-  if (work_bytes < nnls_bufferSize<T>(solver, m, n)) {
+  // One carve serves the undersized-buffer check and the region pointers.
+  nnls_detail::NnlsWorkspace<T> ws;
+  if (work_bytes < carve_workspace(work, &ws, m, n, geqp3_work_size(m, n),
+                                   nnls_detail::ormqr_work_len<T>(solver, m, n))) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 
@@ -281,7 +257,6 @@ wwr::wwrblasStatus_t nnls(wwr::wwrblasHandle_t blas, wwr::wwrsolverDnHandle_t so
     return st;
   };
 
-  const nnls_detail::NnlsWorkspace<T> ws = nnls_detail::nnls_map_workspace<T>(solver, work, m, n);
   const int max_iter = opts.max_iterations > 0 ? opts.max_iterations : 3 * n;
   const T rank_rel_tol = static_cast<T>(m < n ? m : n) * std::numeric_limits<T>::epsilon();
   const T one = T{1};

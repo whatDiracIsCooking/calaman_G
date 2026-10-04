@@ -31,7 +31,7 @@ calaman_add_gpu_device_library(
 #   wwr.wrappers.blas   gemv, trsv, nrm2
 #   wwr.wrappers.solver ormqr, ormqr_bufferSize
 #   wwr.runtime_api     wwrMemcpy(Async) / wwrMemsetAsync / wwrStreamSynchronize
-#   calaman.common      WorkspaceBuilder, align_up
+#   calaman.common      WorkspaceLayout, carve_workspace
 #   calaman.geqp3       geqp3, geqp3_work_size
 calaman_add_cxx_module_library(
   NAME

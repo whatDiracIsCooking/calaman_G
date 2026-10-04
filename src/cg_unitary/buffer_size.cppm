@@ -4,11 +4,13 @@
  *
  * Partition of calaman.cg_unitary.
  *
- * One caller-provided buffer, sized with WorkspaceBuilder. Two rules decide
- * add_fixed versus add_scratch: the solver's matrices all coexist across an
- * iteration and so accumulate, while the matrix exponential and the cost
- * function are never live at the same instant -- the search forms its base
- * exponential, then sweeps gradients -- and so alias.
+ * One caller-provided buffer, laid out by the single CgSlices::carve through
+ * calaman::carve_workspace: cg_unitary_bufferSize runs it over a null base and
+ * make_cg_slices over the real one, so the size query cannot drift from the
+ * carving. Two rules decide fixed versus scratch: the solver's matrices all
+ * coexist across an iteration and so accumulate, while the matrix exponential
+ * and the cost function are never live at the same instant -- the search forms
+ * its base exponential, then sweeps gradients -- and so alias.
  */
 
 module;
@@ -21,7 +23,7 @@ import std;
 import wwr.blas;            // WWRBLAS_STATUS_* (invalid-value / success returns)
 import wwr.solver;         // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_STATUS_*
 import wwr.wrappers.common; // usual_fp, ComplexToRealType, RealToComplexType
-import calaman.common;      // WorkspaceBuilder, align_up
+import calaman.common;      // WorkspaceLayout, carve_workspace
 import calaman.error_handling; // Status
 import calaman.expm;        // expm_bufferSize
 import :cost_function;
@@ -32,9 +34,9 @@ export namespace calaman {
  * @brief Pointers into the solver's single workspace buffer.
  *
  * Assembled once per solve by make_cg_slices and passed down into the line
- * search, so the search allocates nothing and the sizing lives in one place.
- * Every matrix slice is packed (leading dimension n), which the Frobenius
- * reductions and the cost functor's device-mode dot both require.
+ * search, so the search allocates nothing and the layout lives in one place:
+ * carve(). Every matrix slice is packed (leading dimension n), which the
+ * Frobenius reductions and the cost functor's device-mode dot both require.
  */
 template<wwr::usual_fp T>
 struct CgSlices {
@@ -70,8 +72,43 @@ struct CgSlices {
   void *scratch = nullptr; ///< expm workspace, or the cost functor's
   std::size_t scratch_bytes = 0;
 
-  /// Number of n x n matrix blocks the layout reserves.
-  static constexpr int kMatrixBlocks = 10;
+  /// @brief Lay the slices out from @p layout -- the ONLY description of the
+  ///        layout, run for sizing and carving alike (see carve_workspace).
+  ///        All regions are FIXED except the one expm/cost SCRATCH block,
+  ///        carved last.
+  void carve(WorkspaceLayout &layout, const int n, const std::size_t expm_bytes,
+             const std::size_t cost_bytes) {
+    const std::size_t dn = static_cast<std::size_t>(n);
+    const std::size_t nn = dn * dn;
+    const std::size_t samples = static_cast<std::size_t>(kCgMaxSamples);
+
+    psi = layout.fixed<T>(nn);
+    grad = layout.fixed<T>(nn);
+    grad_next = layout.fixed<T>(nn);
+    dir = layout.fixed<T>(nn);
+    tmp = layout.fixed<T>(nn);
+    w_new = layout.fixed<T>(nn);
+    rot = layout.fixed<T>(nn);
+    rot_acc = layout.fixed<T>(nn);
+    rot_tmp = layout.fixed<T>(nn);
+    psi_trial = layout.fixed<T>(nn);
+
+    dots = layout.fixed<T>(samples);
+    cost_dots = layout.fixed<T>(samples);
+    coeffs_real = layout.fixed<RealT>(samples);
+    args = layout.fixed<RealT>(samples);
+    cost_vals = layout.fixed<RealT>(samples);
+    mu = layout.fixed<RealT>(samples);
+    coeffs_cplx = layout.fixed<CplxT>(samples);
+    colsum = layout.fixed<RealT>(dn);
+    power_v = layout.fixed<T>(dn);
+    power_work = layout.fixed<T>(2 * dn);
+    ints = layout.fixed<int>(4);
+
+    // The exponential and the cost function never overlap in time.
+    scratch_bytes = std::max(expm_bytes, cost_bytes);
+    scratch = layout.scratch<std::byte>(scratch_bytes);
+  }
 };
 
 /**
@@ -89,8 +126,6 @@ struct CgSlices {
 template<wwr::usual_fp T>
 Status cg_unitary_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n,
                              const std::size_t cost_bytes, std::size_t *lwork_bytes) {
-  using RealT = wwr::ComplexToRealType<T>;
-  using CplxT = wwr::RealToComplexType<RealT>;
   if (n < 1) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
@@ -101,34 +136,12 @@ Status cg_unitary_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int
     return status;
   }
 
-  const std::size_t nn = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
-  const std::size_t samples = static_cast<std::size_t>(kCgMaxSamples);
-  const std::size_t dn = static_cast<std::size_t>(n);
-
-  WorkspaceBuilder wb;
-  wb.add_fixed<T>(nn, CgSlices<T>::kMatrixBlocks); // the ten matrix blocks
-  wb.add_fixed<T>(samples);                        // dots
-  wb.add_fixed<T>(samples);                        // cost_dots
-  wb.add_fixed<RealT>(samples);                    // coeffs_real
-  wb.add_fixed<RealT>(samples);                    // args
-  wb.add_fixed<RealT>(samples);                    // cost_vals
-  wb.add_fixed<RealT>(samples);                    // mu
-  wb.add_fixed<CplxT>(samples);                    // coeffs_cplx
-  wb.add_fixed<RealT>(dn);                         // colsum
-  wb.add_fixed<T>(dn);                             // power_v
-  wb.add_fixed<T>(2 * dn);                         // power_work
-  wb.add_fixed<int>(4);                            // ints
-
-  // The exponential and the cost function never overlap in time.
-  wb.add_scratch<std::byte>(expm_bytes);
-  wb.add_scratch<std::byte>(cost_bytes);
-
-  *lwork_bytes = wb.total();
+  *lwork_bytes = carve_workspace<CgSlices<T>>(nullptr, nullptr, n, expm_bytes, cost_bytes);
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 /**
- * @brief Carve a workspace into CgSlices. Must mirror cg_unitary_bufferSize.
+ * @brief Carve a workspace into CgSlices, through the same carve() the sizing ran.
  *
  * @param d_work      Buffer of at least cg_unitary_bufferSize bytes.
  * @param n           Matrix dimension.
@@ -138,48 +151,8 @@ Status cg_unitary_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int
 template<wwr::usual_fp T>
 CgSlices<T> make_cg_slices(void *d_work, const int n, const std::size_t expm_bytes,
                            const std::size_t cost_bytes) {
-  using RealT = wwr::ComplexToRealType<T>;
-  using CplxT = wwr::RealToComplexType<RealT>;
-
   CgSlices<T> s;
-  auto *p = static_cast<std::byte *>(d_work);
-
-  const auto bump = [&p](const std::size_t bytes) {
-    auto *here = p;
-    p += align_up(bytes, std::size_t{256});
-    return here;
-  };
-
-  const std::size_t block = static_cast<std::size_t>(n) * static_cast<std::size_t>(n) * sizeof(T);
-  s.psi = reinterpret_cast<T *>(bump(block));
-  s.grad = reinterpret_cast<T *>(bump(block));
-  s.grad_next = reinterpret_cast<T *>(bump(block));
-  s.dir = reinterpret_cast<T *>(bump(block));
-  s.tmp = reinterpret_cast<T *>(bump(block));
-  s.w_new = reinterpret_cast<T *>(bump(block));
-  s.rot = reinterpret_cast<T *>(bump(block));
-  s.rot_acc = reinterpret_cast<T *>(bump(block));
-  s.rot_tmp = reinterpret_cast<T *>(bump(block));
-  s.psi_trial = reinterpret_cast<T *>(bump(block));
-
-  const std::size_t samples = static_cast<std::size_t>(kCgMaxSamples);
-  s.dots = reinterpret_cast<T *>(bump(samples * sizeof(T)));
-  s.cost_dots = reinterpret_cast<T *>(bump(samples * sizeof(T)));
-
-  s.coeffs_real = reinterpret_cast<RealT *>(bump(samples * sizeof(RealT)));
-  s.args = reinterpret_cast<RealT *>(bump(samples * sizeof(RealT)));
-  s.cost_vals = reinterpret_cast<RealT *>(bump(samples * sizeof(RealT)));
-  s.mu = reinterpret_cast<RealT *>(bump(samples * sizeof(RealT)));
-  s.coeffs_cplx = reinterpret_cast<CplxT *>(bump(samples * sizeof(CplxT)));
-
-  const std::size_t dn = static_cast<std::size_t>(n);
-  s.colsum = reinterpret_cast<RealT *>(bump(dn * sizeof(RealT)));
-  s.power_v = reinterpret_cast<T *>(bump(dn * sizeof(T)));
-  s.power_work = reinterpret_cast<T *>(bump(2 * dn * sizeof(T)));
-  s.ints = reinterpret_cast<int *>(bump(std::size_t{4} * sizeof(int)));
-
-  s.scratch = p;
-  s.scratch_bytes = (expm_bytes > cost_bytes) ? expm_bytes : cost_bytes;
+  carve_workspace(d_work, &s, n, expm_bytes, cost_bytes);
   return s;
 }
 

@@ -5,9 +5,10 @@
 #   :constants          constants.cppm + constants.h -- typed constants
 #   :align_up           align_up.cppm + align_up.h -- integer rounding helpers
 #   :enums              enums.cppm + enums.h -- the LAPACK selector enums
-#   :workspace_builder  workspace_builder.cppm -- byte sizing (WorkspaceBuilder)
-#                       and pointer carving (WorkspaceLayout) for one device
-#                       scratch buffer; pure host arithmetic
+#   :workspace_builder  workspace_builder.cppm -- byte sizing
+#                       (WorkspaceBuilder), pointer carving (WorkspaceLayout)
+#                       and the carve-once idiom (SlicesFor, carve_workspace)
+#                       for one device scratch buffer; pure host arithmetic
 #   :validation         validation.cppm -- argument-checking predicates
 #                       (all_nonnull); pure, constexpr, header-less
 #
