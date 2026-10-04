@@ -309,3 +309,12 @@ add_subdirectory(trevc3)
 # like laqr5, it links no sibling LAPACK module, only calaman.error_handling.
 # Structurally laqr5's twin.
 add_subdirectory(laqr2)
+
+# calaman.laqr4 -- the small-bulge multishift QR driver with aggressive early
+# deflation (LAPACK's ?laqr4). A host composition (calaman.gehrd's shape): the
+# driver loop runs on the host and stages the O(1) scalars it inspects through
+# device memcpies, launching the calaman.laqr2 (AED), calaman.lahqr (tiny window
+# + trailing-submatrix shifts) and calaman.laqr5 (multishift sweep) kernels.
+# ?laqr2 -- not the recursive ?laqr3 -- bounds the recursion. Placed last: it
+# links lahqr, laqr2 and laqr5, so all three must already be defined.
+add_subdirectory(laqr4)
