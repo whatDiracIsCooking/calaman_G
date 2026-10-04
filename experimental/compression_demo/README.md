@@ -388,8 +388,11 @@ permutation, which is **incompressible**:
 **Takeaway:** for a general lossless-position CDERI store, **don't pre-sort —
 just fp32-downcast.** Sorting only pays when the permutation is cheap (data
 already near-sorted, or a use that doesn't need the original order restored),
-which density-fitting integrals are not. The honest ranking on this tensor:
-fp32-in-place (5.12×) > fp32-sorted (4.04×) > fp64 lossless zero-strip (2.56×).
+which density-fitting integrals are not. The honest ranking on this tensor,
+within the fp32/lossless tiers: fp32-in-place (5.12×) > fp32-sorted (4.04×) >
+fp64 lossless zero-strip (2.56×). (A more aggressive fp16 tier beats all of
+these — `fp16 in-place, per-element` at 8.32× — but only where a ~5e-4 relative
+error is acceptable; see block-floating-point below.)
 
 ### Block-floating-point on the sorted stream (`cderi_block_scale_demo.py`)
 
@@ -397,8 +400,11 @@ If you *do* sort, the natural next move is a **per-region `2^k` scale** — one
 power-of-two exponent per contiguous block of `B` sorted values, not one global
 factor and not one per element. The scale is a lossless exponent shift (mantissa
 untouched); its only job is to pull each region into the downcast format's normal
-range so the cast does not underflow. This is strictly **not** a ratio play —
-it's the *accuracy* lever the fp32/fp16 downcast left on the table.
+range so the cast does not underflow. For the *sorted* schemes this is strictly
+**not** a ratio play — it's the *accuracy* lever the fp32/fp16 downcast left on
+the table. But the sort is the thing to drop, not the scaling: the *unsorted*
+per-element variant below (`fp16 in-place, per-element`) turns out to be the
+single biggest ratio win on this tensor — see the takeaway.
 
 ```bash
 uv run --with numpy --with cramjam --with h5py \
@@ -433,22 +439,35 @@ fp64 (zstd; lossy only in the cast):
 
 | config | max rel err | underflow | zstd |
 |---|---|---|---|
-| fp32 in-place, no-scale (#124) | 6.75e-2 | 0 | **5.12×** |
+| **fp16 in-place, per-element** | **4.88e-4** | 0 | **8.32×** |
+| fp32 in-place, no-scale (#124) | 6.75e-2 | 0 | 5.12× |
+| fp32 in-place, per-element | 5.96e-8 | 0 | 4.85× |
 | fp32 sorted, global | 2.43e-1 | 0 | 4.04× |
-| fp32 sorted, block-4096 | **5.96e-8** | 0 | 4.04× |
+| fp32 sorted, block-4096 | 5.96e-8 | 0 | 4.04× |
 | fp16 sorted, global | 1.00 | 253M | 4.81× |
-| fp16 sorted, block-4096 | **4.88e-4** | 0 | 4.80× |
+| fp16 sorted, block-4096 | 4.88e-4 | 0 | 4.80× |
 | fp16 in-place, no-scale | 1.00 | 246M | 38.41× ⚠ |
 
+- **`fp16 in-place, per-element` is the real winner at 8.32× zstd** (6.55× LZ4,
+  6.00× Snappy), and it is *not* a mirage — 0 underflow, a uniform 4.88e-4 error.
+  It beats fp32-in-place (5.12×) by 1.6× precisely because it is unsorted:
+  per-element frexp gives every value its own exponent (so fp16 never underflows)
+  without reordering, so it owes **no permutation** — it pays only the fp16 value
+  stream + a ~65 MB exponent side-stream + the ~0.1 MB mask. This is the row the
+  sorted framing of #126 never measured.
 - `block-4096` matches `global`'s ratio exactly while improving accuracy by ~4
   million× (fp32) or turning garbage into usable data (fp16): **block-FP is free
   accuracy on top of any sorted downcast.**
 - The fp16-sorted rows sit *on* the 4.81× ceiling — the fp16 value stream is
   negligible next to the permutation, so the permutation is the whole cost.
-- The one number that "beats" 5.12× — `fp16 in-place 38.41×` — is a **mirage**:
-  77% of values (246M) underflowed to zero, so the stream is mostly zeros. It is
-  the opposite of accurate, and the reason fp16 is unsafe without per-region (or
-  per-element) scaling.
+- The one number that "beats" 8.32× — `fp16 in-place, no-scale 38.41×` — is a
+  **mirage**: 77% of values (246M) underflowed to zero, so the stream is mostly
+  zeros. It is the opposite of accurate, and the reason raw fp16 is unsafe
+  without per-element scaling — which the winning row supplies.
+- `fp32 in-place, per-element` (4.85×) is *below* fp32 no-scale (5.12×): fp32's
+  8-bit exponent never underflows on this data, so frexp is pure overhead there
+  — the exponent side-stream costs ratio and fixes an error that doesn't exist.
+  Per-element scaling pays only for a format that actually underflows (fp16).
 
 **The region boundary wants to be the exponent itself.** Instead of a fixed `B`,
 start a new `2^k` region exactly when the binary exponent `k` changes. Then every
@@ -466,12 +485,21 @@ per-element exponent stream — 639 MB — to 62 KB, ~45× looser than the expli
 parameter-free* way to scale a sorted stream; it changes the side channel from
 "negligible" to "more negligible," and leaves the permutation ceiling untouched.
 
-**Takeaway:** block-FP is the *correct* way to scale for aggressive low precision,
-and it is essentially free on the side-channel — but on DF integrals it is an
-**accuracy tool, not a ratio lever**. The permutation wall means no accurate
-sorted scheme beats plain fp32-in-place here; block-FP pays only where order need
-not be restored, or the data is near-sorted (cheap permutation). This reinforces
-"don't pre-sort" while recording *how* you would scale if you did.
+**Takeaway:** the right scaling move depends on whether you sort. Among *sorted*
+schemes block-FP is an **accuracy tool, not a ratio lever** — the permutation
+wall (≤4.81×) means no accurate sorted scheme beats fp32-in-place, so "don't
+pre-sort" still holds. But the sort is what to drop, not the scaling:
+**per-element frexp is order-independent, so it runs in-place with no
+permutation**, and that unlocks the one genuine ratio win on this tensor —
+**`fp16 in-place, per-element` at 8.32× zstd** (4.88e-4, 0 underflow), 1.6× past
+fp32-in-place's 5.12×. It buys fp16's underflow safety without reordering; the
+exponent side-stream costs ~65 MB zstd in original order (a structured aux×AO-pair
+signal, not a random permutation). The caveat *is* the decision: this wins only
+where a ~5e-4 relative error is acceptable — if the fit needs ~1e-5 or tighter,
+fp32-in-place (6.5e-6) stays the safe default, and note fp32 per-element (4.85×)
+is strictly worse than fp32 no-scale because fp32 never underflows here, so there
+its frexp is pure overhead. So: don't pre-sort, and reach for per-element frexp
+only to make an aggressively narrow downcast *safe*, never to scale fp32.
 
 ## Files
 
