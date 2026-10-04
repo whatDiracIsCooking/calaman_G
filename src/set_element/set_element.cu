@@ -12,7 +12,7 @@
 // only in a per-element transform, so one SetElementFunctor carries the index
 // read and defers the transform to a UnaryOp template argument -- the gather is
 // IdentityOp, the magnitude is AbsOp over calaman::device::elem_ops<T>::modulus
-// (elem_ops/elem_ops.cuh), the one portable spelling of |.| across the four
+// (common/elem_ops.cuh), the one portable spelling of |.| across the four
 // element types (never .x/.y, which hipComplex lacks). Adding another transform
 // is one more functor plus its launcher, no new kernel.
 //
@@ -20,7 +20,7 @@
 // WarpWraps layer that does the job (CLAUDE.md), one thread reading *d_idx.
 #include "set_element_bridge.h"
 
-#include "elem_ops/elem_ops.cuh"
+#include "common/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 
 #include <cstddef>

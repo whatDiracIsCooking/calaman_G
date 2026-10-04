@@ -13,13 +13,13 @@
 // components are reached as .x/.y, but hipFloatComplex is a class -- so raw
 // field access is not portable. Component reads go through
 // calaman::device::elem_ops<T>::real_part / imag_part and a new value is built
-// with make_complex (elem_ops/elem_ops.cuh), which is where the precision-
+// with make_complex (common/elem_ops.cuh), which is where the precision-
 // divergent wwrC* accessors and make_wwr*Complex are spelled once. This .cu used
 // to carry its own complex_ops struct for exactly that; it is now the shared header.
 #include "complex_cast_bridge.h"
 
 #include "complex.h"
-#include "elem_ops/elem_ops.cuh"
+#include "common/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 
 #include <cstddef>

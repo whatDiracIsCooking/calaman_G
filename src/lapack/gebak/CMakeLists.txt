@@ -13,19 +13,19 @@
 # moves rows), so gebak.cu pulls in WarpWraps's neutral complex (complex.h).
 
 # The device-kernel library. gebak.cu launches its kernels by hand (raw <<<>>>)
-# and takes its per-element scale from calaman.elem_ops's header, so it links
-# that INTERFACE library PRIVATE -- which carries the src/ root that resolves
-# "elem_ops/elem_ops.cuh" plus, transitively via wwr.device, complex.h (the
+# and takes its per-element scale from calaman.common's elem_ops.cuh header, so
+# it links calaman.common PRIVATE -- which carries the src/ root that resolves
+# "common/elem_ops.cuh" plus, transitively via wwr.device, complex.h (the
 # neutral complex types) and runtime.h (wwrStream_t, pulled in by
 # gebak_bridge.h) and the backend runtime libs. No parallel_for here: unlike
-# gebal there is no fill helper, so calaman.elem_ops is the one device dep.
+# gebal there is no fill helper, so calaman.common is the one device dep.
 calaman_add_gpu_device_library(
   NAME
   calaman.gebak.device
   SOURCES
   gebak.cu
   LINK_PRIVATE
-  calaman.elem_ops
+  calaman.common
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries

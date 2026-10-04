@@ -4,13 +4,13 @@
 # module: written once against WarpWraps's `wwr*` names and built for either
 # backend. The whole solve is O(1) (X is at most 2x2), so it is one single
 # thread launched through wwr.extension.parallel_for -- structurally lacgv's
-# twin, minus calaman.elem_ops (real abs/max are inlined in the .cu).
+# twin, minus the elem_ops.cuh header (real abs/max are inlined in the .cu).
 
 # The device-kernel library. lasy2.cu launches its functor through
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which
 # carries parallel_for.cuh plus, transitively, wwr.device: runtime.h
 # (wwrStream_t, via lasy2_bridge.h) and the backend runtime libs. No
-# calaman.elem_ops: abs/max are real, so they are inline helpers in the .cu.
+# elem_ops.cuh: abs/max are real, so they are inline helpers in the .cu.
 calaman_add_gpu_device_library(
   NAME
   calaman.lasy2.device
