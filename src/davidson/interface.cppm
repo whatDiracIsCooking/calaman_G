@@ -10,8 +10,8 @@
  * backend. Not a LAPACK routine (LAPACK ships no Davidson), so it is its own
  * module, like calaman.feast and calaman.expm.
  *
- * SKELETON: :buffer_size (the workspace layout and sizing) is complete; :solve
- * pins the interface but davidson_solve is not yet implemented. See README.md.
+ * davidson_solve implements the EUCLIDEAN problem; the generalized (metric,
+ * sygvd) path is still to come and a non-empty metric is rejected. See README.md.
  *
  * Usage:
  *   import calaman.davidson;
