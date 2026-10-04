@@ -39,7 +39,7 @@ import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex (the extern-tem
 import wwr.wrappers.common; // usual_fp, ComplexToRealType
 import wwr.wrappers.blas;   // gemm, geam
 import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the gemms/geams)
-import calaman.common;      // WorkspaceLayout
+import calaman.common;      // carve_workspace
 import calaman.error_handling; // Status, PointerModeStatus
 import :detail;             // as_element, kMaxDim, ExpmWorkspace
 import :plan;               // ExpmPlan, expm_plan
@@ -102,9 +102,8 @@ Status expm(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolve
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
 
-  WorkspaceLayout layout(d_work);
   ExpmWorkspace<T> ws;
-  ws.carve(layout, n);
+  carve_workspace(d_work, &ws, n); // size already checked against expm_bufferSize above
 
   // HOST pointer mode for the host-scalar gemms/geams, restored on every exit.
   // ScopedPointerMode's destructor restores on CLM_TRY's bare-`return` early paths

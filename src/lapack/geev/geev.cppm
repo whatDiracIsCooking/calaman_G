@@ -57,7 +57,7 @@ import wwr.solver;          // wwrsolverDnHandle_t (calaman.orghr's handle)
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize
 import wwr.wrappers.blas;   // gemm (back-transform), nrm2 / scal / rot (normalize)
 import wwr.wrappers.common; // real_fp
-import calaman.common;      // Region, MatrixNorm, WorkspaceLayout
+import calaman.common;      // Region, MatrixNorm, WorkspaceLayout, carve_workspace
 import calaman.lange;       // lange -- the max-abs norm for the scaling decision
 import calaman.lascl;       // lascl -- scale a, rescale the eigenvalues
 import calaman.lacpy;       // lacpy -- copy the gehrd reflectors into Q
@@ -122,57 +122,63 @@ inline std::size_t hseqr_workbuf_len(const int n, const int lwork) {
 ///        shared scratch zone every transient step aliases
 template<typename T>
 struct GeevWorkspace {
-  T *anrm;             ///< lange's max-abs result scalar
-  T *scale;            ///< gebal's scale (length n), live through gebak
-  T *tau;              ///< gehrd/orghr reflector scalars (length n)
-  T *q;                ///< Schur vectors (n x n), null when no side is wanted
-  T *xl;               ///< left eigenvectors of T (n x n), null unless wantvl
-  T *xr;               ///< right eigenvectors of T (n x n), null unless wantvr
-  void *scratch;       ///< base of the shared scratch zone (gebal/gehrd/orghr/hseqr/trevc3)
-  std::size_t orghr_bytes; ///< orghr's own byte budget inside the scratch zone
-  std::size_t total;   ///< bytes the layout spans
+  T *anrm = nullptr;       ///< lange's max-abs result scalar
+  T *scale = nullptr;      ///< gebal's scale (length n), live through gebak
+  T *tau = nullptr;        ///< gehrd/orghr reflector scalars (length n)
+  T *q = nullptr;          ///< Schur vectors (n x n), null when no side is wanted
+  T *xl = nullptr;         ///< left eigenvectors of T (n x n), null unless wantvl
+  T *xr = nullptr;         ///< right eigenvectors of T (n x n), null unless wantvr
+  void *scratch = nullptr; ///< base of the shared scratch zone (gebal/gehrd/orghr/hseqr/trevc3)
+  std::size_t orghr_bytes = 0; ///< orghr's own byte budget inside the scratch zone
+
+  /// @brief Lay the regions out from @p layout -- the ONLY description of the
+  ///        layout, run for sizing and carving alike (see carve_workspace).
+  ///
+  /// The fixed regions coexist (scale lives from gebal to gebak, Q from orghr
+  /// to the back-transform); the five scratch users are never live at once, so
+  /// they share one zone sized to the largest.
+  void carve(WorkspaceLayout &layout, const int n, const bool wantvl, const bool wantvr,
+             const std::size_t orghr_len) {
+    const std::size_t nn = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
+    const std::size_t nsz = static_cast<std::size_t>(n < 1 ? 1 : n);
+    const bool wantv = wantvl || wantvr;
+
+    anrm = layout.fixed<T>(1);
+    scale = layout.fixed<T>(nsz);
+    tau = layout.fixed<T>(nsz);
+    q = wantv ? layout.fixed<T>(nn) : nullptr;
+    xl = wantvl ? layout.fixed<T>(nn) : nullptr;
+    xr = wantvr ? layout.fixed<T>(nn) : nullptr;
+
+    // Scratch (declared after every fixed region, as WorkspaceLayout requires).
+    const std::size_t gebal_ints = static_cast<std::size_t>(2 * n + 1);
+    const std::size_t gehrd_len = static_cast<std::size_t>(n) * kGeevGehrdNb +
+                                  static_cast<std::size_t>(kGeevGehrdNb) * kGeevGehrdNb;
+    const std::size_t hseqr_len = hseqr_workbuf_len(n, hseqr_lwork(n));
+    (void)layout.scratch<int>(gebal_ints);
+    (void)layout.scratch<T>(gehrd_len);
+    (void)layout.scratch<T>(hseqr_len);
+    if (wantv) {
+      (void)layout.scratch<std::byte>(orghr_len);
+      (void)layout.scratch<T>(static_cast<std::size_t>(3) * nsz); // trevc3
+    }
+    scratch = layout.scratch<std::byte>(0); // the shared zone's base
+    orghr_bytes = orghr_len;
+  }
 };
 
-/// @brief Carve geev's workspace, SIZING over @p base == nullptr or carving it
+/// @brief Query orghr's byte budget, then size (@p base null) or carve the
+///        workspace; returns the bytes the layout spans, writing the slices
+///        when @p out is non-null
 ///
-/// The fixed regions coexist (scale lives from gebal to gebak, Q from orghr to
-/// the back-transform); the five scratch users are never live at once, so they
-/// share one zone sized to the largest. orghr's window budget is taken at the
-/// widest window gebal can leave (ilo = 1, ihi = n), a safe upper bound.
+/// orghr's window budget is taken at the widest window gebal can leave
+/// (ilo = 1, ihi = n), a safe upper bound.
 template<typename T>
-GeevWorkspace<T> map_workspace(wwr::wwrsolverDnHandle_t solver, void *base, const int n,
-                               const bool wantvl, const bool wantvr) {
-  const std::size_t nn = static_cast<std::size_t>(n) * static_cast<std::size_t>(n);
-  const std::size_t nsz = static_cast<std::size_t>(n < 1 ? 1 : n);
-  const bool wantv = wantvl || wantvr;
+std::size_t map_workspace(wwr::wwrsolverDnHandle_t solver, void *base, const int n,
+                          const bool wantvl, const bool wantvr, GeevWorkspace<T> *out) {
   const std::size_t orghr_bytes =
-      wantv ? orghr_bufferSize<T>(solver, n, n, 1, n) : std::size_t{0};
-
-  WorkspaceLayout layout(base);
-  GeevWorkspace<T> ws{};
-  ws.anrm = layout.fixed<T>(1);
-  ws.scale = layout.fixed<T>(nsz);
-  ws.tau = layout.fixed<T>(nsz);
-  ws.q = wantv ? layout.fixed<T>(nn) : nullptr;
-  ws.xl = wantvl ? layout.fixed<T>(nn) : nullptr;
-  ws.xr = wantvr ? layout.fixed<T>(nn) : nullptr;
-
-  // Scratch (declared after every fixed region, as WorkspaceLayout requires).
-  const std::size_t gebal_ints = static_cast<std::size_t>(2 * n + 1);
-  const std::size_t gehrd_len = static_cast<std::size_t>(n) * kGeevGehrdNb +
-                                static_cast<std::size_t>(kGeevGehrdNb) * kGeevGehrdNb;
-  const std::size_t hseqr_len = hseqr_workbuf_len(n, hseqr_lwork(n));
-  (void)layout.scratch<int>(gebal_ints);
-  (void)layout.scratch<T>(gehrd_len);
-  (void)layout.scratch<T>(hseqr_len);
-  if (wantv) {
-    (void)layout.scratch<std::byte>(orghr_bytes);
-    (void)layout.scratch<T>(static_cast<std::size_t>(3) * nsz); // trevc3
-  }
-  ws.scratch = layout.scratch<std::byte>(0); // the shared zone's base
-  ws.orghr_bytes = orghr_bytes;
-  ws.total = layout.total();
-  return ws;
+      (wantvl || wantvr) ? orghr_bufferSize<T>(solver, n, n, 1, n) : std::size_t{0};
+  return carve_workspace(base, out, n, wantvl, wantvr, orghr_bytes);
 }
 
 /// @brief Normalize each eigenvector of one side in place (?geev's final pass)
@@ -268,8 +274,7 @@ export template<wwr::real_fp T>
 std::size_t geev_bufferSize(wwr::wwrsolverDnHandle_t solver, const int n, const GeevVectors jobvl,
                             const GeevVectors jobvr) {
   return geev_detail::map_workspace<T>(solver, nullptr, n, jobvl == GeevVectors::Vectors,
-                                       jobvr == GeevVectors::Vectors)
-      .total;
+                                       jobvr == GeevVectors::Vectors, nullptr);
 }
 
 // ========================================================================
@@ -341,8 +346,9 @@ Status geev(wwr::wwrblasHandle_t blas, wwr::wwrsolverDnHandle_t solver, const Ge
     return write_info(0);
   }
 
-  const auto ws = geev_detail::map_workspace<T>(solver, work, n, wantvl, wantvr);
-  if (work == nullptr || work_bytes < ws.total) {
+  geev_detail::GeevWorkspace<T> ws;
+  const std::size_t required = geev_detail::map_workspace<T>(solver, work, n, wantvl, wantvr, &ws);
+  if (work == nullptr || work_bytes < required) {
     return write_info(-15);
   }
 

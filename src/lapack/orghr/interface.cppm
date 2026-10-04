@@ -61,7 +61,7 @@ import wwr.blas;            // WWRBLAS_STATUS_INVALID_VALUE / _INTERNAL_ERROR (t
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpy/MemsetAsync, wwrGetLastError, wwrSuccess
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_STATUS_SUCCESS, wwrsolverDnGetStream
 import wwr.wrappers.solver; // orgqr, orgqr_bufferSize
-import calaman.common;      // WorkspaceLayout
+import calaman.common;      // WorkspaceLayout, carve_workspace
 
 // export import, not a plain import: orghr RETURNS calaman::Status, so a consumer
 // of `import calaman.orghr;` must see Status's member functions, not just its
@@ -92,36 +92,35 @@ int orgqr_work_len(wwr::wwrsolverDnHandle_t solver, const int n, const int ilo, 
   return lwork < 1 ? 1 : lwork;
 }
 
-/// @brief Carve orghr()'s workspace, SIZING over @p base == nullptr or carving it
-///
-/// Two fixed regions: the n-by-n snapshot the shuffle gathers from, and ?orgqr's
-/// own scratch (queried at the nh window). Run once with a null base inside
-/// orghr_bufferSize and once over the real buffer inside orghr, so the size can
-/// never drift from the carving (see WorkspaceLayout).
+/// @brief orghr()'s workspace: two fixed regions -- the snapshot the shuffle
+///        gathers from, and ?orgqr's own scratch (queried at the nh window)
 template<typename T>
 struct OrghrWorkspace {
-  T *snapshot;  ///< untouched copy of the input, the shuffle's gather source
-  T *orgqr_work; ///< ?orgqr's scratch on the window block
-  int orgqr_lwork;
-  std::size_t total; ///< bytes the layout spans
+  T *snapshot = nullptr;   ///< untouched copy of the input, the shuffle's gather source
+  T *orgqr_work = nullptr; ///< ?orgqr's scratch on the window block
+  int orgqr_lwork = 0;
+
+  /// @brief Lay the regions out from @p layout -- the ONLY description of the
+  ///        layout, run for sizing and carving alike (see carve_workspace).
+  void carve(WorkspaceLayout &layout, const int n, const int lda, const int lwork) {
+    // The snapshot spans the full lda-by-n input the caller passes, since the
+    // copy is lda-strided; lda >= max(1, n) is already validated at the call
+    // sites.
+    const std::size_t span = static_cast<std::size_t>(lda < 1 ? 1 : lda) *
+                             static_cast<std::size_t>(n < 1 ? 1 : n);
+    snapshot = layout.fixed<T>(span);
+    orgqr_work = layout.fixed<T>(static_cast<std::size_t>(lwork));
+    orgqr_lwork = lwork;
+  }
 };
 
+/// @brief Query ?orgqr's lwork, then size (@p base null) or carve the workspace;
+///        returns the bytes the layout spans, writing the slices when @p out is
+///        non-null
 template<typename T>
-OrghrWorkspace<T> map_workspace(wwr::wwrsolverDnHandle_t solver, void *base, const int n,
-                                const int lda, const int ilo, const int ihi) {
-  // The snapshot spans the full lda-by-n input the caller passes, since the copy
-  // is lda-strided; lda >= max(1, n) is already validated at the call sites.
-  const std::size_t span = static_cast<std::size_t>(lda < 1 ? 1 : lda) *
-                           static_cast<std::size_t>(n < 1 ? 1 : n);
-  const int lwork = orgqr_work_len<T>(solver, n, ilo, ihi);
-
-  WorkspaceLayout layout(base);
-  OrghrWorkspace<T> ws{};
-  ws.snapshot    = layout.fixed<T>(span);
-  ws.orgqr_work  = layout.fixed<T>(static_cast<std::size_t>(lwork));
-  ws.orgqr_lwork = lwork;
-  ws.total       = layout.total();
-  return ws;
+std::size_t map_workspace(wwr::wwrsolverDnHandle_t solver, void *base, const int n, const int lda,
+                          const int ilo, const int ihi, OrghrWorkspace<T> *out) {
+  return carve_workspace(base, out, n, lda, orgqr_work_len<T>(solver, n, ilo, ihi));
 }
 
 } // namespace orghr_detail
@@ -145,7 +144,7 @@ OrghrWorkspace<T> map_workspace(wwr::wwrsolverDnHandle_t solver, void *base, con
 export template<typename T>
 std::size_t orghr_bufferSize(wwr::wwrsolverDnHandle_t solver, const int n, const int lda,
                              const int ilo, const int ihi) {
-  return orghr_detail::map_workspace<T>(solver, nullptr, n, lda, ilo, ihi).total;
+  return orghr_detail::map_workspace<T>(solver, nullptr, n, lda, ilo, ihi, nullptr);
 }
 
 // ========================================================================
@@ -194,8 +193,8 @@ Status orghr(wwr::wwrsolverDnHandle_t solver, const int n, const int ilo, const 
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 
-  const auto ws = orghr_detail::map_workspace<T>(solver, d_work, n, lda, ilo, ihi);
-  if (work_bytes < ws.total) {
+  orghr_detail::OrghrWorkspace<T> ws;
+  if (work_bytes < orghr_detail::map_workspace<T>(solver, d_work, n, lda, ilo, ihi, &ws)) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 

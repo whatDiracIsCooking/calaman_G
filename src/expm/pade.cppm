@@ -34,7 +34,7 @@ import wwr.wrappers.common; // usual_fp, ComplexToRealType
 import wwr.wrappers.blas;   // gemm
 import wwr.wrappers.solver; // getrf, getrf_bufferSize, getrs
 import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the gemms)
-import calaman.common;      // WorkspaceLayout
+import calaman.common;      // carve_workspace
 import calaman.error_handling; // Status, PointerModeStatus
 import :detail;             // as_element, kMaxDim, PadeWorkspace
 
@@ -90,12 +90,10 @@ Status pade(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolve
   CLM_TRY(wwr::getrf_bufferSize<T>(cusolver_handle, n, n, static_cast<T *>(nullptr), n,
                                    &lwork_getrf));
 
-  // One carve, sizing and laying out together: total() is the requirement, and
-  // the pointers are unused until after the lwork check below passes.
-  WorkspaceLayout layout(d_work);
+  // One carve, sizing and laying out together: the return is the requirement,
+  // and the pointers are unused until after the lwork check below passes.
   PadeWorkspace<T> ws;
-  ws.carve(layout, n, m, lwork_getrf);
-  if (lwork_bytes < layout.total()) {
+  if (lwork_bytes < carve_workspace(d_work, &ws, n, m, lwork_getrf)) {
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
   const int np = pade_num_powers(m);

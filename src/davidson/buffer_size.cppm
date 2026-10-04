@@ -4,9 +4,8 @@
  *
  * The :buffer_size partition of calaman.davidson.
  *
- * One caller-provided device buffer, carved by feast_detail's sibling idiom: a
- * single feast-style carve() both sizes the layout (given a null base) and hands
- * out the pointers (given the real one) through calaman::WorkspaceLayout, so the
+ * One caller-provided device buffer, laid out by the single DavidsonSlices::carve
+ * through calaman::carve_workspace (null base sizes, real base carves), so the
  * size query and the carving can never drift. Every region starts 256-byte
  * aligned. davidson_solve therefore allocates no device memory, and a repeat
  * solve at the same (n, n_roots, max_subspace) reuses the same buffer.
@@ -38,7 +37,7 @@ import wwr.blas;            // WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEig*_t, WWRSOLVER_EIG_*
 import wwr.wrappers.common; // real_fp
 import wwr.wrappers.solver; // syevd_bufferSize, sygvd_bufferSize
-import calaman.common;      // align_up, WorkspaceLayout
+import calaman.common;      // WorkspaceLayout, carve_workspace
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
@@ -71,55 +70,44 @@ struct DavidsonSlices {
   T *mv = nullptr;             ///< n x max_subspace: M V, kept in lockstep with v
   T *s_sub = nullptr;          ///< max_subspace x max_subspace: V^T M V (SPD overlap)
   T *metric_scratch = nullptr; ///< n x n_roots: M applied to the residual/correction block
+
+  /// @brief Lay the slices out from @p layout -- the ONLY description of the
+  ///        layout, run for sizing and carving alike (see carve_workspace).
+  ///        All regions are FIXED except the single shared eigensolver SCRATCH
+  ///        block, carved last. @p eig_len is syevd's lwork, or the syevd/sygvd
+  ///        max on the metric path.
+  void carve(WorkspaceLayout &layout, const int n, const int n_roots, const int max_subspace,
+             const bool with_metric, const int eig_len) {
+    const std::size_t nz = static_cast<std::size_t>(n);
+    const std::size_t rz = static_cast<std::size_t>(n_roots);
+    const std::size_t mz = static_cast<std::size_t>(max_subspace);
+
+    lwork_eig = eig_len;
+
+    v = layout.fixed<T>(nz * mz);
+    av = layout.fixed<T>(nz * mz);
+    h = layout.fixed<T>(mz * mz);
+    ritz = layout.fixed<T>(mz);
+    ritz_av = layout.fixed<T>(nz * rz);
+    residual = layout.fixed<T>(nz * rz);
+    correction = layout.fixed<T>(nz * rz);
+    proj = layout.fixed<T>(mz * rz);
+    info = layout.fixed<int>(1);
+
+    if (with_metric) {
+      mv = layout.fixed<T>(nz * mz);
+      s_sub = layout.fixed<T>(mz * mz);
+      metric_scratch = layout.fixed<T>(nz * rz);
+    }
+
+    // One SCRATCH region: syevd's workspace on the Euclidean path, sygvd's on
+    // the metric path. They are never live together, so the block is the larger
+    // of the two (eig_len already holds that max).
+    eig_scratch = layout.scratch<T>(static_cast<std::size_t>(eig_len));
+  }
 };
 
 } // namespace calaman
-
-namespace calaman::davidson_detail {
-
-/// Lay out the workspace from @p d_work, or size it when @p d_work is null.
-/// Returns the bytes the layout spans. All regions are FIXED except the single
-/// shared eigensolver SCRATCH block, carved last (WorkspaceLayout requires every
-/// fixed() before any scratch()).
-template<wwr::real_fp T>
-std::size_t carve(void *d_work, const int n, const int n_roots, const int max_subspace,
-                  const bool with_metric, const int lwork_eig, DavidsonSlices<T> *out) {
-  const std::size_t nz = static_cast<std::size_t>(n);
-  const std::size_t rz = static_cast<std::size_t>(n_roots);
-  const std::size_t mz = static_cast<std::size_t>(max_subspace);
-
-  WorkspaceLayout layout(d_work);
-  DavidsonSlices<T> s;
-  s.lwork_eig = lwork_eig;
-
-  s.v = layout.fixed<T>(nz * mz);
-  s.av = layout.fixed<T>(nz * mz);
-  s.h = layout.fixed<T>(mz * mz);
-  s.ritz = layout.fixed<T>(mz);
-  s.ritz_av = layout.fixed<T>(nz * rz);
-  s.residual = layout.fixed<T>(nz * rz);
-  s.correction = layout.fixed<T>(nz * rz);
-  s.proj = layout.fixed<T>(mz * rz);
-  s.info = layout.fixed<int>(1);
-
-  if (with_metric) {
-    s.mv = layout.fixed<T>(nz * mz);
-    s.s_sub = layout.fixed<T>(mz * mz);
-    s.metric_scratch = layout.fixed<T>(nz * rz);
-  }
-
-  // One SCRATCH region: syevd's workspace on the Euclidean path, sygvd's on the
-  // metric path. They are never live together, so the block is the larger of the
-  // two (lwork_eig already holds that max).
-  s.eig_scratch = layout.scratch<T>(static_cast<std::size_t>(lwork_eig));
-
-  if (out != nullptr) {
-    *out = s;
-  }
-  return layout.total();
-}
-
-} // namespace calaman::davidson_detail
 
 export namespace calaman {
 
@@ -161,7 +149,7 @@ Status make_davidson_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int 
   }
 
   const std::size_t bytes =
-      davidson_detail::carve<T>(d_work, n, n_roots, max_subspace, with_metric, lwork_eig, slices);
+      carve_workspace(d_work, slices, n, n_roots, max_subspace, with_metric, lwork_eig);
   if (lwork_bytes != nullptr) {
     *lwork_bytes = bytes;
   }
