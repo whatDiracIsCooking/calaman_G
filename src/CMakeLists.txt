@@ -84,6 +84,13 @@ add_subdirectory(expm)
 # dependencies (common, orthogonalize) so their targets exist when linked.
 add_subdirectory(feast)
 
+# calaman.davidson -- block-Davidson eigensolver for the lowest n_roots
+# eigenpairs of a symmetric operator given as a matrix-vector-product callback.
+# A host driver over wrapped BLAS + the wrapped eigensolver, with no device code
+# of its own. Links only common and error_handling (both added at the top), so
+# its placement is free; grouped after feast as the other subspace eigensolver.
+add_subdirectory(davidson)
+
 # calaman.cg_unitary -- Riemannian conjugate gradient on the unitary group
 # U(n). A host driver over wrapped BLAS, calaman.expm (the geodesic step) and
 # calaman.orthogonalize (optional reunitarization), plus its own line-search
