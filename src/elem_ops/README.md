@@ -49,14 +49,14 @@ place `make_wwr*Complex` is selected by precision.
 The **core** only. A module-specific op layers on top as a free `__device__`
 helper over the core — never a member here — so a consumer never instantiates
 ops it does not call. See `src/expm/expm.cu`'s `fma_real` / `add_real` (the
-real-coefficient fused multiply-add the Padé ladder needs) and `src/gebal/gebal.cu`'s
+real-coefficient fused multiply-add the Padé ladder needs) and `src/lapack/gebal/gebal.cu`'s
 `abs1` (the CABS1 surrogate `|Re| + |Im|`) / `is_zero` — each one or two lines
 over `elem_ops::add` / `scale` / `from_real` / `real_part` / `imag_part`.
 
 ## Consumers
 
 - `src/expm` — the matrix exponential's fused Padé kernels (core arithmetic).
-- `src/gebal` — balancing: `scale`, plus `abs1` / `is_zero` as local helpers.
+- `src/lapack/gebal` — balancing: `scale`, plus `abs1` / `is_zero` as local helpers.
 - `src/complex_cast` — component packing: `real_part` / `imag_part` / `make_complex`.
 
 New device kernels that need type-generic scalar arithmetic should link

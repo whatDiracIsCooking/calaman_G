@@ -10,7 +10,7 @@ It exists to be a **device scalar helper for `laln2`**, which calls it
 per-thread. So the arithmetic is header-only and callable from host and device:
 
 ```cpp
-#include "ladiv/ladiv.h"     // from laln2's own .cu, off the src/ root
+#include "lapack/ladiv/ladiv.h"     // from laln2's own .cu, off the src/ root
 
 T p, q;
 calaman::ladiv_scalar<T>(a, b, c, d, &p, &q);   // host or __device__

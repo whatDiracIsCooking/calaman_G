@@ -10,7 +10,7 @@
 // FAITHFUL TO THE REFERENCE, by design: the test oracle is reference ?laln2, so
 // the arithmetic, the complete-pivoting order, the SMINI perturbation and the
 // scale/xnorm formulas all mirror dlaln2.f line for line. The complex divisions
-// (the NW==2 cases) go through ladiv_scalar from "ladiv/ladiv.h" -- the SAME
+// (the NW==2 cases) go through ladiv_scalar from "lapack/ladiv/ladiv.h" -- the SAME
 // host/device Smith's-algorithm helper the reference reaches as DLADIV, included
 // here so the call has device linkage (issue #94 depends on #86's ?ladiv).
 //
@@ -28,7 +28,7 @@
 // through its device header.
 #include "laln2_bridge.h"
 
-#include "ladiv/ladiv.h"
+#include "lapack/ladiv/ladiv.h"
 
 #include "extension/parallel_for/parallel_for.cuh"
 

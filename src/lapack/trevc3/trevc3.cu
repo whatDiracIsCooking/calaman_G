@@ -28,7 +28,7 @@
 // launch functor, unusable from inside this kernel -- so, like laexc inlining
 // its auxiliaries, this links no sibling LAPACK module. The inlined solve's
 // complex divisions reach the SAME header-only host/device ladiv_scalar from
-// "ladiv/ladiv.h" the reference reaches as DLADIV, included root-relative so the
+// "lapack/ladiv/ladiv.h" the reference reaches as DLADIV, included root-relative so the
 // call has device linkage. LAPACK's DLAMCH('S') is FLT_MIN / DBL_MIN and
 // DLAMCH('P') is FLT_EPSILON / DBL_EPSILON -- the <cfloat> macros, usable on the
 // device where std::numeric_limits is not. Indices track the Fortran 1-based
@@ -40,7 +40,7 @@
 // through its device header.
 #include "trevc3_bridge.h"
 
-#include "ladiv/ladiv.h"
+#include "lapack/ladiv/ladiv.h"
 
 #include "extension/parallel_for/parallel_for.cuh"
 #include "wrappers/math/math.cuh"
