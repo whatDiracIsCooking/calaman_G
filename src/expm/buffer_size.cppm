@@ -25,7 +25,7 @@ import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex (the extern-template list)
 import wwr.wrappers.common; // usual_fp, ComplexToRealType
 import wwr.wrappers.solver; // getrf_bufferSize
-import calaman.common;      // WorkspaceLayout
+import calaman.common;      // carve_workspace
 import calaman.error_handling; // Status
 import :detail;             // PadeWorkspace, ExpmWorkspace
 
@@ -59,10 +59,8 @@ Status pade_bufferSize(wwr::wwrsolverDnHandle_t handle, const int m, const int n
   int lwork_getrf = 0;
   CLM_TRY(wwr::getrf_bufferSize<T>(handle, n, n, static_cast<T *>(nullptr), n, &lwork_getrf));
 
-  WorkspaceLayout layout(nullptr); // null base: size only, from the same carve pade() runs
-  PadeWorkspace<T> ws;
-  ws.carve(layout, n, m, lwork_getrf);
-  *lwork_bytes = layout.total();
+  // Null base: size only, from the same carve pade() runs.
+  *lwork_bytes = carve_workspace<PadeWorkspace<T>>(nullptr, nullptr, n, m, lwork_getrf);
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
@@ -89,19 +87,13 @@ Status expm_bufferSize(wwr::wwrsolverDnHandle_t handle, const int n, std::size_t
   // As + colsum, then the pade region sized for the WORST degree on the ladder:
   // run the same PadeWorkspace carve over every degree and take the largest, so
   // expm() can carve any chosen degree into the region that follows.
-  WorkspaceLayout layout(nullptr);
-  ExpmWorkspace<T> ews;
-  ews.carve(layout, n);
-
   std::size_t worst_pade = 0;
   for (int i = 0; i < kNumPadeDegrees; ++i) {
-    WorkspaceLayout pade_layout(nullptr);
-    PadeWorkspace<T> pws;
-    pws.carve(pade_layout, n, kPadeDegrees[i], lwork_getrf);
-    worst_pade = std::max(worst_pade, pade_layout.total());
+    worst_pade = std::max(worst_pade, carve_workspace<PadeWorkspace<T>>(
+                                          nullptr, nullptr, n, kPadeDegrees[i], lwork_getrf));
   }
 
-  *lwork_bytes = layout.total() + worst_pade;
+  *lwork_bytes = carve_workspace<ExpmWorkspace<T>>(nullptr, nullptr, n) + worst_pade;
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

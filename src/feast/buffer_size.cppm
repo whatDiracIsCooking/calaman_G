@@ -4,10 +4,10 @@
  *
  * The :buffer_size partition of calaman.feast.
  *
- * One caller-provided buffer. A single function, feast_detail::carve, both sizes
- * the layout (given a null base) and hands out the pointers (given the real one)
- * through calaman::WorkspaceLayout, so the size query and the carving cannot
- * drift apart. Every region starts 256-byte aligned.
+ * One caller-provided buffer, laid out by the single FeastSlices::carve through
+ * calaman::carve_workspace (null base sizes, real base carves), so the size
+ * query and the carving cannot drift apart. Every region starts 256-byte
+ * aligned.
  *
  * The Ne resolvents dominate: Ne n^2 complex elements, 32 MiB at n = 512 in
  * double with Ne = 8. Everything else is O(n m0). The QR and eigensolver
@@ -39,7 +39,7 @@ import wwr.blas;            // WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEigMode_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.wrappers.common; // real_fp, RealToComplexType
 import wwr.wrappers.solver; // syevd_bufferSize
-import calaman.common;      // align_up, WorkspaceLayout
+import calaman.common;      // align_up, WorkspaceLayout, carve_workspace
 import calaman.orthogonalize; // orthogonalize_bufferSize
 export import calaman.error_handling; // Status -- the cross-domain return type
 
@@ -85,69 +85,58 @@ struct FeastSlices {
   T *scratch = nullptr; ///< orthogonalize's workspace, then syevd's
   int lwork_qr = 0;     ///< orthogonalize's lwork, in elements of T
   int lwork_eig = 0;    ///< syevd's lwork, in elements of T
+
+  /// @brief Lay the slices out from @p layout -- the ONLY description of the
+  ///        layout, run for sizing and carving alike (see carve_workspace).
+  ///        The regions are all FIXED except the one shared QR/eigensolver
+  ///        SCRATCH block, carved last. @p qr_len / @p eig_len are the
+  ///        orthogonalize / syevd lworks, in elements of T.
+  void carve(WorkspaceLayout &layout, const int n, const int m0, const int ne,
+             const int qr_len, const int eig_len) {
+    constexpr std::size_t kAlign = 256;
+
+    const std::size_t nz = static_cast<std::size_t>(n);
+    const std::size_t m0z = static_cast<std::size_t>(m0);
+    const std::size_t nez = static_cast<std::size_t>(ne);
+
+    lwork_qr = qr_len;
+    lwork_eig = eig_len;
+
+    // Every block starts on the alignment, which sizeof(C) divides, so the
+    // strides are whole elements.
+    resolvent_stride = align_up(nz * nz * sizeof(C), kAlign) / sizeof(C);
+    rhs_stride = align_up(nz * m0z * sizeof(C), kAlign) / sizeof(C);
+    resolvents = layout.fixed<C>(resolvent_stride * nez);
+    rhs = layout.fixed<C>(rhs_stride * nez);
+    resolvent_ptrs = layout.fixed<C *>(nez);
+    rhs_ptrs = layout.fixed<C *>(nez);
+    ipiv = layout.fixed<int>(nez * nz);
+
+    basis = layout.fixed<T>(nz * m0z);
+    a_basis = layout.fixed<T>(nz * m0z);
+    a_ritz = layout.fixed<T>(nz * m0z);
+    projected = layout.fixed<T>(m0z * m0z);
+    rotated = layout.fixed<T>(m0z * m0z);
+    ritz = layout.fixed<T>(m0z);
+    residuals = layout.fixed<T>(m0z);
+    colsum = layout.fixed<T>(nz);
+    norm_a = layout.fixed<T>(1);
+
+    std::byte *const status_base = layout.fixed<std::byte>(sizeof(device::FeastStatus<T>));
+    status = reinterpret_cast<device::FeastStatus<T> *>(status_base);
+    if (status_base != nullptr) {
+      lu_info = reinterpret_cast<int *>(status_base + offsetof(device::FeastStatus<T>, lu_info));
+      qr_info = reinterpret_cast<int *>(status_base + offsetof(device::FeastStatus<T>, qr_info));
+      eig_info = reinterpret_cast<int *>(status_base + offsetof(device::FeastStatus<T>, eig_info));
+    }
+
+    // One SCRATCH region: orthogonalize's workspace, then syevd's. They are
+    // never live together, so the block is sized to the larger and reused.
+    scratch = layout.scratch<T>(static_cast<std::size_t>(std::max(qr_len, eig_len)));
+  }
 };
 
 } // namespace calaman
-
-namespace calaman::feast_detail {
-
-/// Lay out the workspace from @p d_work, or size it when @p d_work is null.
-/// Returns the bytes the layout spans. The regions are all FIXED except the one
-/// shared QR/eigensolver SCRATCH block, carved last.
-template<wwr::real_fp T>
-std::size_t carve(void *d_work, const int n, const int m0, const int ne, const int lwork_qr,
-                  const int lwork_eig, FeastSlices<T> *out) {
-  using C = wwr::RealToComplexType<T>;
-  constexpr std::size_t kAlign = 256;
-
-  const std::size_t nz = static_cast<std::size_t>(n);
-  const std::size_t m0z = static_cast<std::size_t>(m0);
-  const std::size_t nez = static_cast<std::size_t>(ne);
-
-  WorkspaceLayout layout(d_work);
-  FeastSlices<T> s;
-  s.lwork_qr = lwork_qr;
-  s.lwork_eig = lwork_eig;
-
-  // Every block starts on the alignment, which sizeof(C) divides, so the strides
-  // are whole elements.
-  s.resolvent_stride = align_up(nz * nz * sizeof(C), kAlign) / sizeof(C);
-  s.rhs_stride = align_up(nz * m0z * sizeof(C), kAlign) / sizeof(C);
-  s.resolvents = layout.fixed<C>(s.resolvent_stride * nez);
-  s.rhs = layout.fixed<C>(s.rhs_stride * nez);
-  s.resolvent_ptrs = layout.fixed<C *>(nez);
-  s.rhs_ptrs = layout.fixed<C *>(nez);
-  s.ipiv = layout.fixed<int>(nez * nz);
-
-  s.basis = layout.fixed<T>(nz * m0z);
-  s.a_basis = layout.fixed<T>(nz * m0z);
-  s.a_ritz = layout.fixed<T>(nz * m0z);
-  s.projected = layout.fixed<T>(m0z * m0z);
-  s.rotated = layout.fixed<T>(m0z * m0z);
-  s.ritz = layout.fixed<T>(m0z);
-  s.residuals = layout.fixed<T>(m0z);
-  s.colsum = layout.fixed<T>(nz);
-  s.norm_a = layout.fixed<T>(1);
-
-  std::byte *const status = layout.fixed<std::byte>(sizeof(device::FeastStatus<T>));
-  s.status = reinterpret_cast<device::FeastStatus<T> *>(status);
-  if (status != nullptr) {
-    s.lu_info = reinterpret_cast<int *>(status + offsetof(device::FeastStatus<T>, lu_info));
-    s.qr_info = reinterpret_cast<int *>(status + offsetof(device::FeastStatus<T>, qr_info));
-    s.eig_info = reinterpret_cast<int *>(status + offsetof(device::FeastStatus<T>, eig_info));
-  }
-
-  // One SCRATCH region: orthogonalize's workspace, then syevd's. They are never
-  // live together, so the block is sized to the larger and reused.
-  s.scratch = layout.scratch<T>(static_cast<std::size_t>(std::max(lwork_qr, lwork_eig)));
-
-  if (out != nullptr) {
-    *out = s;
-  }
-  return layout.total();
-}
-
-} // namespace calaman::feast_detail
 
 export namespace calaman {
 
@@ -176,7 +165,7 @@ Status make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, 
                                    static_cast<T *>(nullptr), &lwork_eig));
 
   const std::size_t bytes =
-      feast_detail::carve<T>(d_work, n, m0, static_cast<int>(Ne), lwork_qr, lwork_eig, slices);
+      carve_workspace(d_work, slices, n, m0, static_cast<int>(Ne), lwork_qr, lwork_eig);
   if (lwork_bytes != nullptr) {
     *lwork_bytes = bytes;
   }

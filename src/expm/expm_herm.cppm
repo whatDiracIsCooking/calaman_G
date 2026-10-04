@@ -50,7 +50,7 @@ import wwr.wrappers.common; // usual_fp, ComplexToRealType
 import wwr.wrappers.blas;   // geam, gemm
 import wwr.wrappers.solver; // syevd, heevd, and their *_bufferSize queries
 import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the geam/gemm)
-import calaman.common;      // WorkspaceLayout
+import calaman.common;      // carve_workspace
 import calaman.error_handling; // Status, PointerModeStatus
 import :detail;             // as_element, kMaxDim, HermWorkspace
 // device::herm_exp_scale arrives by #include "expm_bridge.h" in the GMF above.
@@ -104,10 +104,8 @@ Status expm_herm_bufferSize(wwr::wwrsolverDnHandle_t handle, const wwr::wwrblasF
   int lwork_eig = 0;
   CLM_TRY(herm_eig_lwork<T>(handle, uplo, n, &lwork_eig));
 
-  WorkspaceLayout layout(nullptr); // null base: size only, from the carve expm_herm runs
-  HermWorkspace<T> ws;
-  ws.carve(layout, n, lwork_eig);
-  *lwork_bytes = layout.total();
+  // Null base: size only, from the carve expm_herm runs.
+  *lwork_bytes = carve_workspace<HermWorkspace<T>>(nullptr, nullptr, n, lwork_eig);
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
@@ -158,10 +156,8 @@ Status expm_herm(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cu
   int lwork_eig = 0;
   CLM_TRY(herm_eig_lwork<T>(cusolver_handle, uplo, n, &lwork_eig));
 
-  WorkspaceLayout layout(d_work);
   HermWorkspace<T> ws;
-  ws.carve(layout, n, lwork_eig);
-  if (lwork_bytes < layout.total()) {
+  if (lwork_bytes < carve_workspace(d_work, &ws, n, lwork_eig)) {
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
 
