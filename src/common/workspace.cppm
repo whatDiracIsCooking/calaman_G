@@ -1,25 +1,24 @@
 /**
- * @file workspace_builder.cppm
- * @brief The :workspace_builder partition of calaman.common -- size one device
- *        scratch buffer built from many aligned regions, and carve the pointers
+ * @file workspace.cppm
+ * @brief The :workspace partition of calaman.common -- size one device scratch
+ *        buffer built from many aligned regions, and carve the pointers
  *
  * Pure host byte arithmetic: no device code, no allocation, no WarpWraps. A
  * routine that needs several device buffers wants ONE allocation carved into
  * aligned regions rather than many calls to the device allocator.
  *
- * Two kinds of region: FIXED regions are all live at the same time, so their
- * aligned sizes ACCUMULATE; SCRATCH regions are temporaries that alias, so only
- * the LARGEST is counted. total() is the fixed sum plus that largest scratch
- * region. Every region is rounded up to `alignment` (default 256, the base
- * alignment device allocators hand back), via the :align_up partition.
+ * Two kinds of region: FIXED regions are all live at once, so their aligned
+ * sizes ACCUMULATE; SCRATCH regions alias, so only the LARGEST counts. total()
+ * is the fixed sum plus that largest scratch. Every region is rounded up to
+ * `alignment` (default 256, device allocators' base alignment) via :align_up.
  *
- * Three names, outermost first -- prefer the outermost that fits:
+ * Two names -- prefer the first where a struct fits:
  *   - carve_workspace + the SlicesFor concept: a routine's slices struct owns
  *     ONE carve() member describing its layout, and carve_workspace runs it
  *     over a null base to size (its *_bufferSize) or over the real base to
  *     carve, so the size query can never drift from the carving.
- *   - WorkspaceLayout: the primitive carve() members are written against.
- *   - WorkspaceBuilder: byte accounting only; the caller derives offsets itself.
+ *   - WorkspaceLayout: the primitive carve() members are written against, and
+ *     the direct spelling for a sizing-only query with no pointers to hand out.
  *
  * Deliberately not hardened against overflow: plain std::size_t arithmetic for
  * realistic workspace sizes, not adversarial inputs (see align_up.h).
@@ -42,7 +41,7 @@
  *   calaman::carve_workspace(d_work, &s, n, lwork); // same path, real pointers
  */
 
-export module calaman.common:workspace_builder;
+export module calaman.common:workspace;
 
 import std;
 
@@ -50,66 +49,23 @@ import :align_up; // calaman::align_up -- the per-region rounding
 
 namespace calaman {
 
-/// @brief Accumulate the byte size of one device workspace built from aligned
-///        fixed and scratch regions
-///
-/// Add every buffer the workspace must hold, then read total() for the number of
-/// bytes to allocate once. Fixed regions (add_fixed) coexist and sum; scratch
-/// regions (add_scratch) alias, so only the largest is counted. See the file
-/// header for the layout contract. All members are noexcept and do no allocation.
-export class WorkspaceBuilder {
-  std::size_t fixed_ = 0;   ///< running sum of the aligned fixed regions
-  std::size_t scratch_ = 0; ///< largest aligned scratch region seen so far
-
-public:
-  /// @brief Reserve a fixed region that stays live -- its aligned size is added
-  ///
-  /// @tparam T Element type; each element is sizeof(T) bytes
-  /// @param count Number of elements in one buffer
-  /// @param copies Number of identical buffers to size (each aligned)
-  /// @param alignment Byte boundary each buffer starts on (a power of two)
-  template <typename T>
-  void add_fixed(const std::size_t count, const std::size_t copies = 1,
-                 const std::size_t alignment = 256) noexcept {
-    fixed_ += align_up(count * sizeof(T), alignment) * copies;
-  }
-
-  /// @brief Reserve a scratch region that aliases others -- total tracks only the
-  ///        largest such region, not their sum
-  ///
-  /// @tparam T Element type; each element is sizeof(T) bytes
-  /// @param count Number of elements in one buffer
-  /// @param copies Number of identical buffers to size (each aligned)
-  /// @param alignment Byte boundary each buffer starts on (a power of two)
-  template <typename T>
-  void add_scratch(const std::size_t count, const std::size_t copies = 1,
-                   const std::size_t alignment = 256) noexcept {
-    scratch_ = std::max(scratch_, align_up(count * sizeof(T), alignment) * copies);
-  }
-
-  /// @brief Total bytes to allocate: every fixed region plus the largest scratch
-  [[nodiscard]] std::size_t total() const noexcept { return fixed_ + scratch_; }
-};
-
 /// @brief Lay out ONE device workspace buffer into aligned regions, SIZING the
 ///        layout and handing back the typed pointer from the SAME calls
 ///
-/// WorkspaceBuilder answers "how many bytes"; WorkspaceLayout also answers "where
-/// is each region". Construct it over the real base to carve, or over nullptr to
-/// size only -- every fixed()/scratch() returns nullptr in sizing mode but
-/// advances the offsets identically, so a routine writes its layout once and runs
-/// it twice: null base inside its *_bufferSize, the real base inside the routine.
-/// The size query therefore cannot drift from the carving.
+/// Construct it over the real base to carve, or over nullptr to size only --
+/// every fixed()/scratch() returns nullptr in sizing mode but advances the
+/// offsets identically, so a routine writes its layout once and runs it twice:
+/// null base inside its *_bufferSize, the real base inside the routine. The
+/// size query therefore cannot drift from the carving.
 ///
-/// The two region kinds are WorkspaceBuilder's: FIXED regions coexist and
-/// accumulate; SCRATCH regions alias, so they share one base and total() counts
-/// only the largest. ADD EVERY FIXED REGION BEFORE ANY SCRATCH REGION -- the
-/// scratch zone sits at the end of the fixed run, so a fixed() after a scratch()
-/// would overlap it. Each region is rounded up to `alignment` (default 256, the
-/// boundary a device allocator hands back, so a buffer from one starts aligned);
-/// successive offsets stay aligned as long as every region shares that alignment.
-/// Same overflow caveats as WorkspaceBuilder and align_up -- realistic workspace
-/// sizes, not adversarial inputs.
+/// FIXED regions coexist and accumulate; SCRATCH regions alias, so they share
+/// one base and total() counts only the largest. ADD EVERY FIXED REGION BEFORE
+/// ANY SCRATCH REGION -- the scratch zone sits at the end of the fixed run, so
+/// a fixed() after a scratch() would overlap it. Each region is rounded up to
+/// `alignment` (default 256, the boundary a device allocator hands back, so a
+/// buffer from one starts aligned); successive offsets stay aligned as long as
+/// every region shares that alignment. Same overflow caveats as align_up --
+/// realistic workspace sizes, not adversarial inputs.
 export class WorkspaceLayout {
   std::byte *base_;         ///< buffer base, or nullptr to size without carving
   std::size_t fixed_ = 0;   ///< running end of the fixed run, in bytes

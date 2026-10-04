@@ -5,8 +5,7 @@
 #   :constants          constants.cppm + constants.h -- typed constants
 #   :align_up           align_up.cppm + align_up.h -- integer rounding helpers
 #   :enums              enums.cppm + enums.h -- the LAPACK selector enums
-#   :workspace_builder  workspace_builder.cppm -- byte sizing
-#                       (WorkspaceBuilder), pointer carving (WorkspaceLayout)
+#   :workspace          workspace.cppm -- pointer carving (WorkspaceLayout)
 #                       and the carve-once idiom (SlicesFor, carve_workspace)
 #                       for one device scratch buffer; pure host arithmetic
 #   :validation         validation.cppm -- argument-checking predicates
@@ -21,7 +20,7 @@
 # "common/<name>.h", so the include root that resolves that spelling must be
 # EXPORTED, not PRIVATE (CLAUDE.md, Conventions). These are the first shared
 # headers in src/ -- the lacpy bridge is internal, so it kept its root PRIVATE.
-# :workspace_builder and :validation have no header -- nothing device-side needs
+# :workspace and :validation have no header -- nothing device-side needs
 # them -- so each is just the .cppm.
 #
 # INCLUDE_DIRS_PUBLIC is the src/ root, wrapped in $<BUILD_INTERFACE:> so the
@@ -29,7 +28,7 @@
 # spelling waits on the install tier (CALAMAN_INSTALL, docs/architecture.md §2),
 # as it does for lacpy.
 #
-# IMPORT_STD: the :workspace_builder partition uses std::size_t / std::max via
+# IMPORT_STD: the :workspace partition uses std::size_t / std::max via
 # `import std;`.
 calaman_add_cxx_module_library(
   NAME
@@ -40,7 +39,7 @@ calaman_add_cxx_module_library(
   constants.cppm
   align_up.cppm
   enums.cppm
-  workspace_builder.cppm
+  workspace.cppm
   validation.cppm
   INCLUDE_DIRS_PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
