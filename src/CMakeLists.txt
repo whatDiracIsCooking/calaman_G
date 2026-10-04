@@ -344,3 +344,13 @@ add_subdirectory(laqr0)
 # links both dispatch targets plus calaman.laset (Z init, trash clear), so it is
 # placed after laqr0 (and therefore after lahqr/laset) once all are defined.
 add_subdirectory(hseqr)
+
+# calaman.geev -- the ?geev driver: eigenvalues and optional left/right
+# eigenvectors of a general real matrix. A host composition that chains the
+# whole nonsymmetric-eigenproblem pipeline -- calaman.lange/calaman.lascl
+# (optional scaling), calaman.gebal (balance), calaman.gehrd (Hessenberg), orghr
+# (form Q) + calaman.hseqr (Schur form) or calaman.hseqr alone, calaman.trevc3
+# (eigenvectors of the Schur form), calaman.gebak (undo balancing), plus a
+# wwr::gemm back-transform and a wwr BLAS-1 normalization. Placed last: it links
+# all of the above, so every one must already be defined.
+add_subdirectory(geev)
