@@ -1,7 +1,7 @@
-# Host-only suite for calaman.common's :workspace_builder partition -- the
-# workspace byte arithmetic and the carve-once idiom (SlicesFor +
-# carve_workspace). No device memory, no kernel, no oracle: it links only
-# calaman.common, is NOT marked REQUIRES_GPU, and runs on a card-less runner.
+# Host-only suite for calaman.common's :workspace partition -- the workspace
+# byte arithmetic and the carve-once idiom (SlicesFor + carve_workspace). No
+# device memory, no kernel, no oracle: it links only calaman.common, is NOT
+# marked REQUIRES_GPU, and runs on a card-less runner.
 calaman_add_gtest_executable(
   NAME
   workspace_tests

@@ -70,7 +70,7 @@ import std;
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_OP_N, WWRBLAS_STATUS_*
 import wwr.runtime_api;   // wwrStream_t (the type wwrblasGetStream writes)
 import wwr.wrappers.blas; // gemm
-import calaman.common;    // kZero<T> / kOne<T> (:constants), WorkspaceBuilder, all_nonnull (:validation)
+import calaman.common;    // kZero<T> / kOne<T> (:constants), WorkspaceLayout, all_nonnull (:validation)
 
 // export import, not a plain import: horner() RETURNS calaman::Status, whose
 // member functions (ok/name/message) a consumer of this module must see, not
@@ -104,9 +104,9 @@ export template<typename T>
 std::size_t horner_bufferSize(const int n) {
   const std::size_t order = static_cast<std::size_t>(n < 1 ? 1 : n);
 
-  WorkspaceBuilder builder;
-  builder.add_scratch<T>(order * order); // the ping-pong accumulator
-  return builder.total();
+  WorkspaceLayout layout(nullptr); // null base: size only
+  (void)layout.scratch<T>(order * order); // the ping-pong accumulator
+  return layout.total();
 }
 
 // ========================================================================

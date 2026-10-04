@@ -12,7 +12,7 @@
  * (a function cannot return for its caller); CLM_REQUIRE in
  * error_handling/error_macros.h is the macro that pairs with them for it.
  *
- * Header-less, like :workspace_builder: nothing device-side needs these, so they
+ * Header-less, like :workspace: nothing device-side needs these, so they
  * live in the module purview only, reached through `import calaman.common;`.
  *
  * Usage:

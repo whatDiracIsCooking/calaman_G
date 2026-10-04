@@ -1,7 +1,7 @@
-// Host-only suite for calaman.common's :workspace_builder partition -- the
-// WorkspaceBuilder/WorkspaceLayout byte arithmetic and the carve-once idiom
-// (SlicesFor + carve_workspace). Pure host logic, no device memory and no
-// kernel, so it is NOT labeled REQUIRES_GPU and runs on a card-less CI runner.
+// Host-only suite for calaman.common's :workspace partition -- the
+// WorkspaceLayout byte arithmetic and the carve-once idiom (SlicesFor +
+// carve_workspace). Pure host logic, no device memory and no kernel, so it is
+// NOT labeled REQUIRES_GPU and runs on a card-less CI runner.
 
 #include <gtest/gtest.h>
 
@@ -39,29 +39,13 @@ static_assert(SlicesFor<TestSlices, int, int>);
 static_assert(!SlicesFor<TestSlices, int, int, int>); // carve() takes exactly (n, lwork)
 static_assert(!SlicesFor<NotSlices, int, int>);       // no carve() at all
 
-TEST(CommonWorkspaceTests, BuilderFixedAccumulatesAndScratchMaxes) {
-  WorkspaceBuilder wb;
-  wb.add_fixed<double>(10);     // 80 bytes -> one 256 block
-  wb.add_fixed<int>(100, 2);    // 400 bytes -> one 512-byte pair of blocks
-  wb.add_scratch<double>(1000); // 8000 bytes, the larger scratch
-  wb.add_scratch<float>(10);    // aliases, smaller, must not add
-  EXPECT_EQ(wb.total(), aligned(80) + 2 * aligned(400) + aligned(8000));
-}
-
-TEST(CommonWorkspaceTests, LayoutSizingMatchesBuilderAccounting) {
+TEST(CommonWorkspaceTests, LayoutFixedAccumulatesAndScratchMaxes) {
   WorkspaceLayout layout(nullptr);
-  (void)layout.fixed<double>(10);
-  (void)layout.fixed<int>(100);
-  (void)layout.scratch<double>(1000);
-  (void)layout.scratch<float>(10);
-
-  WorkspaceBuilder wb;
-  wb.add_fixed<double>(10);
-  wb.add_fixed<int>(100);
-  wb.add_scratch<double>(1000);
-  wb.add_scratch<float>(10);
-
-  EXPECT_EQ(layout.total(), wb.total());
+  (void)layout.fixed<double>(10);     // 80 bytes -> one 256 block
+  (void)layout.fixed<int>(100);       // 400 bytes -> one 512-byte block
+  (void)layout.scratch<double>(1000); // 8000 bytes, the larger scratch
+  (void)layout.scratch<float>(10);    // aliases, smaller, must not add
+  EXPECT_EQ(layout.total(), aligned(80) + aligned(400) + aligned(8000));
 }
 
 TEST(CommonWorkspaceTests, CarveWorkspaceSizesAndCarvesIdentically) {

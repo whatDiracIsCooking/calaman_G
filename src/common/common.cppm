@@ -7,9 +7,9 @@
  * so each concern keeps its own file: `:constants` (constants.cppm, the typed
  * mathematical constants), `:align_up` (align_up.cppm, the integer rounding
  * helpers), `:enums` (enums.cppm, the LAPACK selector enums Jobz/Uplo),
- * `:workspace_builder` (workspace_builder.cppm, sizing and carving one device
- * scratch buffer) and `:validation` (validation.cppm, argument-checking
- * predicates like all_nonnull). This unit is only the assembly point.
+ * `:workspace` (workspace.cppm, sizing and carving one device scratch buffer)
+ * and `:validation` (validation.cppm, argument-checking predicates like
+ * all_nonnull). This unit is only the assembly point.
  *
  * `export import :part` re-exports a partition's exported names to importers of
  * the module, so a consumer writes `import calaman.common;` once and sees every
@@ -29,5 +29,5 @@ export module calaman.common;
 export import :constants;
 export import :align_up;
 export import :enums;
-export import :workspace_builder;
+export import :workspace;
 export import :validation;
