@@ -6,7 +6,7 @@
  *
  * Two surfaces, one module. The SCALAR helper -- calaman::ladiv_scalar(a, b, c,
  * d, &p, &q), (p+i*q) = (a+i*b)/(c+i*d) by Smith's algorithm -- lives header-only
- * in "ladiv/ladiv.h" and is CLM_HOST_DEVICE, because its one real consumer is
+ * in "lapack/ladiv/ladiv.h" and is CLM_HOST_DEVICE, because its one real consumer is
  * laln2's KERNEL, which must #include it and call it per-thread (an imported host
  * function cannot be called from a __device__ context). That header is pulled
  * into the global module fragment below and re-#included by ladiv.cu; it is not a

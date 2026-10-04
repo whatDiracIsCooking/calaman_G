@@ -19,7 +19,7 @@
  *
  * Shared by ladiv.cu (the batched device launcher the oracle exercises), which
  * includes it bare as a same-directory header, and later by laln2's own .cu,
- * which will reach it root-relative ("ladiv/ladiv.h") off the src/ root -- the
+ * which will reach it root-relative ("lapack/ladiv/ladiv.h") off the src/ root -- the
  * two-consumer split constants.h uses. The interface unit does NOT include it:
  * a kernel reaches this by #include, not by import, so it is not module-exported.
  */

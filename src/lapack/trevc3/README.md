@@ -58,7 +58,7 @@ this kernel. As `calaman.laexc` inlines its `?lartg` / `?lasy2` / `?lanv2` /
 arithmetic `src/laln2/laln2.cu` ships, line for line (that module's oracle pins it
 to the reference). Its complex divisions reach the **same** header-only
 host/device `calaman::ladiv_scalar` from `calaman.ladiv`'s `ladiv.h` the reference
-reaches as `DLADIV`, included root-relative (`"ladiv/ladiv.h"`) so the call has
+reaches as `DLADIV`, included root-relative (`"lapack/ladiv/ladiv.h"`) so the call has
 device linkage. The kernel therefore links no sibling LAPACK module.
 
 ## Normalization fixes the sign

@@ -13,7 +13,7 @@
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which
 # carries parallel_for.cuh plus, transitively, wwr.device: runtime.h
 # (wwrStream_t, via laln2_bridge.h) and the backend runtime libs. The src/
-# include root is added so "ladiv/ladiv.h" resolves root-relative --
+# include root is added so "lapack/ladiv/ladiv.h" resolves root-relative --
 # ladiv_scalar is header-only pure arithmetic (compare/multiply/divide), so
 # there is nothing to LINK beyond it, the same hand-rolled root shape
 # calaman.reduce_columns and calaman.elem_ops use.
