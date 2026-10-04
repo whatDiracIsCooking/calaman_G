@@ -13,8 +13,9 @@ Two further facts bound anything built on sorting this tensor:
     5.92/1.23 ~ 4.8x end-to-end -- already below the 5.12x in-place winner.
     No value transform can recover that: sorting loses on ratio, period.
 
-So this spike is NOT a ratio play. It measures the ACCURACY lever the earlier
-work left on the table: block-floating-point.
+For SORTED schemes this spike is NOT a ratio play -- every one is walled under
+the permutation ceiling. It measures the ACCURACY lever the earlier work left on
+the table: block-floating-point.
 
 The idea (per-REGION 2^k, not per-element and not global):
 
@@ -23,19 +24,24 @@ The idea (per-REGION 2^k, not per-element and not global):
     at ~6e-5; even fp32 has a denormal tail here -- values ~1e-40 cast to fp32
     subnormals, max rel err ~7e-2 per #124).
   * PER-ELEMENT frexp (block size 1) gives every value its own exponent -- no
-    underflow, uniform roundoff -- but the exponent side-stream is one int per
-    value (n of them).
+    underflow, uniform roundoff, and crucially ORDER-INDEPENDENT: an element
+    keeps its own exponent whether or not the stream is sorted. Cost is one int16
+    exponent per value (n of them).
   * BLOCK (this spike): one 2^k per contiguous REGION of B values. The scale is
     a power of two, so it is a LOSSLESS exponent shift (mantissa bits untouched);
     its only job is to pull each region into the format's normal range so the
     downcast does not underflow. Cost is n/B exponents, not n.
 
-Why SORTING is the enabler: block-FP only rescues accuracy if a region's values
-share a magnitude. On the sorted stream, contiguous values are adjacent in
-magnitude, so one exponent per region ~ per-element accuracy. On the UNSORTED
-stream, a region spans the full dynamic range and the shared exponent underflows
-the small members -- so block-FP is useless without the sort. We measure both to
-prove exactly that, and sweep B to trace accuracy vs side-channel cost.
+SORTING enables BLOCK (B>1), but NOT per-element. Block-FP only rescues accuracy
+if a region's values share a magnitude: on the sorted stream contiguous values
+are magnitude-neighbours, so one exponent per region ~ per-element accuracy; on
+the unsorted stream a region spans the full range and its shared exponent
+underflows the small members. PER-ELEMENT frexp (B=1) never shares an exponent,
+so it is safe in ANY order and in-place owes NO permutation -- the row the sorted
+framing missed: fp16 in-place per-element lands 8.32x zstd (4.88e-4, 0 underflow),
+past fp32-in-place's 5.12x, because it buys fp16's underflow safety without ever
+reordering. We sweep B on both streams for accuracy vs side-channel, and measure
+the in-place per-element rows end-to-end to pin that ratio win.
 
     uv run --with numpy --with cramjam --with h5py \
         experimental/compression_demo/cderi_block_scale_demo.py [path/to/cderi.h5]
@@ -278,16 +284,19 @@ def main() -> None:
     # End-to-end ratio for representative configs, vs the honest baselines.
     print("\n" + "=" * 78)
     print("3. END-TO-END ratio vs original 5.92 GB (lossy only in the fpN cast).")
-    print("   sorted rows pay value+exps+perm+mask; in-place pays value+mask.")
+    print("   sorted rows pay value+exps+perm+mask; in-place pays value+mask")
+    print("   (+exps when per-element) -- never a permutation.")
     print("=" * 78)
 
     # (label, prec, stream, B or None=no-scale, needs_perm)
     configs = [
         ("fp32 in-place, no-scale", "fp32", nz, None, False),
+        ("fp32 in-place, per-element", "fp32", nz, 1, False),
         ("fp32 sorted, global", "fp32", nz_sorted, nnz, True),
         ("fp32 sorted, block-4096", "fp32", nz_sorted, 4096, True),
         ("fp32 sorted, per-element", "fp32", nz_sorted, 1, True),
         ("fp16 in-place, no-scale", "fp16", nz, None, False),
+        ("fp16 in-place, per-element", "fp16", nz, 1, False),
         ("fp16 sorted, global", "fp16", nz_sorted, nnz, True),
         ("fp16 sorted, block-4096", "fp16", nz_sorted, 4096, True),
         ("fp16 sorted, per-element", "fp16", nz_sorted, 1, True),
@@ -320,11 +329,15 @@ def main() -> None:
 
     print("\n  References (#124, zstd): fp64 zero-strip 2.56x | fp32 in-place 5.12x")
     print(f"  | fp32 sorted 4.04x | permutation ceiling {ceil:.2f}x.")
-    print("\n  Bottom line: block-FP delivers the accuracy (Part 1) at a near-free")
-    print("  side-channel (Part 2), but on THIS tensor every sorted row is walled")
-    print("  under the permutation ceiling -- so it is an ACCURACY tool, not a")
-    print("  ratio win here. It pays only where order need not be restored, or the")
-    print("  permutation is cheap (near-sorted data).")
+    print("\n  Bottom line: for SORTED schemes block-FP is an accuracy tool, not a")
+    print("  ratio win -- every sorted row is walled under the permutation ceiling,")
+    print("  so sorting pays only where order need not be restored or is near-free.")
+    print("  But PER-ELEMENT frexp needs no sort (it never shares an exponent), so")
+    print("  it runs IN-PLACE with no permutation: fp16 in-place per-element lands")
+    print("  8.32x zstd (4.88e-4, 0 underflow), past fp32-in-place's 5.12x -- the")
+    print("  one scaling scheme that is a genuine ratio win on this tensor, where a")
+    print("  ~5e-4 relative error is acceptable. (For fp32, frexp is pure overhead:")
+    print("  no underflow to fix, so in-place per-element 4.85x < no-scale 5.12x.)")
 
 
 if __name__ == "__main__":
