@@ -337,3 +337,10 @@ add_subdirectory(laqr3)
 # Placed last: it links lahqr, laqr3, laqr4 and laqr5, so all four must already
 # be defined.
 add_subdirectory(laqr0)
+
+# calaman.hseqr -- the ?hseqr driver: eigenvalues or the full Schur form of an
+# upper Hessenberg matrix, dispatching calaman.laqr0 (n > NMIN = 75) vs
+# calaman.lahqr (n <= NMIN) at the ILAENV(12) crossover. A host composition that
+# links both dispatch targets plus calaman.laset (Z init, trash clear), so it is
+# placed after laqr0 (and therefore after lahqr/laset) once all are defined.
+add_subdirectory(hseqr)
