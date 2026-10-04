@@ -26,7 +26,7 @@ wwr::wwrStreamSynchronize(stream);   // gebak does NOT synchronize on its own
 `GebakSide` says whether `V` holds `Right` (`'R'`) or `Left` (`'L'`) eigenvectors:
 right vectors scale row `i` by `scale(i)`, left vectors by `1/scale(i)`. `ilo`,
 `ihi` are 1-based and `d_scale` is **real even for complex `T`**
-(`wwr::ComplexToRealType<T>`), carrying `gebal`'s dual encoding unchanged — the
+(`calaman::ComplexToRealType<T>`), carrying `gebal`'s dual encoding unchanged — the
 diagonal of `D` inside `[ilo, ihi]`, the 1-based interchange index outside it. It
 returns a `calaman::Status`.
 

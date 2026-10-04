@@ -28,7 +28,7 @@ calaman_add_gpu_device_library(
 #
 # LINK_PUBLIC carries every module the exported surface names: wwr.runtime_api
 # (the wwrStream_t it forwards), wwr.complex (the two complex element types),
-# wwr.wrappers.common (the complex_fp constraint), and calaman.error_handling
+# calaman.common (the complex_fp constraint), and calaman.error_handling
 # (re-exported via `export import` for the Status return type; its src/ root
 # resolves the "error_handling/error_macros.h" interface.cppm pulls into the GMF
 # for CLM_TRY).
@@ -47,7 +47,7 @@ calaman_add_cxx_module_library(
   LINK_PUBLIC
   wwr.runtime_api
   wwr.complex
-  wwr.wrappers.common
+  calaman.common
   calaman.error_handling
   LINK_PRIVATE
   wwr_backend

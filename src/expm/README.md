@@ -15,7 +15,7 @@ Matrix exponential `exp(A)`, by two routes:
 
 Written once against WarpWraps's backend-neutral `wwr*` names and built for either
 vendor; templated over all four element types (`float`, `double`, and the two
-complex types), constrained by `wwr::usual_fp`.
+complex types), constrained by `calaman::usual_fp`.
 
 ## Algorithm
 

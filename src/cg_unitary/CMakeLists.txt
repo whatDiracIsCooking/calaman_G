@@ -31,9 +31,9 @@ calaman_add_gpu_device_library(
 # templates the consumer's instantiation reaches is therefore PUBLIC.
 #   wwr.blas / wwr.solver / wwr.runtime_api  handle, status and stream types
 #   wwr.complex                              the complex element types
-#   wwr.wrappers.common                      usual_fp / ComplexToRealType / ...
 #   wwr.wrappers.blas                        gemm/gemv/geam/dot/dotc/dgmm/...
-#   calaman.common                           kOne/kZero/..., carve_workspace
+#   calaman.common                           kOne/kZero/..., carve_workspace,
+#                                            usual_fp / ComplexToRealType
 #   calaman.error_handling                   Status, the cross-domain return
 #   calaman.expm                             expm, expm_bufferSize, matrix_norm1
 #   calaman.orthogonalize                    the optional reunitarization
@@ -56,7 +56,6 @@ calaman_add_cxx_module_library(
   wwr.solver
   wwr.runtime_api
   wwr.complex
-  wwr.wrappers.common
   wwr.wrappers.blas
   calaman.common
   calaman.error_handling

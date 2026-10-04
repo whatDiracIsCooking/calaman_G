@@ -37,9 +37,8 @@ export module calaman.feast:buffer_size;
 import std;
 import wwr.blas;            // WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL_MODE_*
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEigMode_t, WWRSOLVER_EIG_MODE_VECTOR
-import wwr.wrappers.common; // real_fp, RealToComplexType
 import wwr.wrappers.solver; // syevd_bufferSize
-import calaman.common;      // align_up, WorkspaceLayout, carve_workspace
+import calaman.common;      // align_up, WorkspaceLayout, carve_workspace, real_fp, RealToComplexType
 import calaman.orthogonalize; // orthogonalize_bufferSize
 export import calaman.error_handling; // Status -- the cross-domain return type
 
@@ -51,9 +50,9 @@ export namespace calaman {
  * Built once per solve by make_feast_slices and passed to each step, so the
  * steps allocate nothing and the sizing lives in one place.
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 struct FeastSlices {
-  using C = wwr::RealToComplexType<T>;
+  using C = calaman::RealToComplexType<T>;
 
   // ── the contour filter ─────────────────────────────────────────────────
   C *resolvents = nullptr;          ///< Ne packed n x n blocks: Z_e I - A, then its LU factors
@@ -148,7 +147,7 @@ export namespace calaman {
  * @param slices      Out, may be null.
  * @param lwork_bytes Out, may be null: the bytes the layout needs.
  */
-template<wwr::real_fp T, std::size_t Ne>
+template<calaman::real_fp T, std::size_t Ne>
   requires(Ne == 4 || Ne == 8)
 Status make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int m0,
                          void *d_work, FeastSlices<T> *slices, std::size_t *lwork_bytes) {
@@ -181,7 +180,7 @@ Status make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, 
  * @param m0          Subspace size, 1 <= m0 <= n.
  * @param lwork_bytes Out: bytes required.
  */
-template<wwr::real_fp T, std::size_t Ne = 8>
+template<calaman::real_fp T, std::size_t Ne = 8>
   requires(Ne == 4 || Ne == 8)
 Status feast_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int m0,
                         std::size_t *lwork_bytes) {

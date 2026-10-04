@@ -24,8 +24,7 @@
 #   wwr.solver             wwrsolverDnHandle_t (calaman.orghr's handle)
 #   wwr.runtime_api        wwrMemcpyAsync / wwrStreamSynchronize (staging)
 #   wwr.wrappers.blas      gemm (back-transform), nrm2 / scal / rot (normalize)
-#   wwr.wrappers.common    real_fp (the T constraint)
-#   calaman.common         Region / MatrixNorm / WorkspaceLayout
+#   calaman.common         real_fp; Region / MatrixNorm / WorkspaceLayout
 #   calaman.lange          max-abs norm for the scaling decision
 #   calaman.lascl          scale a, rescale the eigenvalues
 #   calaman.lacpy          copy the gehrd reflectors into Q
@@ -46,7 +45,6 @@ calaman_add_cxx_module_library(
   wwr.solver
   wwr.runtime_api
   wwr.wrappers.blas
-  wwr.wrappers.common
   calaman.common
   calaman.lange
   calaman.lascl

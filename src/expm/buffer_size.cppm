@@ -23,9 +23,8 @@ import std;
 import wwr.blas;            // wwrblasStatus_t, WWRBLAS_* (invalid-value / success returns)
 import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex (the extern-template list)
-import wwr.wrappers.common; // usual_fp, ComplexToRealType
 import wwr.wrappers.solver; // getrf_bufferSize
-import calaman.common;      // carve_workspace
+import calaman.common;      // carve_workspace, usual_fp
 import calaman.error_handling; // Status
 import :detail;             // PadeWorkspace, ExpmWorkspace
 
@@ -49,7 +48,7 @@ namespace calaman {
  * @return Status: SUCCESS, WWRBLAS_STATUS_INVALID_VALUE for a bad degree or
  *         dimension, or the solver-domain status if the getrf query fails.
  */
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 Status pade_bufferSize(wwr::wwrsolverDnHandle_t handle, const int m, const int n,
                        std::size_t *lwork_bytes) {
   if (pade_coeffs(m) == nullptr || n < 1) {
@@ -75,7 +74,7 @@ Status pade_bufferSize(wwr::wwrsolverDnHandle_t handle, const int m, const int n
  * @param n           Matrix dimension.
  * @param lwork_bytes Output: required workspace in bytes.
  */
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 Status expm_bufferSize(wwr::wwrsolverDnHandle_t handle, const int n, std::size_t *lwork_bytes) {
   if (n < 1) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;

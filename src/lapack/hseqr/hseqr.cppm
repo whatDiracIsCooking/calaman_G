@@ -53,7 +53,7 @@ module;
 export module calaman.hseqr;
 
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 import calaman.lahqr;       // calaman::lahqr -- the n <= NMIN double-shift path
 import calaman.laqr0;       // calaman::laqr0 -- the n > NMIN multishift path
 import calaman.laset;       // calaman::laset + Region -- Z init and trash clear
@@ -113,7 +113,7 @@ export enum class HseqrCompz {
 /// @param info Device int; 0 on success, <0 for an illegal argument (-k), or the
 ///        index below which convergence failed
 /// @return Success, or the runtime error a kernel launch or memcpy reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status hseqr(const wwr::wwrStream_t stream, const HseqrJob job, const HseqrCompz compz, const int n,
              const int ilo, const int ihi, T *const h, const int ldh, T *const wr, T *const wi,
              T *const z, const int ldz, T *const work, const int lwork, int *const info) {

@@ -65,7 +65,7 @@ export module calaman.laqr3;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 import calaman.laqr2;       // the small-window (?lahqr) pass, delegated whole
 import calaman.laqr4;       // the recursive multishift QR -- the window Schur form
 
@@ -128,7 +128,7 @@ namespace calaman {
 ///        unused on the delegated JW <= NMIN path
 /// @param lwork Governs calaman.laqr4's NWMAX / NSMAX; pass the value the oracle gets
 /// @return Success, or the runtime error a kernel launch or calaman.laqr4 reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status laqr3(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, const int n,
              const int ktop, const int kbot, const int nw, T *const h, const int ldh,
              const int iloz, const int ihiz, T *const z, const int ldz, int *const ns,

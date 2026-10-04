@@ -21,7 +21,7 @@
  * header is parsed in a host GMF (no wwr.complex import) and in a device .cu (no
  * host complex builder), with no common complex type. So every launcher is generic
  * in the element type @c T and, where it touches the real scale factors, in a
- * second parameter @c R, which the caller spells wwr::ComplexToRealType<T>. The
+ * second parameter @c R, which the caller spells calaman::ComplexToRealType<T>. The
  * .cu names the concrete wwrFloatComplex / wwrDoubleComplex only in its explicit
  * instantiations, in device context.
  *
@@ -53,7 +53,7 @@ inline constexpr int kGebakPermuteBlock = 256;
 /// so entries outside the window are simply never read.
 ///
 /// @tparam T Element type (float, double, wwrFloatComplex, wwrDoubleComplex).
-/// @tparam R Real scale type; call with wwr::ComplexToRealType<T>.
+/// @tparam R Real scale type; call with calaman::ComplexToRealType<T>.
 template<typename T, typename R>
 void gebak_scale_rows(wwr::wwrStream_t stream, T *V, int ldv, int m, int ilo0, int ihi0,
                       const R *scale, bool invert);
@@ -71,7 +71,7 @@ void gebak_scale_rows(wwr::wwrStream_t stream, T *V, int ldv, int m, int ilo0, i
 /// host driver stay asynchronous -- it never reads the scale indices back.
 ///
 /// @tparam T Element type.
-/// @tparam R Real scale type; call with wwr::ComplexToRealType<T>. @p scale is read
+/// @tparam R Real scale type; call with calaman::ComplexToRealType<T>. @p scale is read
 ///         only outside [ilo, ihi], where ?gebal stored the interchange indices.
 template<typename T, typename R>
 void gebak_permute(wwr::wwrStream_t stream, T *V, int ldv, int m, int n, int ilo, int ihi,

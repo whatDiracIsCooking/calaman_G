@@ -53,7 +53,7 @@ module;
 export module calaman.trexc;
 
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize, wwrErrorInvalidValue
-import wwr.wrappers.common; // real_fp -- the T constraint on the exported template
+import calaman.common;  // real_fp
 import calaman.laexc;       // calaman::laexc -- the adjacent-block swap each step runs
 import std;                 // std::size_t
 
@@ -126,7 +126,7 @@ Status subdiag_nonzero(wwr::wwrStream_t stream, const T *t, int ldt, int i, bool
 /// @param info Host int; 0 on success, 1 if a swap was rejected
 /// @param dinfo Device int scratch; each laexc swap writes its 0/1 outcome here
 /// @return Success, or the runtime error the first failing laexc launch reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status trexc(const wwr::wwrStream_t stream, const bool wantq, const int n, T *const t,
              const int ldt, T *const q, const int ldq, int *const ifst, int *const ilst,
              int *const info, int *const dinfo) {

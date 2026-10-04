@@ -30,11 +30,10 @@ import wwr.runtime_api;     // wwrStream_t
 import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, pointer-mode get/set
 import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex (the extern-template list)
-import wwr.wrappers.common; // usual_fp, ComplexToRealType
 import wwr.wrappers.blas;   // gemm
 import wwr.wrappers.solver; // getrf, getrf_bufferSize, getrs
 import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the gemms)
-import calaman.common;      // carve_workspace
+import calaman.common;      // carve_workspace, usual_fp, ComplexToRealType
 import calaman.error_handling; // Status, PointerModeStatus
 import :detail;             // as_element, kMaxDim, PadeWorkspace
 
@@ -75,11 +74,11 @@ namespace calaman {
  * @pre Both handles must be bound to @p stream.
  * @post The pointer mode of @p cublas_handle is left as it was found.
  */
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 Status pade(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
             wwr::wwrStream_t stream, const int m, const int n, const T *d_A, const int lda, T *d_r,
             const int ldr, void *d_work, const std::size_t lwork_bytes, int *d_info) {
-  using RealT = wwr::ComplexToRealType<T>;
+  using RealT = calaman::ComplexToRealType<T>;
 
   const double *b = pade_coeffs(m);
   if (b == nullptr || n < 1 || n > kMaxDim || lda < n || ldr < n || d_work == nullptr) {

@@ -15,7 +15,7 @@
  * pass (the host GMF parse does not get them). So every launcher is generic in
  * the complex element type @c ComplexT and
  * in its real component type @c RealT, which the caller spells as
- * wwr::ComplexToRealType<ComplexT>. The .cu names the concrete wwrFloatComplex /
+ * calaman::ComplexToRealType<ComplexT>. The .cu names the concrete wwrFloatComplex /
  * wwrDoubleComplex only in its explicit instantiations, in device context.
  *
  * wwrStream_t arrives from runtime.h, an include-only header, since a GMF cannot

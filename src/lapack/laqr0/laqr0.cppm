@@ -60,7 +60,7 @@ module;
 export module calaman.laqr0;
 
 import wwr.runtime_api;   // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 import calaman.lahqr;     // calaman::lahqr -- the tiny-window base case
 import calaman.laqr3;     // calaman::laqr3 -- the recursive aggressive early deflation
 import calaman.laqr4;     // calaman::laqr4 -- the trailing-submatrix shift source
@@ -292,7 +292,7 @@ void host_dlanv2(T a, T b, T c, T d, T &rt1r, T &rt1i, T &rt2r, T &rt2i) {
 /// @param lwork Governs NWMAX / NSMAX as in the reference; pass the value the oracle gets
 /// @param info Device int; 0 on success, or the index below which convergence failed
 /// @return Success, or the runtime error a kernel launch or memcpy reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, const int n,
              const int ilo, const int ihi, T *const h, const int ldh, T *const wr, T *const wi,
              const int iloz, const int ihiz, T *const z, const int ldz, T *const work,

@@ -43,17 +43,16 @@ import std;
 import wwr.blas;            // wwrblasHandle_t, pointer-mode get/set, WWRBLAS_*
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR, WWRSOLVER_EIG_TYPE_1
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize
-import wwr.wrappers.common; // real_fp
 import wwr.wrappers.blas;   // gemm, axpy, dot, nrm2, scal
 import wwr.wrappers.solver; // syevd, sygvd
 import :buffer_size;        // DavidsonSlices
-import calaman.common;      // kOne, kZero, kNegativeOne
+import calaman.common;      // kOne, kZero, kNegativeOne, real_fp
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
 
 /// @brief Convergence/iteration knobs for one davidson_solve call.
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 struct DavidsonOptions {
   /// @brief A root is converged when its residual norm (Euclidean, or the M-norm
   ///        on the metric path) is at or below this.
@@ -77,7 +76,7 @@ struct DavidsonOptions {
 };
 
 /// @brief Outcome of a davidson_solve call.
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 struct DavidsonResult {
   bool converged = false;
   int iterations = 0;
@@ -88,14 +87,14 @@ struct DavidsonResult {
 
 /// @brief sigma(stream, block_size, b, sigma_out): out[:, :block_size] =
 ///        A b[:, :block_size], device-resident, n x block_size column-major (ld n).
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 using DavidsonSigmaFn =
     std::function<Status(wwr::wwrStream_t stream, int block_size, const T *b, T *sigma_out)>;
 
 /// @brief precondition(stream, n_roots, theta, residual, correction): turn the
 ///        residual block (n x n_roots, device) into a correction block (same
 ///        shape, device), given the current Ritz values @p theta (n_roots, HOST).
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 using DavidsonPreconditionFn = std::function<Status(wwr::wwrStream_t stream, int n_roots,
                                                     const T *theta, const T *residual,
                                                     T *correction)>;
@@ -104,7 +103,7 @@ using DavidsonPreconditionFn = std::function<Status(wwr::wwrStream_t stream, int
 ///        same shape as DavidsonSigmaFn. Empty (default) selects the Euclidean
 ///        path; non-empty selects the generalized path and requires the workspace
 ///        to have been sized with_metric.
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 using DavidsonMetricFn =
     std::function<Status(wwr::wwrStream_t stream, int block_size, const T *b, T *m_out)>;
 
@@ -164,7 +163,7 @@ export namespace calaman {
  *         a workspace not sized with_metric; or a propagated BLAS/solver/runtime
  *         failure.
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                       wwr::wwrStream_t stream, int n, int n_roots, int max_subspace, const T *guess,
                       int guess_count, const DavidsonSlices<T> &s, const DavidsonSigmaFn<T> &sigma,

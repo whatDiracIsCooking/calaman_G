@@ -35,9 +35,8 @@ export module calaman.davidson:buffer_size;
 import std;
 import wwr.blas;            // WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL_MODE_*
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEig*_t, WWRSOLVER_EIG_*
-import wwr.wrappers.common; // real_fp
 import wwr.wrappers.solver; // syevd_bufferSize, sygvd_bufferSize
-import calaman.common;      // WorkspaceLayout, carve_workspace
+import calaman.common;      // WorkspaceLayout, carve_workspace, real_fp
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
@@ -50,7 +49,7 @@ export namespace calaman {
  * workspace was sized without them) and non-null only when the slices were made
  * with_metric.
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 struct DavidsonSlices {
   // ── Euclidean path (always carved) ──────────────────────────────────────
   T *v = nullptr;          ///< n x max_subspace: the subspace basis, ld n
@@ -124,7 +123,7 @@ export namespace calaman {
  * @param slices      Out, may be null.
  * @param lwork_bytes Out, may be null: the bytes the layout needs.
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status make_davidson_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int n_roots,
                             const int max_subspace, const bool with_metric, void *d_work,
                             DavidsonSlices<T> *slices, std::size_t *lwork_bytes) {
@@ -163,7 +162,7 @@ Status make_davidson_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int 
  *                     value passed to make_davidson_slices and davidson_solve.
  * @param lwork_bytes  Out: bytes required.
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status davidson_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int n_roots,
                            const int max_subspace, const bool with_metric,
                            std::size_t *lwork_bytes) {

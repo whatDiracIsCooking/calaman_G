@@ -36,10 +36,9 @@ import wwr.runtime_api;     // wwrStream_t
 import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, pointer-mode get/set
 import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex (the extern-template list)
-import wwr.wrappers.common; // usual_fp, ComplexToRealType
 import wwr.wrappers.blas;   // gemm, geam
 import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the gemms/geams)
-import calaman.common;      // carve_workspace
+import calaman.common;      // carve_workspace, usual_fp, ComplexToRealType
 import calaman.error_handling; // Status, PointerModeStatus
 import :detail;             // as_element, kMaxDim, ExpmWorkspace
 import :plan;               // ExpmPlan, expm_plan
@@ -85,12 +84,12 @@ namespace calaman {
  * @post The pointer mode of @p cublas_handle is left as it was found.
  * @warning Synchronizes @p stream (see the file header).
  */
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 Status expm(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
             wwr::wwrStream_t stream, const int n, const T *d_A, const int lda, T *d_expA,
             const int lde, void *d_work, const std::size_t lwork_bytes, int *d_info,
             ExpmPlan *plan = nullptr) {
-  using RealT = wwr::ComplexToRealType<T>;
+  using RealT = calaman::ComplexToRealType<T>;
 
   if (n < 1 || n > kMaxDim || lda < n || lde < n || d_work == nullptr) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;

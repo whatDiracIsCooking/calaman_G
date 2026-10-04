@@ -5,7 +5,9 @@
  *
  * There is ONE module under src/common, `calaman.common`, split into partitions
  * so each concern keeps its own file: `:constants` (constants.cppm, the typed
- * mathematical constants), `:align_up` (align_up.cppm, the integer rounding
+ * mathematical constants), `:fp_types` (fp_types.cppm, the floating-point
+ * concepts and real/complex type maps re-published under `calaman::` from
+ * WarpWraps), `:align_up` (align_up.cppm, the integer rounding
  * helpers), `:enums` (enums.cppm, the LAPACK selector enums Jobz/Uplo),
  * `:workspace` (workspace.cppm, sizing and carving one device scratch buffer)
  * and `:validation` (validation.cppm, argument-checking predicates like
@@ -27,6 +29,7 @@
 export module calaman.common;
 
 export import :constants;
+export import :fp_types;
 export import :align_up;
 export import :enums;
 export import :workspace;

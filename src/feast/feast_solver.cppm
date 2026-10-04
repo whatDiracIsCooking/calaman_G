@@ -42,7 +42,7 @@ import std;
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize, wwrMemcpyDeviceToHost, wwrSuccess
 import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, wwrblasFillMode_t
 import wwr.solver;          // wwrsolverDnHandle_t
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 import :buffer_size;
 import :compute_quadrature;
 import :contour_filter;
@@ -60,7 +60,7 @@ enum class FeastStopReason {
 };
 
 /// Tuning for feast_solver.
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 struct FeastOptions {
   int max_iter = 20;
 
@@ -75,7 +75,7 @@ struct FeastOptions {
 };
 
 /// What the solver did.
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 struct FeastInfo {
   int iterations = 0;    ///< iterations completed
   int m = 0;             ///< eigenvalues found in [Emin, Emax]: the leading m of d_lambda, d_Q
@@ -128,7 +128,7 @@ struct FeastInfo {
  * iteration after the first: the interval may hold more eigenvalues than m0 can
  * carry, and the ones returned cannot be trusted to be all of them. Raise m0.
  */
-template<wwr::real_fp T, std::size_t Ne = 8>
+template<calaman::real_fp T, std::size_t Ne = 8>
   requires(Ne == 4 || Ne == 8)
 Status feast_solver(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                     wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,

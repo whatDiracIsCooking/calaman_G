@@ -41,7 +41,7 @@ not host scalars: nothing is ever read back here.
 ## Real only
 
 LAPACK ships no complex `?lasy2` (the complex `2x2` Sylvester case is a different
-routine), so the surface is `float` / `double`, constrained by `wwr::real_fp` —
+routine), so the surface is `float` / `double`, constrained by `calaman::real_fp` —
 the same scope the reference has.
 
 ## No argument checking; `info` is the perturbation flag

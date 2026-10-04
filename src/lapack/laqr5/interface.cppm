@@ -23,7 +23,7 @@
  * >= 1, its U / WV / WH workspace and DGEMM block multiplies) is not exposed;
  * the non-accumulated sweep is complete on its own, and the oracle is pinned to
  * KACC22 = 0 so device and reference share the arithmetic path. REAL ONLY:
- * float / double, constrained by wwr::real_fp -- the scope ?slaqr5 / ?dlaqr5 has.
+ * float / double, constrained by calaman::real_fp -- the scope ?slaqr5 / ?dlaqr5 has.
  *
  * `extern template` below pairs with instantiations.cpp: the wrapper is
  * instantiated once inside this library, so an importer never re-instantiates a
@@ -53,7 +53,7 @@ export module calaman.laqr5;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 
 // export import, not a plain import: laqr5 RETURNS calaman::Status, so a consumer
 // of `import calaman.laqr5;` must see Status's member functions, not just its
@@ -95,7 +95,7 @@ namespace calaman {
 /// @param z Device N-by-N accumulator, leading dimension @p ldz; touched only when @p wantz
 /// @param ldz Leading dimension of @p z
 /// @return Success, or the runtime error the kernel launch reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status laqr5(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, const int n,
              const int ktop, const int kbot, const int nshfts, T *const sr, T *const si, T *const h,
              const int ldh, const int iloz, const int ihiz, T *const z, const int ldz) {

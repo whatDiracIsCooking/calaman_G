@@ -17,7 +17,7 @@
 # error_handling/error_macros.h (CLM_TRY), resolved root-relative via that
 # target's exported include root.
 #   wwr.runtime_api         wwrMemcpyAsync / wwrStreamSynchronize (staging)
-#   wwr.wrappers.common     real_fp (the T constraint)
+#   calaman.common          real_fp (the T constraint)
 #   calaman.lahqr           tiny-window Schur form + trailing-submatrix shifts
 #   calaman.laqr2           aggressive early deflation
 #   calaman.laqr5           the multishift bulge-chasing sweep
@@ -29,7 +29,7 @@ calaman_add_cxx_module_library(
   laqr4.cppm
   LINK_PUBLIC
   wwr.runtime_api
-  wwr.wrappers.common
+  calaman.common
   calaman.lahqr
   calaman.laqr2
   calaman.laqr5

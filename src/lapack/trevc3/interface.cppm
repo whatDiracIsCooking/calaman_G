@@ -17,7 +17,7 @@
  * The per-block scaled solve is LAPACK's ?laln2, inlined in the .cu rather than
  * imported (calaman.laln2 is a launch functor, unusable from inside this kernel)
  * -- so, like calaman.laexc, the kernel reaches no sibling module. REAL ONLY:
- * float / double, constrained by wwr::real_fp -- the scope ?strevc3 / ?dtrevc3
+ * float / double, constrained by calaman::real_fp -- the scope ?strevc3 / ?dtrevc3
  * has. `extern template` below pairs with instantiations.cpp, instantiating the
  * wrapper once here so an importer never re-instantiates a body naming the
  * .cu-side launcher declared only in the GMF.
@@ -46,7 +46,7 @@ export module calaman.trevc3;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 
 // export import, not a plain import: trevc3 RETURNS calaman::Status, so a
 // consumer of `import calaman.trevc3;` must see Status's member functions, not
@@ -83,7 +83,7 @@ namespace calaman {
 /// @param ldvr Leading dimension of @p vr (>= n when @p want_right, else >= 1)
 /// @param work Device length-3N scratch the back-substitution uses
 /// @return Success, or the runtime error the kernel launch reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status trevc3(const wwr::wwrStream_t stream, const bool want_left, const bool want_right,
               const int n, const T *const t, const int ldt, T *const vl, const int ldvl,
               T *const vr, const int ldvr, T *const work) {

@@ -44,10 +44,9 @@ import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
 import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, pointer-mode get/set
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
-import wwr.wrappers.common; // real_fp
 import wwr.wrappers.blas;   // symm, gemm
 import wwr.wrappers.solver; // syevd
-import calaman.common;      // kOne, kZero
+import calaman.common;      // kOne, kZero, real_fp
 import calaman.orthogonalize; // orthogonalize
 import :buffer_size;
 export import calaman.error_handling; // Status -- the cross-domain return type
@@ -93,7 +92,7 @@ export namespace calaman {
  * @param uplo Which triangle of @p d_A is stored.
  * @param d_X  Out: n x m0, leading dimension n.
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
                            wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
                            const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
@@ -134,7 +133,7 @@ Status feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
  * @brief ||A||_1 into s.norm_a, the scale feast_residuals measures against.
  *        Once per solve.
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status feast_matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
                          const T *d_A, const int lda, const FeastSlices<T> &s) {
   device::feast_sym_norm1(stream, uplo == wwr::WWRBLAS_FILL_MODE_LOWER, n, d_A, lda, s.colsum,
@@ -153,7 +152,7 @@ Status feast_matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t u
  * relative perturbation of A for which the pair is exact. So a tolerance on it
  * reads the same whatever the scale of A or of the interval.
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status feast_residuals(wwr::wwrStream_t stream, const int n, const int m0, const T *d_X,
                        const T *d_lambda, const FeastSlices<T> &s) {
   device::feast_residuals(stream, n, m0, d_X, s.a_ritz, d_lambda, s.norm_a, s.residuals, s.status);

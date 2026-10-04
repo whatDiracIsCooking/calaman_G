@@ -18,7 +18,7 @@
  * no host round-trip, so the five outputs are device scalars, not host ones.
  *
  * REAL ONLY: LAPACK ships no complex ?lasy2, so the surface is float / double,
- * constrained by wwr::real_fp -- the same scope the reference has. There is no
+ * constrained by calaman::real_fp -- the same scope the reference has. There is no
  * bounds checking, matching the reference ("in the interests of speed, this
  * routine does not check the inputs"); @p info reports only the near-singular
  * perturbation (1) the solve applied, not an argument error.
@@ -51,7 +51,7 @@ export module calaman.lasy2;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 
 // export import, not a plain import: lasy2 RETURNS calaman::Status, so a consumer
 // of `import calaman.lasy2;` must see Status's member functions, not just its
@@ -88,7 +88,7 @@ namespace calaman {
 /// @param xnorm Device scalar; the infinity-norm of @p x is written here
 /// @param info Device int; 0 on success, 1 if a near-singular pivot was perturbed
 /// @return Success, or the runtime error the kernel launch reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status lasy2(const wwr::wwrStream_t stream, const bool ltranl, const bool ltranr, const int isgn,
              const int n1, const int n2, const T *const tl, const int ldtl, const T *const tr,
              const int ldtr, const T *const b, const int ldb, T *const scale, T *const x,

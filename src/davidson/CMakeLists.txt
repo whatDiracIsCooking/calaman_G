@@ -13,7 +13,7 @@
 #
 # LINK_PUBLIC is the union of what the exported surface names: the runtime
 # stream (wwr.runtime_api), the BLAS and solver handle/status/enum layers
-# (wwr.blas, wwr.solver), the real_fp trait (wwr.wrappers.common), the
+# (wwr.blas, wwr.solver), the real_fp trait (calaman.common), the
 # level-1/3 BLAS wrappers the iteration drives (wwr.wrappers.blas --
 # gemm/axpy/dot/nrm2/scal) and the eigensolver wrappers (wwr.wrappers.solver --
 # syevd and the *_bufferSize queries), the kOne/kZero/kNegativeOne constants and
@@ -32,7 +32,6 @@ calaman_add_cxx_module_library(
   wwr.runtime_api
   wwr.blas
   wwr.solver
-  wwr.wrappers.common
   wwr.wrappers.blas
   wwr.wrappers.solver
   calaman.common

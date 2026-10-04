@@ -19,9 +19,9 @@
  * COMPLEX is the whole point here, not the deferred extension it is for larfg /
  * horner: there are no gemm scalars to spell constexpr, only component reads and
  * writes, which complex.h's accessors do portably. So the surface is the two
- * complex types ONLY (constrained by wwr::complex_fp) -- a real-to-real cast is
+ * complex types ONLY (constrained by calaman::complex_fp) -- a real-to-real cast is
  * the identity and has no place. The real component type is spelled
- * wwr::ComplexToRealType<ComplexT>: float for wwrFloatComplex, double for
+ * calaman::ComplexToRealType<ComplexT>: float for wwrFloatComplex, double for
  * wwrDoubleComplex.
  *
  * Each function is a thin host wrapper that forwards to a device launcher in
@@ -50,7 +50,7 @@ export module calaman.complex_cast;
 import std;
 import wwr.runtime_api;      // wwrStream_t
 import wwr.complex;          // wwrFloatComplex, wwrDoubleComplex (extern template list)
-import wwr.wrappers.common;  // complex_fp, ComplexToRealType
+import calaman.common;  // complex_fp, ComplexToRealType
 
 namespace calaman {
 
@@ -69,9 +69,9 @@ namespace calaman {
 /// @param output    Device array of @p count complex elements, updated in place
 /// @param input     Device array of @p count real values
 /// @param count     Number of elements
-export template<wwr::complex_fp ComplexT>
+export template<calaman::complex_fp ComplexT>
 void set_real_part(wwr::wwrStream_t stream, ComplexT *output,
-                   const wwr::ComplexToRealType<ComplexT> *input, const std::size_t count) {
+                   const calaman::ComplexToRealType<ComplexT> *input, const std::size_t count) {
   device::set_real_part(stream, output, input, count);
 }
 
@@ -86,9 +86,9 @@ void set_real_part(wwr::wwrStream_t stream, ComplexT *output,
 /// @param output    Device array of @p count complex elements, updated in place
 /// @param input     Device array of @p count real values
 /// @param count     Number of elements
-export template<wwr::complex_fp ComplexT>
+export template<calaman::complex_fp ComplexT>
 void set_imag_part(wwr::wwrStream_t stream, ComplexT *output,
-                   const wwr::ComplexToRealType<ComplexT> *input, const std::size_t count) {
+                   const calaman::ComplexToRealType<ComplexT> *input, const std::size_t count) {
   device::set_imag_part(stream, output, input, count);
 }
 
@@ -102,8 +102,8 @@ void set_imag_part(wwr::wwrStream_t stream, ComplexT *output,
 /// @param output    Device array of @p count real values, overwritten
 /// @param input     Device array of @p count complex elements
 /// @param count     Number of elements
-export template<wwr::complex_fp ComplexT>
-void get_real_part(wwr::wwrStream_t stream, wwr::ComplexToRealType<ComplexT> *output,
+export template<calaman::complex_fp ComplexT>
+void get_real_part(wwr::wwrStream_t stream, calaman::ComplexToRealType<ComplexT> *output,
                    const ComplexT *input, const std::size_t count) {
   device::get_real_part(stream, output, input, count);
 }
@@ -118,8 +118,8 @@ void get_real_part(wwr::wwrStream_t stream, wwr::ComplexToRealType<ComplexT> *ou
 /// @param output    Device array of @p count real values, overwritten
 /// @param input     Device array of @p count complex elements
 /// @param count     Number of elements
-export template<wwr::complex_fp ComplexT>
-void get_imag_part(wwr::wwrStream_t stream, wwr::ComplexToRealType<ComplexT> *output,
+export template<calaman::complex_fp ComplexT>
+void get_imag_part(wwr::wwrStream_t stream, calaman::ComplexToRealType<ComplexT> *output,
                    const ComplexT *input, const std::size_t count) {
   device::get_imag_part(stream, output, input, count);
 }

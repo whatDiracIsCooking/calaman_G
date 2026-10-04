@@ -28,22 +28,21 @@ import wwr.runtime_api;
 import wwr.blas;
 import wwr.solver;
 import wwr.complex;
-import wwr.wrappers.common;
 import wwr.wrappers.blas;
 import wwr.wrappers.solver;
-import calaman.common;
+import calaman.common;  // ComplexToRealType
 
 namespace calaman {
 
 // matrix_norm1
-template wwr::ComplexToRealType<float> matrix_norm1<float>(wwr::wwrStream_t, int, const float *,
+template calaman::ComplexToRealType<float> matrix_norm1<float>(wwr::wwrStream_t, int, const float *,
                                                            int, float *);
-template wwr::ComplexToRealType<double> matrix_norm1<double>(wwr::wwrStream_t, int, const double *,
+template calaman::ComplexToRealType<double> matrix_norm1<double>(wwr::wwrStream_t, int, const double *,
                                                              int, double *);
-template wwr::ComplexToRealType<wwr::wwrFloatComplex>
+template calaman::ComplexToRealType<wwr::wwrFloatComplex>
 matrix_norm1<wwr::wwrFloatComplex>(wwr::wwrStream_t, int, const wwr::wwrFloatComplex *, int,
                                    float *);
-template wwr::ComplexToRealType<wwr::wwrDoubleComplex>
+template calaman::ComplexToRealType<wwr::wwrDoubleComplex>
 matrix_norm1<wwr::wwrDoubleComplex>(wwr::wwrStream_t, int, const wwr::wwrDoubleComplex *, int,
                                     double *);
 

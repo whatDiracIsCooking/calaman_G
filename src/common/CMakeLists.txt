@@ -4,6 +4,9 @@
 #
 #   common.cppm         primary interface; only `export import`s the partitions
 #   :constants          constants.cppm + constants.h -- typed constants
+#   :fp_types           fp_types.cppm + fp_types.h -- the fp concepts and
+#                       real/complex type maps, re-published under `calaman::`
+#                       from WarpWraps' wrappers/common/fp_types.h
 #   :align_up           align_up.cppm + align_up.h -- integer rounding helpers
 #   :enums              enums.cppm + enums.h -- the LAPACK selector enums
 #   :workspace          workspace.cppm -- pointer carving (WorkspaceLayout)
@@ -12,17 +15,27 @@
 #   :validation         validation.cppm -- argument-checking predicates
 #                       (all_nonnull); pure, constexpr, header-less
 #
-# The :constants, :align_up and :enums partitions have no device code and no
-# implementation unit: each is a header-plus-partition pair whose values,
-# helpers or enums are `inline constexpr` / `constexpr` / scoped enums in the
-# .h, while the .cppm only re-exports them (includes the header in its GMF and
-# republishes the names). The .h is a
+# The :constants, :fp_types, :align_up and :enums partitions have no device
+# code and no implementation unit: each is a header-plus-partition pair whose
+# values, helpers, enums or (for :fp_types) re-exported concepts and type maps
+# are `inline constexpr` / `constexpr` / scoped enums / `using`-declarations in
+# the .h, while the .cppm only re-exports them (includes the header in its GMF
+# and republishes the names). The .h is a
 # GMF-shared header, #included both by other modules and by device .cu TUs as
 # "common/<name>.h", so the include root that resolves that spelling must be
 # EXPORTED, not PRIVATE (CLAUDE.md, Conventions). These are the first shared
 # headers in src/ -- the lacpy bridge is internal, so it kept its root PRIVATE.
 # :workspace and :validation have no header -- nothing device-side needs
 # them -- so each is just the .cppm.
+#
+# :fp_types differs from the other header pairs in one way: it defines nothing
+# of its own, only re-publishing WarpWraps' fp concepts (real_fp, complex_fp,
+# usual_fp) and real/complex type maps (ComplexToRealType, RealToComplexType)
+# under `calaman::`. Its fp_types.h #includes WarpWraps'
+# wrappers/common/fp_types.h (reached via the src/ root wwr.device already
+# carries, below), whose complex.h/fp16.h/bf16.h need the backend-selection
+# define -- hence the LINK_PRIVATE wwr_backend, mirroring WarpWraps' own
+# wwr.wrappers.common.
 #
 # elem_ops.cuh is NOT a partition: it is a device-only `.cuh` (per-element
 # scalar arithmetic over float/double/complex) #included into consumers' .cu
@@ -38,11 +51,19 @@
 # as it does for lacpy.
 #
 # LINK_PUBLIC wwr.device: elem_ops.cuh #includes complex.h and
-# wrappers/math/math.cuh, whose include roots and backend runtime libs ride on
-# wwr.device. PUBLIC so a device-.cu consumer that reaches the header through
-# this target resolves them transitively -- the same role the deleted
-# calaman.elem_ops target played. This is the one dependency calaman.common
-# carries; every module partition remains self-contained.
+# wrappers/math/math.cuh, and fp_types.h #includes wrappers/common/fp_types.h,
+# whose include roots and backend runtime libs ride on wwr.device. PUBLIC so a
+# device-.cu consumer that reaches a header through this target resolves them
+# transitively -- the same role the deleted calaman.elem_ops target played.
+#
+# LINK_PRIVATE wwr_backend: the fp_types.cppm partition's GMF #includes
+# fp_types.h -> WarpWraps' wrappers/common/fp_types.h ->
+# complex.h/fp16.h/bf16.h, which read the WWR_GPU_BACKEND_* backend-selection
+# define. PRIVATE because only calaman.common's own partition compiles need it
+# (importers see the finished module; a device .cu gets the define from its
+# compiler pass). This mirrors WarpWraps' own wwr.wrappers.common. These two
+# are the dependencies calaman.common carries; the non-fp_types partitions
+# remain self-contained.
 #
 # IMPORT_STD: the :workspace partition uses std::size_t / std::max via
 # `import std;`.
@@ -53,6 +74,7 @@ calaman_add_cxx_module_library(
   common.cppm
   PARTITIONS
   constants.cppm
+  fp_types.cppm
   align_up.cppm
   enums.cppm
   workspace.cppm
@@ -61,5 +83,7 @@ calaman_add_cxx_module_library(
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
   LINK_PUBLIC
   wwr.device
+  LINK_PRIVATE
+  wwr_backend
   IMPORT_STD
 )

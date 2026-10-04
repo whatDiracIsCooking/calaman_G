@@ -55,7 +55,7 @@ export module calaman.laqr2;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 
 // export import, not a plain import: laqr2 RETURNS calaman::Status, so a consumer
 // of `import calaman.laqr2;` must see Status's member functions, not just its
@@ -109,7 +109,7 @@ namespace calaman {
 /// @param wv Device slab scratch; accepted and ignored (unblocked here)
 /// @param ldwv Leading dimension of @p wv
 /// @return Success, or the runtime error the kernel launch reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status laqr2(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, const int n,
              const int ktop, const int kbot, const int nw, T *const h, const int ldh,
              const int iloz, const int ihiz, T *const z, const int ldz, int *const ns,

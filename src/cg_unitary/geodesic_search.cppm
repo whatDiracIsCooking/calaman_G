@@ -47,9 +47,8 @@ import wwr.blas;            // wwrblasHandle_t/Status, WWRBLAS_*, pointer mode
 import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrSuccess, wwrError_t
 import wwr.complex;         // make_wwrFloatComplex / make_wwrDoubleComplex (host)
-import wwr.wrappers.common; // usual_fp, real_fp, ComplexToRealType, RealToComplexType
 import wwr.wrappers.blas;   // gemm, gemv, dot, dotc, nrm2, scal, geam
-import calaman.common;      // kOne, kZero
+import calaman.common;      // kOne, kZero, real_fp, usual_fp, ComplexToRealType, RealToComplexType
 import calaman.error_handling; // Status
 import calaman.expm;        // expm, matrix_norm1
 import :buffer_size;
@@ -100,9 +99,9 @@ struct GeodesicSearchOptions {
 };
 
 /// @brief What a search did, reported back for tests and diagnostics.
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 struct GeodesicSearchInfo {
-  using R = wwr::ComplexToRealType<T>;
+  using R = calaman::ComplexToRealType<T>;
   R omega_max = R(0);  ///< the frequency estimate that set the interval
   R interval = R(0);   ///< T_mu, or T_DFT for the DFT search
   int num_samples = 0; ///< derivative evaluations taken
@@ -119,8 +118,8 @@ constexpr R cg_two_pi() {
 
 /// alpha as an element of T (complex types get a zero imaginary part). Legal in
 /// the module purview, where wwr.complex's host constructors are reachable.
-template<wwr::usual_fp T>
-T cg_as_element(const wwr::ComplexToRealType<T> x) {
+template<calaman::usual_fp T>
+T cg_as_element(const calaman::ComplexToRealType<T> x) {
   if constexpr (std::is_same_v<T, wwr::wwrFloatComplex>) {
     return wwr::make_wwrFloatComplex(x, 0.0f);
   } else if constexpr (std::is_same_v<T, wwr::wwrDoubleComplex>) {
@@ -153,9 +152,9 @@ struct HostPointerMode {
 };
 
 /// alpha * H into dst, with a real alpha widened to the element type.
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 wwr::wwrblasStatus_t scale_into(wwr::wwrblasHandle_t handle, const int n,
-                                const wwr::ComplexToRealType<T> alpha, const T *d_H, const int ldh,
+                                const calaman::ComplexToRealType<T> alpha, const T *d_H, const int ldh,
                                 T *d_dst, const int ldd) {
   const T a = cg_as_element<T>(alpha);
   const HostPointerMode guard{handle};
@@ -167,13 +166,13 @@ wwr::wwrblasStatus_t scale_into(wwr::wwrblasHandle_t handle, const int n,
 }
 
 /// G = alpha (X - X^H), the projection of X onto u(n) -- one geam.
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 wwr::wwrblasStatus_t skew_hermitian_part(wwr::wwrblasHandle_t handle, const int n,
-                                         const wwr::ComplexToRealType<T> alpha, const T *d_X,
+                                         const calaman::ComplexToRealType<T> alpha, const T *d_X,
                                          const int ldx, T *d_G, const int ldg) {
   const T a = cg_as_element<T>(alpha);
   const T b = cg_as_element<T>(-alpha);
-  const auto adj = wwr::real_fp<T> ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_C;
+  const auto adj = calaman::real_fp<T> ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_C;
   const HostPointerMode guard{handle};
   if (!guard.ok) {
     return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
@@ -183,9 +182,9 @@ wwr::wwrblasStatus_t skew_hermitian_part(wwr::wwrblasHandle_t handle, const int 
 }
 
 /// <A, A> as a Frobenius norm: nrm2 over the m*n packed elements (host result).
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 wwr::wwrblasStatus_t frobenius_norm(wwr::wwrblasHandle_t handle, const int m, const int n,
-                                    const T *d_A, const int /*lda*/, wwr::ComplexToRealType<T> *out) {
+                                    const T *d_A, const int /*lda*/, calaman::ComplexToRealType<T> *out) {
   const HostPointerMode guard{handle};
   if (!guard.ok) {
     return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
@@ -195,17 +194,17 @@ wwr::wwrblasStatus_t frobenius_norm(wwr::wwrblasHandle_t handle, const int m, co
 
 /// Re trace{A^H B} as a host real. For complex T it is the real dot of the two
 /// element arrays read as 2*m*n reals: sum(a.x b.x + a.y b.y) == Re dotc(A, B).
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 wwr::wwrblasStatus_t frobenius_dot_real(wwr::wwrblasHandle_t handle, const int m, const int n,
                                         const T *d_A, const int /*lda*/, const T *d_B,
-                                        const int /*ldb*/, wwr::ComplexToRealType<T> *out) {
-  using RealT = wwr::ComplexToRealType<T>;
+                                        const int /*ldb*/, calaman::ComplexToRealType<T> *out) {
+  using RealT = calaman::ComplexToRealType<T>;
   const int count = m * n;
   const HostPointerMode guard{handle};
   if (!guard.ok) {
     return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
   }
-  if constexpr (wwr::real_fp<T>) {
+  if constexpr (calaman::real_fp<T>) {
     return wwr::dot<T, int>(handle, count, d_A, 1, d_B, 1, out);
   } else {
     const RealT *ar = reinterpret_cast<const RealT *>(d_A);
@@ -215,7 +214,7 @@ wwr::wwrblasStatus_t frobenius_dot_real(wwr::wwrblasHandle_t handle, const int m
 }
 
 /// One dot product into device memory: Re trace{A B^H} without leaving the GPU.
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 wwr::wwrblasStatus_t dot_to_device(wwr::wwrblasHandle_t handle, const int count, const T *d_x,
                                    const T *d_y, T *d_out) {
   wwr::wwrblasPointerMode_t mode;
@@ -228,7 +227,7 @@ wwr::wwrblasStatus_t dot_to_device(wwr::wwrblasHandle_t handle, const int count,
     return status;
   }
 
-  if constexpr (wwr::real_fp<T>) {
+  if constexpr (calaman::real_fp<T>) {
     status = wwr::dot<T, int>(handle, count, d_x, 1, d_y, 1, d_out);
   } else {
     status = wwr::dotc<T, int>(handle, count, d_x, 1, d_y, 1, d_out);
@@ -247,18 +246,18 @@ wwr::wwrblasStatus_t dot_to_device(wwr::wwrblasHandle_t handle, const int count,
  * ||H v||^2 (with ||v|| = 1) converges to sigma_max^2. @p d_v is the warm start
  * (n), @p d_work two scratch vectors (2n: H v and M v). Writes *omega on the host.
  */
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 Status skew_spectral_radius(wwr::wwrblasHandle_t handle, wwr::wwrStream_t stream, const int n,
                             const T *d_H, const int ldh, T *d_v, T *d_work,
-                            wwr::ComplexToRealType<T> *omega) {
-  using RealT = wwr::ComplexToRealType<T>;
+                            calaman::ComplexToRealType<T> *omega) {
+  using RealT = calaman::ComplexToRealType<T>;
   *omega = RealT{0};
   if (n < 1) {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
   T *y = d_work;
   T *z = d_work + n;
-  const auto adj = wwr::real_fp<T> ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_C;
+  const auto adj = calaman::real_fp<T> ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_C;
 
   const HostPointerMode guard{handle};
   if (!guard.ok) {
@@ -339,11 +338,11 @@ Status skew_spectral_radius(wwr::wwrblasHandle_t handle, wwr::wwrStream_t stream
 }
 
 /// |omega_max|, by power iteration or by the 1-norm surrogate.
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 Status frequency_bound(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream, const int n,
                        const T *d_H, const int ldh, const CgSlices<T> &s,
-                       const bool use_power_iteration, wwr::ComplexToRealType<T> *omega) {
-  using RealT = wwr::ComplexToRealType<T>;
+                       const bool use_power_iteration, calaman::ComplexToRealType<T> *omega) {
+  using RealT = calaman::ComplexToRealType<T>;
   if (use_power_iteration) {
     return skew_spectral_radius<T>(cublas_handle, stream, n, d_H, ldh, s.power_v, s.power_work,
                                    omega);
@@ -362,12 +361,12 @@ Status frequency_bound(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stre
  * Sample 0 is the current point, so it reuses the caller's W and its already
  * computed gradient: no exponential, no product, one gradient evaluation saved.
  */
-template<wwr::usual_fp T, typename CostF>
+template<calaman::usual_fp T, typename CostF>
   requires unitary_cost_function<CostF, T>
 Status sample_derivative(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                          wwr::wwrStream_t stream, const int n, const T *d_W, const T *d_H,
                          const int ldh, const T *d_Psi, const CostF &cost,
-                         const wwr::ComplexToRealType<T> step, const int num_samples,
+                         const calaman::ComplexToRealType<T> step, const int num_samples,
                          const bool want_cost, const CgSlices<T> &s) {
   const std::size_t block_bytes = static_cast<std::size_t>(n) * n * sizeof(T);
 
@@ -491,15 +490,15 @@ Status sample_derivative(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHan
  * @warning Synchronizes @p stream twice: once inside the matrix exponential, and
  *          once to bring @p mu back for the caller's control flow.
  */
-template<wwr::usual_fp T, typename CostF>
+template<calaman::usual_fp T, typename CostF>
   requires unitary_cost_function<CostF, T>
 Status geodesic_search_poly(wwr::wwrblasHandle_t cublas_handle,
                             wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
                             const int n, const T *d_W, const T *d_H, const int ldh, const T *d_Psi,
                             const CostF &cost, const CgDirection dir, const CgSlices<T> &s,
-                            const GeodesicSearchOptions &opts, wwr::ComplexToRealType<T> *mu,
+                            const GeodesicSearchOptions &opts, calaman::ComplexToRealType<T> *mu,
                             GeodesicSearchInfo<T> *info = nullptr) {
-  using RealT = wwr::ComplexToRealType<T>;
+  using RealT = calaman::ComplexToRealType<T>;
   *mu = RealT{0};
   if (info != nullptr) {
     *info = GeodesicSearchInfo<T>{};
@@ -584,16 +583,16 @@ Status geodesic_search_poly(wwr::wwrblasHandle_t cublas_handle,
  * P + 1 -- and still one matrix exponential. Same argument and synchronization
  * contract as geodesic_search_poly.
  */
-template<wwr::usual_fp T, typename CostF>
+template<calaman::usual_fp T, typename CostF>
   requires unitary_cost_function<CostF, T>
 Status geodesic_search_dft(wwr::wwrblasHandle_t cublas_handle,
                            wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
                            const int n, const T *d_W, const T *d_H, const int ldh, const T *d_Psi,
                            const CostF &cost, const CgDirection dir, const CgSlices<T> &s,
-                           const GeodesicSearchOptions &opts, wwr::ComplexToRealType<T> *mu,
+                           const GeodesicSearchOptions &opts, calaman::ComplexToRealType<T> *mu,
                            GeodesicSearchInfo<T> *info = nullptr) {
-  using RealT = wwr::ComplexToRealType<T>;
-  using CplxT = wwr::RealToComplexType<RealT>;
+  using RealT = calaman::ComplexToRealType<T>;
+  using CplxT = calaman::RealToComplexType<RealT>;
   *mu = RealT{0};
   if (info != nullptr) {
     *info = GeodesicSearchInfo<T>{};
@@ -703,13 +702,13 @@ Status geodesic_search_dft(wwr::wwrblasHandle_t cublas_handle,
 }
 
 /// @brief Dispatch to whichever search @p method names.
-template<wwr::usual_fp T, typename CostF>
+template<calaman::usual_fp T, typename CostF>
   requires unitary_cost_function<CostF, T>
 Status geodesic_search(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                        wwr::wwrStream_t stream, const int n, const T *d_W, const T *d_H,
                        const int ldh, const T *d_Psi, const CostF &cost, const CgDirection dir,
                        const LineSearchMethod method, const CgSlices<T> &s,
-                       const GeodesicSearchOptions &opts, wwr::ComplexToRealType<T> *mu,
+                       const GeodesicSearchOptions &opts, calaman::ComplexToRealType<T> *mu,
                        GeodesicSearchInfo<T> *info = nullptr) {
   if (method == LineSearchMethod::Dft) {
     return geodesic_search_dft<T, CostF>(cublas_handle, cusolver_handle, stream, n, d_W, d_H, ldh,

@@ -56,7 +56,7 @@ export module calaman.orthogonalize;
 
 import std;
 import wwr.solver;            // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_STATUS_*
-import wwr.wrappers.solver;   // geqrf/orgqr/ungqr (+ bufferSize); re-exports usual_fp/real_fp + complex types
+import wwr.wrappers.solver;   // geqrf/orgqr/ungqr (+ bufferSize); also re-exports the complex types
 import calaman.common;        // align_up (:align_up)
 
 // export import, not a plain import: orthogonalize and its _bufferSize RETURN
@@ -80,7 +80,7 @@ export namespace calaman {
  * @param lwork Output: required workspace in elements of T
  * @return Success, or the first failing Status
  */
-template <wwr::usual_fp T>
+template <calaman::usual_fp T>
 Status orthogonalize_bufferSize(
     wwr::wwrsolverDnHandle_t handle,
     const int m,
@@ -92,7 +92,7 @@ Status orthogonalize_bufferSize(
 
     CLM_TRY(wwr::geqrf_bufferSize<T>(handle, m, n, dummy_ptr, m, &lwork_geqrf));
 
-    if constexpr (wwr::real_fp<T>) {
+    if constexpr (calaman::real_fp<T>) {
         CLM_TRY(wwr::orgqr_bufferSize<T>(handle, m, n, n,
                                          dummy_ptr, m,
                                          dummy_ptr, &lwork_gqr));
@@ -131,7 +131,7 @@ Status orthogonalize_bufferSize(
  * @return Success, or the first failing Status (the gqr step is not enqueued if
  *         geqrf failed)
  */
-template <wwr::usual_fp T>
+template <calaman::usual_fp T>
 Status orthogonalize(
     wwr::wwrsolverDnHandle_t handle,
     const int m,
@@ -151,7 +151,7 @@ Status orthogonalize(
     CLM_TRY(wwr::geqrf<T>(handle, m, n, d_Q, m, tau, solver_ws, lwork, d_info_geqrf));
 
     // Step 2: Expand the explicit thin Q from the Householder reflectors
-    if constexpr (wwr::real_fp<T>) {
+    if constexpr (calaman::real_fp<T>) {
         return wwr::orgqr<T>(handle, m, n, n, d_Q, m, tau, solver_ws, lwork, d_info_gqr);
     } else {
         return wwr::ungqr<T>(handle, m, n, n, d_Q, m, tau, solver_ws, lwork, d_info_gqr);

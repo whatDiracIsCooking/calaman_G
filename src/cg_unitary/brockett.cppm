@@ -20,9 +20,8 @@ import std;
 import wwr.blas;            // wwrblasHandle_t, wwrblasStatus_t, WWRBLAS_*
 import wwr.runtime_api;     // wwrStream_t
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex
-import wwr.wrappers.common; // usual_fp, real_fp, ComplexToRealType
 import wwr.wrappers.blas;   // gemm, dgmm, dot, dotc
-import calaman.common;      // kOne, kZero
+import calaman.common;      // kOne, kZero, real_fp, usual_fp
 
 export namespace calaman {
 
@@ -34,7 +33,7 @@ export namespace calaman {
  *
  * @tparam T Element type (float, double, wwrFloatComplex, wwrDoubleComplex).
  */
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 struct brockett_cost {
   /// q for this cost function: trace{W^H R W N} is quadratic in W.
   static constexpr int order = 2;
@@ -147,7 +146,7 @@ private:
       return status;
     }
 
-    if constexpr (wwr::real_fp<T>) {
+    if constexpr (calaman::real_fp<T>) {
       status = wwr::dot<T, int>(handle, n * n, d_W, 1, d_Psi, 1, d_out);
     } else {
       status = wwr::dotc<T, int>(handle, n * n, d_W, 1, d_Psi, 1, d_out);

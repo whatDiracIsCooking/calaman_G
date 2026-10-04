@@ -24,7 +24,7 @@ calaman_add_gpu_device_library(
 #
 # LINK_PUBLIC is the union of what the exported surface names: the BLAS and
 # solver handle/enum layers (wwr.blas, wwr.solver), the wwrStream_t + memcpy
-# (wwr.runtime_api), the real_fp concept (wwr.wrappers.common), the type-safe
+# (wwr.runtime_api), the real_fp concept (calaman.common), the type-safe
 # BLAS and solver wrappers (wwr.wrappers.blas, wwr.wrappers.solver) and the
 # kOne/kZero constants (calaman.common). calaman.error_handling is re-exported
 # (export import) for the Status return type, and its src/ root resolves the
@@ -45,7 +45,6 @@ calaman_add_cxx_module_library(
   wwr.blas
   wwr.solver
   wwr.runtime_api
-  wwr.wrappers.common
   wwr.wrappers.blas
   wwr.wrappers.solver
   calaman.common
