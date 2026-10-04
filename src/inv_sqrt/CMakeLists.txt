@@ -1,5 +1,5 @@
-# calaman.inv_sqrt -- the symmetric (Loewdin) inverse square root X = S^{-1/2} of
-# a real symmetric PSD matrix: syevd, an inverse_sqrt device kernel (flooring
+# calaman.inv_sqrt -- the symmetric (Loewdin) inverse square root X = S^{-1/2}
+# of a real symmetric PSD matrix: syevd, an inverse_sqrt device kernel (flooring
 # near-null modes), then dgmm + gemm to recombine U diag(lambda^{-1/2}) U^T. A
 # shipped src/ module, written once against WarpWraps's `wwr*` names and built
 # for either backend.
@@ -23,16 +23,16 @@ calaman_add_gpu_device_library(
 # with interface.cppm's `extern template` list.
 #
 # LINK_PUBLIC is the union of what the exported surface names: the BLAS and
-# solver handle/enum layers (wwr.blas, wwr.solver), the wwrStream_t + memcpy/sync
+# solver handle/enum layers (wwr.blas, wwr.solver), the wwrStream_t + memcpy
 # (wwr.runtime_api), the real_fp concept (wwr.wrappers.common), the type-safe
-# BLAS and solver wrappers (wwr.wrappers.blas, wwr.wrappers.solver) and kOne/kZero
-# (calaman.common). calaman.error_handling is re-exported (export import) for the
-# Status return type, and its src/ root resolves the "error_handling/
-# error_macros.h" the GMF pulls in for CLM_TRY.
+# BLAS and solver wrappers (wwr.wrappers.blas, wwr.wrappers.solver) and the
+# kOne/kZero constants (calaman.common). calaman.error_handling is re-exported
+# (export import) for the Status return type, and its src/ root resolves the
+# "error_handling/error_macros.h" the GMF pulls in for CLM_TRY.
 #
-# LINK_PRIVATE wwr_backend is for the runtime.h that inv_sqrt_bridge.h pulls into
-# the global module fragment: a GMF cannot `import`, so wwrStream_t arrives by
-# #include and selected_backend.h behind it reads WWR_GPU_BACKEND_*.
+# LINK_PRIVATE wwr_backend is for the runtime.h that inv_sqrt_bridge.h pulls
+# into the global module fragment: a GMF cannot `import`, so wwrStream_t
+# arrives by #include and selected_backend.h behind it reads WWR_GPU_BACKEND_*.
 # INCLUDE_DIRS_PRIVATE is the source dir for inv_sqrt_bridge.h itself.
 calaman_add_cxx_module_library(
   NAME

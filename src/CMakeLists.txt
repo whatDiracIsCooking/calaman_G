@@ -47,8 +47,8 @@ add_subdirectory(random_unitary)
 
 # calaman.inv_sqrt is the symmetric (Loewdin) cousin of calaman.orthogonalize --
 # the eigen-root X = S^{-1/2} of a symmetric PSD matrix. It depends only on
-# calaman.common / calaman.error_handling, so its placement is for discoverability
-# beside orthogonalize, not a link order.
+# calaman.common / calaman.error_handling, so its placement is for
+# discoverability beside orthogonalize, not a link order.
 add_subdirectory(inv_sqrt)
 
 # calaman.reduce_columns is header-only infrastructure consumed by
