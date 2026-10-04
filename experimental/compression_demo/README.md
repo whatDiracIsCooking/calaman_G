@@ -391,6 +391,88 @@ already near-sorted, or a use that doesn't need the original order restored),
 which density-fitting integrals are not. The honest ranking on this tensor:
 fp32-in-place (5.12×) > fp32-sorted (4.04×) > fp64 lossless zero-strip (2.56×).
 
+### Block-floating-point on the sorted stream (`cderi_block_scale_demo.py`)
+
+If you *do* sort, the natural next move is a **per-region `2^k` scale** — one
+power-of-two exponent per contiguous block of `B` sorted values, not one global
+factor and not one per element. The scale is a lossless exponent shift (mantissa
+untouched); its only job is to pull each region into the downcast format's normal
+range so the cast does not underflow. This is strictly **not** a ratio play —
+it's the *accuracy* lever the fp32/fp16 downcast left on the table.
+
+```bash
+uv run --with numpy --with cramjam --with h5py \
+    experimental/compression_demo/cderi_block_scale_demo.py [path/to/cderi.h5]
+```
+
+**Sorting is what makes block-FP work.** A region only shares one exponent
+usefully if its values share a magnitude — true on the sorted stream (contiguous
+values are magnitude-neighbours), false on the unsorted one (a region spans the
+whole range). The nonzero stream spans **148 binary orders** (`|v|` in
+`[4.5e-45, 1.93]`), so the gap is stark (max rel err / #underflow):
+
+| | sorted | unsorted (in-place) |
+|---|---|---|
+| fp32, B=64 | 5.96e-8 / 0 | 7.82e-7 / 0 |
+| fp32, B=4096 | **5.96e-8 / 0** | 4.33e-4 / 0 |
+| fp16, B=4096 | **4.88e-4 / 0** | 1.00 / 168M |
+| fp16, global | 1.00 / 253M | 1.00 / 253M |
+
+On sorted data block-FP hits the format's error floor (fp32 `5.96e-8`, fp16
+`4.88e-4`) with **zero underflow**, for blocks up to 4096+ — the `4.5e-45` tail
+survives because sorting clusters the tiny values together near the zero-crossing,
+so their region gets its own small exponent. On unsorted data every `B` fails as
+badly as global scaling. And the region-exponent side-channel is **free**: one
+`int16` per region, near-monotone once sorted, compressing to **0.000%** of the
+original at any `B ≥ 64`.
+
+**But it cannot beat fp32-in-place on this tensor** — every sorted scheme is
+walled under the **permutation ceiling** (the 1.23 GB compressed permutation vs
+5.92 GB original caps *any* sorted store at **4.81×**). End-to-end vs the original
+fp64 (zstd; lossy only in the cast):
+
+| config | max rel err | underflow | zstd |
+|---|---|---|---|
+| fp32 in-place, no-scale (#124) | 6.75e-2 | 0 | **5.12×** |
+| fp32 sorted, global | 2.43e-1 | 0 | 4.04× |
+| fp32 sorted, block-4096 | **5.96e-8** | 0 | 4.04× |
+| fp16 sorted, global | 1.00 | 253M | 4.81× |
+| fp16 sorted, block-4096 | **4.88e-4** | 0 | 4.80× |
+| fp16 in-place, no-scale | 1.00 | 246M | 38.41× ⚠ |
+
+- `block-4096` matches `global`'s ratio exactly while improving accuracy by ~4
+  million× (fp32) or turning garbage into usable data (fp16): **block-FP is free
+  accuracy on top of any sorted downcast.**
+- The fp16-sorted rows sit *on* the 4.81× ceiling — the fp16 value stream is
+  negligible next to the permutation, so the permutation is the whole cost.
+- The one number that "beats" 5.12× — `fp16 in-place 38.41×` — is a **mirage**:
+  77% of values (246M) underflowed to zero, so the stream is mostly zeros. It is
+  the opposite of accurate, and the reason fp16 is unsafe without per-region (or
+  per-element) scaling.
+
+**The region boundary wants to be the exponent itself.** Instead of a fixed `B`,
+start a new `2^k` region exactly when the binary exponent `k` changes. Then every
+value in a region shares one exponent, so scaling puts *every* mantissa in
+`[0.5,1)` — i.e. this is **per-element `frexp`**, with the exponent stored
+run-length-encoded. On the sorted stream that is only **293 runs** (148 binary
+orders × ~2 for the ± sides): a `(k:int16, len:uint32)` side channel of **1.4 KB
+zstd (0.000023% of the original)**, the smallest of all, and it reaches the `fpN`
+floor (`5.96e-8` / `4.88e-4`, 0 underflow) with **no `B` to tune**. It does not,
+however, beat fixed `B=4096` on *accuracy* — both already sit at the roundoff
+floor, because once the mantissa is in `[0.5,1)` every mantissa bit is in use and
+only a wider format helps. (zstd already approximates this RLE: it crushes the raw
+per-element exponent stream — 639 MB — to 62 KB, ~45× looser than the explicit
+1.4 KB but equally negligible.) So the exponent-run form is the *canonical,
+parameter-free* way to scale a sorted stream; it changes the side channel from
+"negligible" to "more negligible," and leaves the permutation ceiling untouched.
+
+**Takeaway:** block-FP is the *correct* way to scale for aggressive low precision,
+and it is essentially free on the side-channel — but on DF integrals it is an
+**accuracy tool, not a ratio lever**. The permutation wall means no accurate
+sorted scheme beats plain fp32-in-place here; block-FP pays only where order need
+not be restored, or the data is near-sorted (cheap permutation). This reinforces
+"don't pre-sort" while recording *how* you would scale if you did.
+
 ## Files
 
 | File | What |
@@ -399,6 +481,7 @@ fp32-in-place (5.12×) > fp32-sorted (4.04×) > fp64 lossless zero-strip (2.56×
 | `cderi_demo.py` | the same transforms + codecs over a real multi-GB PySCF RI-fit CDERI `.h5` |
 | `cderi_nonzero_demo.py` | strip exact zeros, compress the dense stream + a presence bitmask; sparse-split vs in-place |
 | `cderi_fp32_sort_demo.py` | fp32 downcast of the nonzero stream, and whether pre-sorting pays once the permutation is stored (it doesn't) |
+| `cderi_block_scale_demo.py` | per-region `2^k` (block-floating-point) scaling on the sorted stream — the accuracy lever: free side-channel, but walled by the permutation ceiling |
 | `lossy_downcast.py` | lossy fp32/fp16 downcast, global vs per-element (block-FP) scaling |
 | `bit_transpose_demo.py` | bit-plane vs byte-plane transpose + xor/transpose commutativity |
 | `geqp3_dump.cpp` | standalone dumper of the geqp3 suite's matrices to raw f64 |
