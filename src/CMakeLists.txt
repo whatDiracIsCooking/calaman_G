@@ -328,3 +328,12 @@ add_subdirectory(laqr4)
 # calaman.laqr2. Placed last: it links both laqr2 and laqr4, so both must
 # already be defined.
 add_subdirectory(laqr3)
+
+# calaman.laqr0 -- the small-bulge multishift QR driver with aggressive early
+# deflation for the Schur form of a Hessenberg matrix (LAPACK's ?laqr0). A host
+# composition that reuses calaman.laqr4's driver verbatim, swapping only two
+# kernels: the recursive ?laqr3 for AED (where ?laqr4 uses ?laqr2) and ?laqr4
+# for the trailing-submatrix shift recomputation (where ?laqr4 uses ?lahqr).
+# Placed last: it links lahqr, laqr3, laqr4 and laqr5, so all four must already
+# be defined.
+add_subdirectory(laqr0)
