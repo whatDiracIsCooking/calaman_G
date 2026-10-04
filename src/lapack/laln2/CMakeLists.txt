@@ -16,7 +16,7 @@
 # include root is added so "lapack/ladiv/ladiv.h" resolves root-relative --
 # ladiv_scalar is header-only pure arithmetic (compare/multiply/divide), so
 # there is nothing to LINK beyond it, the same hand-rolled root shape
-# calaman.reduce_columns and calaman.elem_ops use.
+# calaman.reduce_columns uses.
 calaman_add_gpu_device_library(
   NAME
   calaman.laln2.device

@@ -3,15 +3,15 @@
 # vector is itself). A shipped src/ module: written once against WarpWraps's
 # `wwr*` names and built for either backend. Structurally the slimmest of the
 # complex_cast family -- a single per-element functor launched through
-# wwr.extension.parallel_for, conjugating through calaman.elem_ops.
+# wwr.extension.parallel_for, conjugating through calaman.common's elem_ops.cuh.
 
 # The device-kernel library. lacgv.cu launches its functor through
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which
 # carries parallel_for.cuh plus, transitively, wwr.device: complex.h for the
 # neutral complex types and runtime.h (wwrStream_t, via lacgv_bridge.h), plus
-# the backend runtime libs. It conjugates through calaman.elem_ops's conj, so it
-# links that INTERFACE library too, for the src/ root that resolves
-# "elem_ops/elem_ops.cuh".
+# the backend runtime libs. It conjugates through calaman::device::elem_ops's
+# conj, so it links calaman.common too, for the src/ root that resolves
+# "common/elem_ops.cuh".
 calaman_add_gpu_device_library(
   NAME
   calaman.lacgv.device
@@ -19,7 +19,7 @@ calaman_add_gpu_device_library(
   lacgv.cu
   LINK_PRIVATE
   wwr.extension.parallel_for
-  calaman.elem_ops
+  calaman.common
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries

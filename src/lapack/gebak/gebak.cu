@@ -23,7 +23,7 @@
 #include "gebak_bridge.h"
 
 #include "complex.h"
-#include "elem_ops/elem_ops.cuh"
+#include "common/elem_ops.cuh"
 
 #include <cstddef>
 

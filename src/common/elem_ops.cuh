@@ -52,8 +52,8 @@
  * exist only in a device pass (complex.h gates them behind __CUDACC__/__HIP__),
  * so this is a .cuh for a .cu, never imported into a host module purview -- the
  * same shape as reduce_columns.cuh. Reached root-relative as
- * "elem_ops/elem_ops.cuh"; link calaman.elem_ops for the include root and
- * wwr.device (which carries complex.h and math.cuh).
+ * "common/elem_ops.cuh"; link calaman.common for the include root and, through
+ * it, wwr.device (which carries complex.h and math.cuh).
  */
 
 #pragma once

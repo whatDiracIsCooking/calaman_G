@@ -15,12 +15,13 @@
 # functors
 # through wwr.extension.parallel_for, defers the column sums to
 # calaman.reduce_columns's header, and takes its type-generic scalar arithmetic
-# from calaman.elem_ops's header, so it links all three PRIVATE: parallel_for
-# carries parallel_for.cuh (plus, transitively, wwr.device for complex.h);
-# reduce_columns, the src/ include root for reduce_columns.cuh plus its own
-# wwr.device dep; elem_ops, the src/ root for elem_ops/elem_ops.cuh (which pulls
-# complex.h and wrappers/math/math.cuh via wwr.device). The link is PRIVATE, as
-# every device-library link is.
+# from calaman.common's elem_ops.cuh header, so it links all three PRIVATE:
+# parallel_for carries parallel_for.cuh (plus, transitively, wwr.device for
+# complex.h); reduce_columns, the src/ include root for reduce_columns.cuh plus
+# its own wwr.device dep; calaman.common, the src/ root for common/elem_ops.cuh
+# (which pulls complex.h and wrappers/math/math.cuh via the wwr.device
+# calaman.common now carries). The link is PRIVATE, as every device-library link
+# is.
 calaman_add_gpu_device_library(
   NAME
   calaman.expm.device
@@ -29,7 +30,7 @@ calaman_add_gpu_device_library(
   LINK_PRIVATE
   wwr.extension.parallel_for
   calaman.reduce_columns
-  calaman.elem_ops
+  calaman.common
 )
 
 # The module itself: ordinary host C++23, no device code. instantiations.cpp is

@@ -23,7 +23,7 @@
 #include "gebal_bridge.h"
 
 #include "complex.h"
-#include "elem_ops/elem_ops.cuh"
+#include "common/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 
 #include <cmath>
@@ -41,7 +41,7 @@ namespace {
 
 // ── element access ─────────────────────────────────────────────────────────
 //
-// Scaling is calaman::device::elem_ops<T>::scale (elem_ops/elem_ops.cuh). The
+// Scaling is calaman::device::elem_ops<T>::scale (common/elem_ops.cuh). The
 // two measurements balancing needs are expm-free helpers over that core:
 //
 // LAPACK's complex balancing (CGEBAL/ZGEBAL) measures magnitude with CABS1,

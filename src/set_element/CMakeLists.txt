@@ -7,15 +7,16 @@
 # element back, so calaman.diff_norm's ell_inf path needs this to work in device
 # pointer mode. Structurally the twin of calaman.complex_cast's kernel half:
 # per-element functors launched through wwr.extension.parallel_for, taking |.|
-# through calaman.elem_ops's modulus (never .x/.y, which hipComplex lacks).
+# through calaman.common's elem_ops.cuh modulus (never .x/.y, which hipComplex
+# lacks).
 
 # The device-kernel library. set_element.cu launches its functor through
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which
 # carries parallel_for.cuh plus, transitively, wwr.device: runtime.h
 # (wwrStream_t, pulled in by set_element_bridge.h) and the backend runtime libs.
-# It takes the magnitude through calaman.elem_ops::modulus, so it links that
-# INTERFACE library too, for the src/ root that resolves "elem_ops/elem_ops.cuh"
-# (and the complex.h behind it).
+# It takes the magnitude through calaman::device::elem_ops::modulus, so it links
+# calaman.common too, for the src/ root that resolves "common/elem_ops.cuh" (and
+# the complex.h behind it, via wwr.device).
 calaman_add_gpu_device_library(
   NAME
   calaman.set_element.device
@@ -23,7 +24,7 @@ calaman_add_gpu_device_library(
   set_element.cu
   LINK_PRIVATE
   wwr.extension.parallel_for
-  calaman.elem_ops
+  calaman.common
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries

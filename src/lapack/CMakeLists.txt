@@ -1,9 +1,9 @@
 # src/lapack/ -- the modules that carry a LAPACK routine's name, one directory
 # and one module per routine (docs/architecture.md §4). Split out of src/ so the
-# LAPACK-shaped work sits apart from the shared utilities (calaman.common,
-# calaman.error_handling, calaman.elem_ops, calaman.reduce_columns, ...) and the
-# original algorithms (expm, feast, nnls, orthogonalize, ...) that remain one
-# level up.
+# LAPACK-shaped work sits apart from the shared utilities (calaman.common --
+# which also carries the elem_ops.cuh device header -- calaman.error_handling,
+# calaman.reduce_columns, ...) and the original algorithms (expm, feast, nnls,
+# orthogonalize, ...) that remain one level up.
 #
 # Backend-neutral by construction, exactly like the rest of src/: each module is
 # written once against WarpWraps's `wwr*` names and built for whichever backend
@@ -14,16 +14,17 @@
 # one intra-LAPACK header "lapack/ladiv/ladiv.h" off that same root.
 #
 # This directory is added from src/CMakeLists.txt AFTER the utilities these
-# modules link (common, error_handling, elem_ops, diff_norm, reduce_columns) and
+# modules link (common -- with elem_ops.cuh -- error_handling, diff_norm,
+# reduce_columns) and
 # BEFORE the one utility that links back into here (calaman.nnls, which links
 # calaman.geqp3).
 # Modules below are added in call-graph order so each one's dependencies are
 # declared first -- the same discipline src/CMakeLists.txt keeps.
 
 # calaman.lacgv is complex_cast's slimmest sibling (a single per-element functor
-# through parallel_for, conjugating via calaman.elem_ops) -- the GPU counterpart
-# of LAPACK's ?lacgv. It links calaman.elem_ops (added one level up), so it is
-# safe here.
+# through parallel_for, conjugating via calaman.common's elem_ops.cuh) -- the
+# GPU counterpart of LAPACK's ?lacgv. It links calaman.common (added one level
+# up), so it is safe here.
 add_subdirectory(lacgv)
 
 add_subdirectory(gebal)

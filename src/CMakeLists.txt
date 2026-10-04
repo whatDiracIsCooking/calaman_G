@@ -6,10 +6,10 @@
 # A module that computes what a LAPACK routine computes carries LAPACK's name
 # (docs/architecture.md §4), and those modules live together under src/lapack/
 # (added below). This level holds the shared utilities they are written against
-# (calaman.common, calaman.error_handling, calaman.elem_ops,
-# calaman.reduce_columns, calaman.diff_norm, ...) and the original algorithms
-# that are not named after a LAPACK routine (expm, feast, nnls, orthogonalize,
-# cg_unitary, the columnwise reductions, ...).
+# (calaman.common -- which also carries the elem_ops.cuh device header --
+# calaman.error_handling, calaman.reduce_columns, calaman.diff_norm, ...) and
+# the original algorithms that are not named after a LAPACK routine (expm,
+# feast, nnls, orthogonalize, cg_unitary, the columnwise reductions, ...).
 
 add_subdirectory(common)
 
@@ -19,12 +19,6 @@ add_subdirectory(common)
 # consumer links it yet; it is landed on its own (diff_norm's cross-domain path
 # is the motivating adopter, migrated separately).
 add_subdirectory(error_handling)
-
-# calaman.elem_ops is header-only device infrastructure (per-element scalar
-# arithmetic over float/double/complex), consumed by other modules' .cu TUs, so
-# it is added early -- before any consumer's device library links its INTERFACE
-# target. Like calaman.reduce_columns, it is not a module.
-add_subdirectory(elem_ops)
 
 add_subdirectory(complex_cast)
 
@@ -60,10 +54,11 @@ add_subdirectory(columnwise_ell2)
 
 # The LAPACK-named routines -- one directory and one module per routine --
 # collected under src/lapack/. Added here (not earlier) because every module in
-# there links the utilities declared above (common, error_handling, elem_ops,
-# diff_norm, reduce_columns), and added here (not later) because calaman.nnls
-# below links one of them (calaman.geqp3). See src/lapack/CMakeLists.txt for the
-# call-graph order the subtree keeps internally.
+# there links the utilities declared above (common -- with elem_ops.cuh --
+# error_handling, diff_norm, reduce_columns), and added here (not later) because
+# calaman.nnls below links one of them (calaman.geqp3). See
+# src/lapack/CMakeLists.txt for the call-graph order the subtree keeps
+# internally.
 add_subdirectory(lapack)
 
 # calaman.nnls -- non-negative least squares (Lawson-Hanson active set). A host
@@ -74,8 +69,8 @@ add_subdirectory(nnls)
 
 # calaman.expm -- the matrix exponential by scaling and squaring. A host
 # composition over wrapped BLAS + the LU solve, plus its own fused kernels.
-# Added after its calaman dependencies (common, elem_ops, error_handling,
-# reduce_columns) so their targets exist when it links them.
+# Added after its calaman dependencies (common -- which carries elem_ops.cuh --
+# error_handling, reduce_columns) so their targets exist when it links them.
 add_subdirectory(expm)
 
 # calaman.feast -- the FEAST eigensolver for real symmetric matrices. A host

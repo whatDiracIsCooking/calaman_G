@@ -10,8 +10,8 @@
 # carries parallel_for.cuh plus, transitively, wwr.device -- the include root
 # where wrappers/math/math.cuh (wwr::fabs / sqrt / copysign / fmin / fmax) and
 # runtime.h (wwrStream_t, via lartg_bridge.h) resolve, plus the backend runtime
-# libs. There is no elem_ops link: the kernel is real-only and touches no
-# complex arithmetic.
+# libs. There is no elem_ops.cuh use here: the kernel is real-only and touches
+# no complex arithmetic.
 calaman_add_gpu_device_library(
   NAME
   calaman.lartg.device

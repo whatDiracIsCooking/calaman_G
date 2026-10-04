@@ -26,7 +26,7 @@ pool, matching `calaman.lacpy`. See `test/shared/README.md` for the full reasoni
 the vector itself, so there is no `s`/`d` variant. The surface is the two complex
 types (`wwrFloatComplex`, `wwrDoubleComplex`), constrained by `wwr::complex_fp` —
 the same scope `calaman.complex_cast` has. The conjugate goes through
-`calaman::device::elem_ops<T>::conj` (`elem_ops/elem_ops.cuh`), which spells the
+`calaman::device::elem_ops<T>::conj` (`common/elem_ops.cuh`), which spells the
 precision-divergent `wwrConj`/`wwrConjf` once and never touches `.x`/`.y` (not
 portable to `hipComplex`).
 

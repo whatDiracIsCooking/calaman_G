@@ -9,7 +9,7 @@
 // complex accessors arrive through their respective device headers.
 //
 // NEUTRAL COMPLEX, NEVER .x/.y: the conjugate goes through
-// calaman::device::elem_ops<ComplexT>::conj (elem_ops/elem_ops.cuh), which spells
+// calaman::device::elem_ops<ComplexT>::conj (common/elem_ops.cuh), which spells
 // the precision-divergent wwrConj/wwrConjf once -- a vendor complex is an
 // operator-less float2 on CUDA but a class on HIP, so raw field access is not
 // portable.
@@ -21,7 +21,7 @@
 // mirrors reference CLACGV's ioff stepping.
 #include "lacgv_bridge.h"
 
-#include "elem_ops/elem_ops.cuh"
+#include "common/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 
 #include <cstddef>

@@ -12,7 +12,7 @@
 // the complex types/accessors (through complex.h) are all available directly.
 //
 // NEUTRAL COMPLEX, NEVER .x/.y. Per-element scalar arithmetic goes through
-// calaman::device::elem_ops<T> (elem_ops/elem_ops.cuh): the primary template is
+// calaman::device::elem_ops<T> (common/elem_ops.cuh): the primary template is
 // the native operators for real T, the complex specializations route through
 // complex.h's wwrCreal*/wwrCimag* accessors, wwrCabs* modulus and make_wwr*Complex
 // builder. This .cu used to carry its own three elem_ops specializations (as
@@ -25,7 +25,7 @@
 #include "expm_bridge.h"
 
 #include "complex.h"
-#include "elem_ops/elem_ops.cuh"
+#include "common/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 #include "reduce_columns/reduce_columns.cuh"
 
