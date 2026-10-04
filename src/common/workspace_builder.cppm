@@ -4,51 +4,42 @@
  *        scratch buffer built from many aligned regions, and carve the pointers
  *
  * Pure host byte arithmetic: no device code, no allocation, no WarpWraps. A
- * routine that needs several device buffers usually wants ONE allocation carved
- * into aligned regions rather than many calls to the device allocator.
+ * routine that needs several device buffers wants ONE allocation carved into
+ * aligned regions rather than many calls to the device allocator.
  *
- * Two classes, for the two moments a workspace is touched:
+ * Two kinds of region: FIXED regions are all live at the same time, so their
+ * aligned sizes ACCUMULATE; SCRATCH regions are temporaries that alias, so only
+ * the LARGEST is counted. total() is the fixed sum plus that largest scratch
+ * region. Every region is rounded up to `alignment` (default 256, the base
+ * alignment device allocators hand back), via the :align_up partition.
  *
- *   - WorkspaceBuilder answers "how many bytes": add every region, read total().
- *     The caller then lays the regions out itself at offsets it derives with the
- *     same calaman::align_up used here.
- *   - WorkspaceLayout answers "how many bytes" AND "where is each region": the
- *     same add calls hand back the typed, aligned pointer. Constructed over the
- *     real base it carves; over nullptr it only sizes -- so a routine writes its
- *     layout ONCE and runs it twice (null base for its *_bufferSize, the real
- *     base inside the routine), and the size query can never drift from the
- *     carving the way a separately-maintained WorkspaceBuilder list can.
+ * Three names, outermost first -- prefer the outermost that fits:
+ *   - carve_workspace + the SlicesFor concept: a routine's slices struct owns
+ *     ONE carve() member describing its layout, and carve_workspace runs it
+ *     over a null base to size (its *_bufferSize) or over the real base to
+ *     carve, so the size query can never drift from the carving.
+ *   - WorkspaceLayout: the primitive carve() members are written against.
+ *   - WorkspaceBuilder: byte accounting only; the caller derives offsets itself.
  *
- * Both take the aligned sizes from the :align_up partition, which this unit
- * imports.
- *
- * Two kinds of region, because a workspace holds two kinds of buffer:
- *
- *   - FIXED (add_fixed): buffers that are all live at the same time -- inputs,
- *     outputs, anything a later step still reads. They coexist, so their aligned
- *     sizes ACCUMULATE.
- *   - SCRATCH (add_scratch): temporaries that are used and then done, so the next
- *     one reuses the same bytes. Only one is ever live, so the workspace need only
- *     be as large as the LARGEST candidate -- they alias, and the size is a max,
- *     not a sum.
- *
- * total() is the fixed sum plus that single largest scratch region. Sizes are in
- * bytes and every region is rounded up to `alignment` (default 256, the base
- * alignment device allocators hand back and the granularity sub-buffers want) so
- * each region begins on an aligned boundary; `copies` sizes N identical buffers.
- *
- * Deliberately not hardened against overflow: count * sizeof(T) and the running
- * totals are plain std::size_t, meant for realistic workspace sizes, not for
- * adversarial inputs. align_up has the same domain caveats -- see align_up.h.
+ * Deliberately not hardened against overflow: plain std::size_t arithmetic for
+ * realistic workspace sizes, not adversarial inputs (see align_up.h).
  *
  * Usage:
  *   import calaman.common;   // the partition is reached through the whole module
- *   calaman::WorkspaceBuilder wb;
- *   wb.add_fixed<double>(m * n);          // the matrix: stays live
- *   wb.add_fixed<int>(n);                 // pivots: stay live
- *   wb.add_scratch<double>(lwork);        // a solver's scratch, reused
- *   wb.add_scratch<double>(n);            // an alternative scratch, aliases
- *   const std::size_t bytes = wb.total(); // one allocation of this size
+ *
+ *   struct Slices {          // one carve(), run twice -- see carve_workspace
+ *     double *a = nullptr;
+ *     int *piv = nullptr;
+ *     double *work = nullptr;
+ *     void carve(calaman::WorkspaceLayout &layout, const int n, const int lwork) {
+ *       a = layout.fixed<double>(static_cast<std::size_t>(n) * n);
+ *       piv = layout.fixed<int>(n);
+ *       work = layout.scratch<double>(lwork); // scratch LAST, after every fixed
+ *     }
+ *   };
+ *   const std::size_t bytes = calaman::carve_workspace<Slices>(nullptr, nullptr, n, lwork);
+ *   Slices s;
+ *   calaman::carve_workspace(d_work, &s, n, lwork); // same path, real pointers
  */
 
 export module calaman.common:workspace_builder;
@@ -158,5 +149,34 @@ public:
   /// @brief Total bytes the layout spans: every fixed region plus the largest scratch.
   [[nodiscard]] std::size_t total() const noexcept { return fixed_ + scratch_; }
 };
+
+/// @brief A slices struct that lays itself out: default-constructible, with a
+///        carve(WorkspaceLayout&, args...) member that is the ONLY description
+///        of its layout
+export template <typename S, typename... Args>
+concept SlicesFor = std::default_initializable<S> &&
+                    requires(S s, WorkspaceLayout &layout, const Args &...args) {
+                      s.carve(layout, args...);
+                    };
+
+/// @brief Run S::carve over @p d_work -- a real base carves, a null base only
+///        sizes -- and return the bytes the layout spans
+///
+/// The one code path behind a routine's *_bufferSize and its slices-carving
+/// entry point, so the two cannot drift.
+///
+/// @param d_work Workspace base, or null to size without carving
+/// @param out    Receives the carved slices; may be null (the sizing call)
+export template <typename S, typename... Args>
+  requires SlicesFor<S, Args...>
+std::size_t carve_workspace(void *const d_work, S *const out, const Args &...args) {
+  WorkspaceLayout layout(d_work);
+  S s{};
+  s.carve(layout, args...);
+  if (out != nullptr) {
+    *out = s;
+  }
+  return layout.total();
+}
 
 } // namespace calaman

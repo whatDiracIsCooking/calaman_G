@@ -33,7 +33,7 @@ calaman_add_gpu_device_library(
 #   wwr.complex                              the complex element types
 #   wwr.wrappers.common                      usual_fp / ComplexToRealType / ...
 #   wwr.wrappers.blas                        gemm/gemv/geam/dot/dotc/dgmm/...
-#   calaman.common                           kOne/kZero/..., WorkspaceBuilder
+#   calaman.common                           kOne/kZero/..., carve_workspace
 #   calaman.error_handling                   Status, the cross-domain return
 #   calaman.expm                             expm, expm_bufferSize, matrix_norm1
 #   calaman.orthogonalize                    the optional reunitarization
