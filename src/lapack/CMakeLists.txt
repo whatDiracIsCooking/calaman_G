@@ -147,6 +147,14 @@ add_subdirectory(sytrs2)
 # it follows them here.
 add_subdirectory(sysv)
 
+# calaman.hetrs -- the Hermitian cousin of calaman.sytrs (LAPACK ?hetrs): solve
+# A X = B for a Hermitian matrix already Bunch-Kaufman factored. A host walk of
+# the pivot sequence over wrapped BLAS (geru/gemv/swap) plus its own
+# real-reciprocal 1x1, Hermitian 2x2 and row-conjugation device stages. Complex
+# only. It shares no build edge with the symmetric solves above and links only
+# calaman.common and calaman.error_handling, both one level up.
+add_subdirectory(hetrs)
+
 # calaman.lasrt -- sort a 1-D array (increasing or decreasing), the GPU
 # counterpart of LAPACK's ?lasrt. A single hand-launched device kernel
 # (quicksort/insertion), structurally laset's twin but functionally standalone:
