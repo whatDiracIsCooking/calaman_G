@@ -130,17 +130,17 @@ Status gehrd(wwr::wwrblasHandle_t handle, const int n, const int ilo, const int 
     constexpr int nx = nb;
     const int ldwork = std::max(1, n); // Y panel (n x nb) and the larfb workspace
     T *const Y = work;                 // n x nb, ld == ldwork
-    T *const Tf = work + static_cast<size_t>(ldwork) * nb; // nb x nb, ld == nb
+    T *const T_f = work + static_cast<size_t>(ldwork) * nb; // nb x nb, ld == nb
 
     // DO I = ILO, IHI-1-NX, NB.
     for (i = ilo; i <= ihi - 1 - nx; i += nb) {
       const int ib = std::min(nb, ihi - i);
 
       // Reduce the panel A(:, i:i+ib-1): V in A below the subdiagonal, scalars in
-      // tau(i:i+ib-1), the triangular factor in Tf and Y = A V T. lahr2's k is
+      // tau(i:i+ib-1), the triangular factor in T_f and Y = A V T. lahr2's k is
       // the 1-based panel column i (the reference's K), matching its oracle.
       CLM_TRY(lahr2<T>(handle, ihi, i, ib, A + static_cast<size_t>(i - 1) * lda, lda,
-                       tau + (i - 1), Tf, nb, Y, ldwork));
+                       tau + (i - 1), T_f, nb, Y, ldwork));
 
       // Update the trailing block A(1:ihi, i+ib:ihi) from the right with Y:
       // A(1:ihi, i+ib:ihi) -= Y * A(i+ib:ihi, i:i+ib-1)^T. The reference sets the
@@ -182,13 +182,13 @@ Status gehrd(wwr::wwrblasHandle_t handle, const int n, const int ilo, const int 
       }
 
       // Apply the block reflector H to A(i+1:ihi, i+ib:n) from the left. V lives
-      // in A(i+1:ihi, i:i+ib-1) (columnwise, forward); Tf is its factor; the Y
+      // in A(i+1:ihi, i:i+ib-1) (columnwise, forward); T_f is its factor; the Y
       // buffer doubles as the larfb workspace (its n*nb cells hold W). Skipped
       // when there are no trailing columns.
       const int larfb_cols = n - i - ib + 1; // N-I-IB+1
       if (larfb_cols > 0) {
         CLM_TRY(larfb<T>(handle, Side::L, Trans::T, Direct::F, StoreV::C, ihi - i, larfb_cols, ib,
-                         A + static_cast<size_t>(i - 1) * lda + i, lda, Tf, nb,
+                         A + static_cast<size_t>(i - 1) * lda + i, lda, T_f, nb,
                          A + static_cast<size_t>(i + ib - 1) * lda + i, lda, Y, ldwork));
       }
     }

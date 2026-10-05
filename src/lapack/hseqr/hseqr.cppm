@@ -127,7 +127,7 @@ Status hseqr(const wwr::wwrStream_t stream, const HseqrJob job, const HseqrCompz
   constexpr int kNmin = 75;  // ILAENV(12): the lahqr/laqr0 crossover (>= NTINY)
   constexpr int kNl = 49;    // the reference's in-place-laqr0 fallback threshold
 
-  auto Hptr = [=](int i, int j) -> T * {
+  auto H_ptr = [=](int i, int j) -> T * {
     return h + static_cast<size_t>(i - 1) + static_cast<size_t>(j - 1) * ldh;
   };
   auto write_info = [&](int v) -> Status {
@@ -169,8 +169,8 @@ Status hseqr(const wwr::wwrStream_t stream, const HseqrJob job, const HseqrCompz
       return wwr::wwrSuccess;
     }
     for (int i = lo; i <= hi; ++i) {
-      CLM_TRY(wwr::wwrMemcpyAsync(wr + (i - 1), Hptr(i, i), sizeof(T), wwr::wwrMemcpyDeviceToDevice,
-                                  stream));
+      CLM_TRY(wwr::wwrMemcpyAsync(wr + (i - 1), H_ptr(i, i), sizeof(T),
+                                  wwr::wwrMemcpyDeviceToDevice, stream));
     }
     const std::vector<T> zeros(static_cast<size_t>(hi - lo + 1), zero);
     CLM_TRY(wwr::wwrMemcpyAsync(wi + (lo - 1), zeros.data(),
@@ -190,7 +190,7 @@ Status hseqr(const wwr::wwrStream_t stream, const HseqrJob job, const HseqrCompz
 
   // ==== Quick return for a 1x1 window. ====
   if (n == 1) {
-    CLM_TRY(wwr::wwrMemcpyAsync(wr, Hptr(1, 1), sizeof(T), wwr::wwrMemcpyDeviceToDevice, stream));
+    CLM_TRY(wwr::wwrMemcpyAsync(wr, H_ptr(1, 1), sizeof(T), wwr::wwrMemcpyDeviceToDevice, stream));
     CLM_TRY(wwr::wwrMemcpyAsync(wi, &zero, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
     CLM_TRY(wwr::wwrStreamSynchronize(stream));
     return write_info(0);
@@ -221,7 +221,7 @@ Status hseqr(const wwr::wwrStream_t stream, const HseqrJob job, const HseqrCompz
   //      DLASET('L', N-2, N-2, 0, 0, H(3,1), LDH)). ====
   if ((wantt || hinfo != 0) && n > 2) {
     CLM_TRY(laset<T>(stream, Region::L, static_cast<size_t>(n - 2), static_cast<size_t>(n - 2),
-                     zero, zero, Hptr(3, 1), static_cast<size_t>(ldh)));
+                     zero, zero, H_ptr(3, 1), static_cast<size_t>(ldh)));
     CLM_TRY(wwr::wwrStreamSynchronize(stream));
   }
   return wwr::wwrSuccess;

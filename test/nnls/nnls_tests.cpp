@@ -153,10 +153,11 @@ Solved<T> solve(std::shared_ptr<DeviceHandle> handle, int m, int n, const std::v
 template<typename T>
 void expect_kkt(int m, int n, const std::vector<T> &A, const std::vector<T> &b,
                 const std::vector<T> &x) {
-  const auto Ax = matvec(m, n, A, x);
+  const auto A_x = matvec(m, n, A, x);
   std::vector<T> r(static_cast<std::size_t>(m));
   for (int i = 0; i < m; ++i) {
-    r[static_cast<std::size_t>(i)] = b[static_cast<std::size_t>(i)] - Ax[static_cast<std::size_t>(i)];
+    r[static_cast<std::size_t>(i)] =
+        b[static_cast<std::size_t>(i)] - A_x[static_cast<std::size_t>(i)];
   }
   const auto w = matvec_t(m, n, A, r);
 

@@ -312,8 +312,8 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
   // Device-scalar staging helpers, the calaman.gehrd idiom: one async copy then a
   // synchronize, so the host sees a settled value. Small and sync-per-call --
   // fine here, where the loop inspects only O(1) entries of H and the shift arrays
-  // between O(n^2) kernels. Hptr folds the column-major leading dimension out.
-  auto Hptr = [=](int i, int j) -> T * {
+  // between O(n^2) kernels. H_ptr folds the column-major leading dimension out.
+  auto H_ptr = [=](int i, int j) -> T * {
     return h + static_cast<size_t>(i - 1) + static_cast<size_t>(j - 1) * ldh;
   };
   auto read_dev = [&](T *dst, const T *src, int count) -> Status {
@@ -328,9 +328,9 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
     CLM_TRY(wwr::wwrStreamSynchronize(stream));
     return wwr::wwrSuccess;
   };
-  // getH is used in scalar context; fold the Status check into a throwing-free
+  // get_H is used in scalar context; fold the Status check into a throwing-free
   // path by propagating through the outer CLM_TRY sites that call read_dev.
-  auto getH = [&](int i, int j, T &out) -> Status { return read_dev(&out, Hptr(i, j), 1); };
+  auto get_H = [&](int i, int j, T &out) -> Status { return read_dev(&out, H_ptr(i, j), 1); };
 
   // Carve the scratch. NWMAX / NSMAX mirror the reference so the window and shift
   // schedules match for the same lwork; work holds the laqr3 V/T windows, the
@@ -401,7 +401,7 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
     int ktop = ilo;
     for (int k = kbot; k >= ilo + 1; --k) {
       T sub{};
-      CLM_TRY(getH(k, k - 1, sub));
+      CLM_TRY(get_H(k, k - 1, sub));
       if (sub == zero) {
         ktop = k;
         break;
@@ -422,8 +422,8 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
       } else {
         const int kwtop = kbot - nw + 1;
         T a{}, b{};
-        CLM_TRY(getH(kwtop, kwtop - 1, a));
-        CLM_TRY(getH(kwtop - 1, kwtop - 2, b));
+        CLM_TRY(get_H(kwtop, kwtop - 1, a));
+        CLM_TRY(get_H(kwtop - 1, kwtop - 2, b));
         if (std::abs(a) > std::abs(b)) {
           nw = nw + 1;
         }
@@ -465,9 +465,9 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
         ks = kbot - ns + 1;
         for (int i = kbot; i >= std::max(ks + 1, ktop + 2); i -= 2) {
           T hii1{}, hi1i2{}, hii{};
-          CLM_TRY(getH(i, i - 1, hii1));
-          CLM_TRY(getH(i - 1, i - 2, hi1i2));
-          CLM_TRY(getH(i, i, hii));
+          CLM_TRY(get_H(i, i - 1, hii1));
+          CLM_TRY(get_H(i - 1, i - 2, hi1i2));
+          CLM_TRY(get_H(i, i, hii));
           const T ss = std::abs(hii1) + std::abs(hi1i2);
           const T aa = kWilk1<T> * ss + hii;
           const T bb = ss;
@@ -477,7 +477,7 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
         }
         if (ks == ktop) {
           T hkk{};
-          CLM_TRY(getH(ks + 1, ks + 1, hkk));
+          CLM_TRY(get_H(ks + 1, ks + 1, hkk));
           hwr[ks] = hkk; // WR(KS+1)
           hwi[ks] = zero;
           hwr[ks - 1] = hwr[ks]; // WR(KS) = WR(KS+1)
@@ -492,7 +492,7 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
           // DLACPY('A', NS, NS, H(KS,KS), LDH, scbuf, LDSC): copy column by column.
           for (int j = 0; j < ns; ++j) {
             CLM_TRY(wwr::wwrMemcpyAsync(scbuf + static_cast<size_t>(j) * ldsc,
-                                       Hptr(ks, ks + j), static_cast<size_t>(ns) * sizeof(T),
+                                       H_ptr(ks, ks + j), static_cast<size_t>(ns) * sizeof(T),
                                        wwr::wwrMemcpyDeviceToDevice, stream));
           }
           CLM_TRY(wwr::wwrStreamSynchronize(stream));
@@ -510,10 +510,10 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
           if (ks >= kbot) {
             // Rare QR failure: use the trailing 2x2's eigenvalues.
             T aa{}, cc{}, bb{}, dd{};
-            CLM_TRY(getH(kbot - 1, kbot - 1, aa));
-            CLM_TRY(getH(kbot, kbot - 1, cc));
-            CLM_TRY(getH(kbot - 1, kbot, bb));
-            CLM_TRY(getH(kbot, kbot, dd));
+            CLM_TRY(get_H(kbot - 1, kbot - 1, aa));
+            CLM_TRY(get_H(kbot, kbot - 1, cc));
+            CLM_TRY(get_H(kbot - 1, kbot, bb));
+            CLM_TRY(get_H(kbot, kbot, dd));
             host_dlanv2(aa, bb, cc, dd, hwr[kbot - 2], hwi[kbot - 2], hwr[kbot - 1], hwi[kbot - 1]);
             ks = kbot - 1;
           }
@@ -558,7 +558,7 @@ Status laqr0(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, 
       if (kbot - ks + 1 == 2) {
         if (hwi[kbot - 1] == zero) {
           T hkk{};
-          CLM_TRY(getH(kbot, kbot, hkk));
+          CLM_TRY(get_H(kbot, kbot, hkk));
           if (std::abs(hwr[kbot - 1] - hkk) < std::abs(hwr[kbot - 2] - hkk)) {
             hwr[kbot - 2] = hwr[kbot - 1];
           } else {
