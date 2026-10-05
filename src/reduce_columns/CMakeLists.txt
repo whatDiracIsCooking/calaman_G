@@ -32,5 +32,5 @@ target_include_directories(
 # device_guard.h (device-pass gate) both resolve off that same src/ root, so
 # wwr.device covers the wwr headers this one includes too.
 target_link_libraries(
-  calaman.reduce_columns INTERFACE wwr.device
+  calaman.reduce_columns INTERFACE wwr::device
 )

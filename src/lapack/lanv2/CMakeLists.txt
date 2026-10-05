@@ -17,7 +17,7 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   lanv2.cppm
   LINK_PUBLIC
-  wwr.runtime_api
-  calaman.error_handling
+  wwr::runtime_api
+  calaman::error_handling
   IMPORT_STD
 )

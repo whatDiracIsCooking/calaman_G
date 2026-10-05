@@ -18,8 +18,8 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   larfb.cppm
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.blas
-  calaman.common
-  calaman.error_handling
+  wwr::wrappers::blas
+  wwr::blas
+  calaman::common
+  calaman::error_handling
 )

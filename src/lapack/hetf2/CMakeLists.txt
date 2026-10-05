@@ -18,8 +18,8 @@ calaman_add_gpu_device_library(
   SOURCES
   hetf2.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
-  calaman.common
+  wwr::extension::parallel_for
+  calaman::common
 )
 
 # All module links are PUBLIC because hetf2()/hetf2_bufferSize() are exported
@@ -40,14 +40,14 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   hetf2.cppm
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.blas
-  wwr.runtime_api
-  wwr.complex
-  calaman.common
-  calaman.error_handling
+  wwr::wrappers::blas
+  wwr::blas
+  wwr::runtime_api
+  wwr::complex
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -56,6 +56,4 @@ calaman_add_cxx_module_library(
 # Force the device archive members in, or the explicit device::hetf2_* kernel
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link -- the whole-archive link.
-target_link_libraries(
-  calaman.hetf2 PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.hetf2.device>"
-)
+calaman_link_device_archive(calaman.hetf2 calaman.hetf2.device)

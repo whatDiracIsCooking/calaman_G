@@ -23,15 +23,15 @@ calaman_add_gtest_executable(
   SOURCES
   horner_tests.cpp
   LINK
-  calaman.horner
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  calaman.test.shared.tolerance
+  calaman::horner
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  calaman::test::shared::tolerance
   calaman::lapack_reference
-  wwr.blas
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::blas
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 # Two registrations for one target (the drift guard unions them): the workspace

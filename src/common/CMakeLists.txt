@@ -90,8 +90,8 @@ calaman_add_cxx_module_library(
   INCLUDE_DIRS_PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
   LINK_PUBLIC
-  wwr.device
+  wwr::device
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   IMPORT_STD
 )

@@ -240,6 +240,18 @@ it never installs, so an export regression passes it cleanly. Every defect in th
 list above was found that way in WarpWraps rather than reasoned about — which is the
 argument for standing the tier back up here early rather than late.
 
+### One spelling: the `::` alias
+
+A target is **declared** by its dotted name (`NAME calaman.larfg`) and
+**linked** by its `::` alias (`calaman::larfg`, `wwr::wrappers::blas`) — a
+mistyped `::` name is a configure error, where a mistyped plain name degrades to
+a `-l` flag. `_calaman_create_alias` makes the alias in-tree;
+`_calaman_export_name` sets `EXPORT_NAME` so the installed package (under
+`NAMESPACE calaman::`) exports that same spelling. Commands that modify a target
+(`target_include_directories`, the first argument of `target_link_libraries`)
+take the dotted name, since an alias cannot be modified. A `.device` archive has
+no alias; it is linked through `calaman_link_device_archive` below.
+
 ### Forcing a device archive into an exported target
 
 A module whose kernel lives in a separate `.device` library must force that
@@ -258,8 +270,10 @@ make the force survive `install(EXPORT)`:
   the linker cannot find.
 
 Link it PUBLIC so it is also the ordinary link dependency (which is why the
-`.device` target is not in the module's `LINK_PUBLIC`). `install-check.sh` is
-what catches a regression here.
+`.device` target is not in the module's `LINK_PUBLIC`). All three rules are
+what `calaman_link_device_archive(<target> <device_target>)` (in
+`calaman_add_gpu_device_library.cmake`) does — call it rather than spelling the
+genexes out. `install-check.sh` is what catches a regression here.
 
 ---
 

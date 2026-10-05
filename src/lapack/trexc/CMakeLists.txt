@@ -23,9 +23,9 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   trexc.cppm
   LINK_PUBLIC
-  wwr.runtime_api
-  calaman.common
-  calaman.laexc
-  calaman.error_handling
+  wwr::runtime_api
+  calaman::common
+  calaman::laexc
+  calaman::error_handling
   IMPORT_STD
 )

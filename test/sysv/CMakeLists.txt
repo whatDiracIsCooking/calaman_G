@@ -16,18 +16,18 @@ calaman_add_gtest_executable(
   SOURCES
   sysv_tests.cpp
   LINK
-  calaman.sysv
-  calaman.common
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  calaman.test.shared.tolerance
+  calaman::sysv
+  calaman::common
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  calaman::test::shared::tolerance
   calaman::lapack_reference
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.complex
-  wwr.extension.memory_buffer
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::complex
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

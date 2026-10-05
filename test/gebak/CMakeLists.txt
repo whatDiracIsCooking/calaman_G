@@ -23,15 +23,15 @@ calaman_add_gtest_executable(
   SOURCES
   gebak_tests.cpp
   LINK
-  calaman.gebak
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
+  calaman::gebak
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
   calaman::lapack_reference
-  wwr.runtime_api
-  wwr.complex
-  wwr.wrappers.common
-  wwr.extension.memory_buffer
+  wwr::runtime_api
+  wwr::complex
+  wwr::wrappers::common
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

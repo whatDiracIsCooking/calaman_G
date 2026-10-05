@@ -24,11 +24,11 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   diff_norm.cppm
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.blas
-  wwr.runtime_api
-  wwr.extension.blas
-  calaman.common
-  calaman.error_handling
-  calaman.set_element
+  wwr::wrappers::blas
+  wwr::blas
+  wwr::runtime_api
+  wwr::extension::blas
+  calaman::common
+  calaman::error_handling
+  calaman::set_element
 )

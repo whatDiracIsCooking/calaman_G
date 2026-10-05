@@ -15,16 +15,16 @@ calaman_add_gtest_executable(
   SOURCES
   expm_tests.cpp
   LINK
-  calaman.expm
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.complex
-  wwr.wrappers.common
-  wwr.extension.memory_buffer
+  calaman::expm
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::complex
+  wwr::wrappers::common
+  wwr::extension::memory_buffer
 )
 
 # The plan ladder, the thresholds and the argument-checking contract are pure

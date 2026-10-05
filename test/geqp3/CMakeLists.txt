@@ -25,16 +25,16 @@ calaman_add_gtest_executable(
   SOURCES
   geqp3_tests.cpp
   LINK
-  calaman.geqp3
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  calaman.test.shared.tolerance
+  calaman::geqp3
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  calaman::test::shared::tolerance
   calaman::lapack_reference
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

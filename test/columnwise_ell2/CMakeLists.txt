@@ -19,13 +19,13 @@ calaman_add_gtest_executable(
   SOURCES
   columnwise_ell2_tests.cpp
   LINK
-  calaman.columnwise_ell2
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
+  calaman::columnwise_ell2
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
   calaman::lapack_reference
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 # Two registrations for one target (the drift guard unions them): the

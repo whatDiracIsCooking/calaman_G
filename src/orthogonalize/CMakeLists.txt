@@ -23,9 +23,9 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.wrappers.solver
-  wwr.solver
-  calaman.common
-  calaman.error_handling
+  wwr::wrappers::solver
+  wwr::solver
+  calaman::common
+  calaman::error_handling
   IMPORT_STD
 )

@@ -232,7 +232,9 @@ carries that cost instead.
   `calaman_add_gpu_device_library` for a module's device-kernel `.cu` library.
   `calaman_add_interface_library` is wired and documented with no call sites —
   do not assume it is dead.
-- Target names use dots and are aliased to `::`.
+- Target names use dots and are aliased to `::`; link lists name the `::`
+  alias, and the installed package exports that same spelling
+  (`cmake/README.md`, "One spelling").
 - **Backend-neutral by construction.** A `wwr*` name from WarpWraps is the portable
   spelling; a `cu*`/`hip*` name in this tree is a bug unless it sits behind a
   switch that gives both backends an answer.

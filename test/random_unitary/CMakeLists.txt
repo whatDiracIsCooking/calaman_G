@@ -24,17 +24,17 @@ calaman_add_gtest_executable(
   SOURCES
   random_unitary_tests.cpp
   LINK
-  calaman.random_unitary
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  calaman.test.shared.tolerance
-  wwr.solver
-  wwr.runtime_api
-  wwr.rand
-  wwr.complex
-  wwr.extension.memory_buffer
-  wwr.extension.init_state
+  calaman::random_unitary
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  calaman::test::shared::tolerance
+  wwr::solver
+  wwr::runtime_api
+  wwr::rand
+  wwr::complex
+  wwr::extension::memory_buffer
+  wwr::extension::init_state
 )
 
 calaman_add_gtest_suite_tests(

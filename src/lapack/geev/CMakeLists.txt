@@ -41,20 +41,20 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   geev.cppm
   LINK_PUBLIC
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.wrappers.blas
-  calaman.common
-  calaman.lange
-  calaman.lascl
-  calaman.lacpy
-  calaman.gebal
-  calaman.gehrd
-  calaman.orghr
-  calaman.hseqr
-  calaman.trevc3
-  calaman.gebak
-  calaman.error_handling
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::wrappers::blas
+  calaman::common
+  calaman::lange
+  calaman::lascl
+  calaman::lacpy
+  calaman::gebal
+  calaman::gehrd
+  calaman::orghr
+  calaman::hseqr
+  calaman::trevc3
+  calaman::gebak
+  calaman::error_handling
   IMPORT_STD
 )

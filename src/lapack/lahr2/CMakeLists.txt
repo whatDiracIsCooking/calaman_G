@@ -21,9 +21,9 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   lahr2.cppm
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.blas
-  wwr.runtime_api
-  calaman.larfg
-  calaman.error_handling
+  wwr::wrappers::blas
+  wwr::blas
+  wwr::runtime_api
+  calaman::larfg
+  calaman::error_handling
 )

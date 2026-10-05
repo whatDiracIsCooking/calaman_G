@@ -14,14 +14,14 @@ calaman_add_gtest_executable(
   SOURCES
   complex_cast_tests.cpp
   LINK
-  calaman.complex_cast
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  wwr.runtime_api
-  wwr.complex
-  wwr.wrappers.common
-  wwr.extension.memory_buffer
+  calaman::complex_cast
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  wwr::runtime_api
+  wwr::complex
+  wwr::wrappers::common
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

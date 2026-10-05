@@ -13,7 +13,7 @@ calaman_add_gpu_device_library(
   SOURCES
   laqp2.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # All module links are PUBLIC because laqp2() is an exported template DEFINED in
@@ -35,14 +35,14 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   laqp2.cppm
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.blas
-  wwr.runtime_api
-  calaman.larfg
-  calaman.larf
-  calaman.error_handling
+  wwr::wrappers::blas
+  wwr::blas
+  wwr::runtime_api
+  calaman::larfg
+  calaman::larf
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -51,7 +51,4 @@ calaman_add_cxx_module_library(
 # Force the device archive members in, or the explicit device::laqp2_downdate<T>
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link -- the whole-archive link lacpy needs.
-target_link_libraries(
-  calaman.laqp2
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.laqp2.device>"
-)
+calaman_link_device_archive(calaman.laqp2 calaman.laqp2.device)

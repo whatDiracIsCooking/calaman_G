@@ -25,13 +25,13 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   hesv.cppm
   LINK_PUBLIC
-  wwr.blas
-  wwr.runtime_api
-  wwr.complex
-  calaman.common
-  calaman.hetf2
-  calaman.hetrs
-  calaman.hetrs2
-  calaman.error_handling
+  wwr::blas
+  wwr::runtime_api
+  wwr::complex
+  calaman::common
+  calaman::hetf2
+  calaman::hetrs
+  calaman::hetrs2
+  calaman::error_handling
   IMPORT_STD
 )

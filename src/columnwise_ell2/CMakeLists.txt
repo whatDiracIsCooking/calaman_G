@@ -27,8 +27,8 @@ calaman_add_gpu_device_library(
   SOURCES
   columnwise_ell2.cu
   LINK_PRIVATE
-  calaman.reduce_columns
-  wwr.extension.parallel_for
+  calaman::reduce_columns
+  wwr::extension::parallel_for
 )
 
 # The module itself: ordinary host C++23, no device code. instantiations.cpp is
@@ -49,9 +49,9 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.runtime_api
+  wwr::runtime_api
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -64,7 +64,6 @@ calaman_add_cxx_module_library(
 # on the install tier
 # (CALAMAN_INSTALL, docs/architecture.md §2); this build-interface link is what
 # the tests need meanwhile.
-target_link_libraries(
-  calaman.columnwise_ell2
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.columnwise_ell2.device>"
+calaman_link_device_archive(
+  calaman.columnwise_ell2 calaman.columnwise_ell2.device
 )

@@ -23,14 +23,14 @@ calaman_add_gtest_executable(
   SOURCES
   lascl_tests.cpp
   LINK
-  calaman.lascl
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.shared.tolerance
-  calaman.test.utils.shared_device
+  calaman::lascl
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::shared::tolerance
+  calaman::test::utils::shared_device
   calaman::lapack_reference
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

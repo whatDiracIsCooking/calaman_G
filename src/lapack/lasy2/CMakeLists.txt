@@ -17,7 +17,7 @@ calaman_add_gpu_device_library(
   SOURCES
   lasy2.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries
@@ -42,11 +42,11 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.runtime_api
-  calaman.common
-  calaman.error_handling
+  wwr::runtime_api
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -58,6 +58,4 @@ calaman_add_cxx_module_library(
 # The install-interface spelling waits on the install tier (CALAMAN_INSTALL,
 # docs/architecture.md §2); this build-interface link is what the tests need
 # meanwhile.
-target_link_libraries(
-  calaman.lasy2 PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.lasy2.device>"
-)
+calaman_link_device_archive(calaman.lasy2 calaman.lasy2.device)

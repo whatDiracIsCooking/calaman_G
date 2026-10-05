@@ -20,7 +20,7 @@ calaman_add_gpu_device_library(
   SOURCES
   horner.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # The module itself: ordinary host C++23, no device code. instantiations.cpp is
@@ -47,13 +47,13 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.blas
-  wwr.runtime_api
-  calaman.common
-  calaman.error_handling
+  wwr::wrappers::blas
+  wwr::blas
+  wwr::runtime_api
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -64,7 +64,4 @@ calaman_add_cxx_module_library(
 # lazily-resolved calls) and a consumer fails to link -- the same whole-archive
 # link lacpy and calaman.linalg need. The install-interface spelling waits on
 # the install tier (CALAMAN_INSTALL, docs/architecture.md §2).
-target_link_libraries(
-  calaman.horner
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.horner.device>"
-)
+calaman_link_device_archive(calaman.horner calaman.horner.device)

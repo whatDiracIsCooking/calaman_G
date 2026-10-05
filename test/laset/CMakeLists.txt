@@ -21,13 +21,13 @@ calaman_add_gtest_executable(
   SOURCES
   laset_tests.cpp
   LINK
-  calaman.laset
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
+  calaman::laset
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
   calaman::lapack_reference
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

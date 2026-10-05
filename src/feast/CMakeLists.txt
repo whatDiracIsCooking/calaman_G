@@ -28,8 +28,8 @@ calaman_add_gpu_device_library(
   SOURCES
   feast.cu
   LINK_PRIVATE
-  wwr.device
-  calaman.common
+  wwr::device
+  calaman::common
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm
@@ -67,17 +67,17 @@ calaman_add_cxx_module_library(
   rayleigh_ritz.cppm
   feast_solver.cppm
   LINK_PUBLIC
-  wwr.runtime_api
-  wwr.blas
-  wwr.solver
-  wwr.wrappers.blas
-  wwr.wrappers.solver
-  wwr.extension.blas
-  calaman.common
-  calaman.orthogonalize
-  calaman.error_handling
+  wwr::runtime_api
+  wwr::blas
+  wwr::solver
+  wwr::wrappers::blas
+  wwr::wrappers::solver
+  wwr::extension::blas
+  calaman::common
+  calaman::orthogonalize
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -89,7 +89,4 @@ calaman_add_cxx_module_library(
 # gebal and expm need. The install-interface spelling waits on the install tier
 # (CALAMAN_INSTALL, docs/architecture.md §2); this build-interface link is what
 # the tests need meanwhile.
-target_link_libraries(
-  calaman.feast
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.feast.device>"
-)
+calaman_link_device_archive(calaman.feast calaman.feast.device)

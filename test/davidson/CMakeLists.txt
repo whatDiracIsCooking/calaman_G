@@ -17,16 +17,16 @@ calaman_add_gtest_executable(
   SOURCES
   davidson_tests.cpp
   LINK
-  calaman.davidson
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.wrappers.common
-  wwr.wrappers.blas
-  wwr.extension.memory_buffer
+  calaman::davidson
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::wrappers::common
+  wwr::wrappers::blas
+  wwr::extension::memory_buffer
   calaman::lapack_reference
 )
 

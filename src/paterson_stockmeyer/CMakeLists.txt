@@ -20,7 +20,7 @@ calaman_add_gpu_device_library(
   SOURCES
   paterson_stockmeyer.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # The module itself: ordinary host C++23, no device code. instantiations.cpp is
@@ -48,13 +48,13 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.blas
-  wwr.runtime_api
-  calaman.common
-  calaman.error_handling
+  wwr::wrappers::blas
+  wwr::blas
+  wwr::runtime_api
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -66,7 +66,6 @@ calaman_add_cxx_module_library(
 # the same whole-archive link calaman.horner and calaman.laqps need. The
 # install-interface spelling waits on the install tier (CALAMAN_INSTALL,
 # docs/architecture.md §2).
-target_link_libraries(
-  calaman.paterson_stockmeyer
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.paterson_stockmeyer.device>"
+calaman_link_device_archive(
+  calaman.paterson_stockmeyer calaman.paterson_stockmeyer.device
 )

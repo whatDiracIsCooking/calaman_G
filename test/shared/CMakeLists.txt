@@ -15,7 +15,7 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   abort_policy.cppm
   LINK_PUBLIC
-  wwr.extension.common
+  wwr::extension::common
   IMPORT_STD
 )
 
@@ -29,11 +29,11 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   device_handle.cppm
   LINK_PUBLIC
-  wwr.runtime_api
-  wwr.extension.common
-  wwr.extension.handle
-  wwr.extension.runtime
-  calaman.test.shared.abort_policy
+  wwr::runtime_api
+  wwr::extension::common
+  wwr::extension::handle
+  wwr::extension::runtime
+  calaman::test::shared::abort_policy
   IMPORT_STD
 )
 
