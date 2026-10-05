@@ -1,6 +1,6 @@
 # calaman.common -- the shared building blocks, as ONE module split into
-# partitions, plus one device-only header (elem_ops.cuh) that rides along on the
-# same src/ include root:
+# partitions, plus two device-only headers (elem_ops.cuh, block_reduce.cuh)
+# that ride along on the same src/ include root:
 #
 #   common.cppm         primary interface; only `export import`s the partitions
 #   :constants          constants.cppm + constants.h -- typed constants
@@ -37,13 +37,15 @@
 # define -- hence the LINK_PRIVATE wwr_backend, mirroring WarpWraps' own
 # wwr.wrappers.common.
 #
-# elem_ops.cuh is NOT a partition: it is a device-only `.cuh` (per-element
-# scalar arithmetic over float/double/complex) #included into consumers' .cu
-# TUs and never imported, so it has no module face. It lives here only to share
-# the src/ include root -- reached root-relative as "common/elem_ops.cuh" --
-# having been folded in from the former standalone calaman.elem_ops INTERFACE
-# library. Its WarpWraps device dependency is why calaman.common is no longer
-# dependency-free (see LINK_PUBLIC below).
+# elem_ops.cuh and block_reduce.cuh are NOT partitions: each is a device-only
+# `.cuh` (per-element scalar arithmetic; the block-wide tree reduction)
+# #included into consumers' .cu TUs and never imported, so neither has a module
+# face. They live here only to share the src/ include root -- reached
+# root-relative as "common/<name>.cuh" -- elem_ops.cuh having been folded in
+# from the former standalone calaman.elem_ops INTERFACE library. Its WarpWraps
+# device dependency is why calaman.common is no longer dependency-free (see
+# LINK_PUBLIC below); block_reduce.cuh needs only device_guard.h off the same
+# wwr.device root.
 #
 # INCLUDE_DIRS_PUBLIC is the src/ root, wrapped in $<BUILD_INTERFACE:> so the
 # raw build path does not leak into the install interface; the install-interface

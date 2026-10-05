@@ -18,7 +18,10 @@
 # parallel_for), so it links wwr.device directly PRIVATE -- the minimal carrier
 # of complex.h (neutral complex types/accessors), runtime.h (wwrStream_t via
 # feast_bridge.h, plus the WWR_WARP_SIZE block-size define) and the backend
-# runtime lib. The link is PRIVATE, as every device-library link is.
+# runtime lib. Its block reductions come from calaman.common's block_reduce.cuh
+# header, so it links calaman.common too, for the src/ root that resolves
+# "common/block_reduce.cuh" (gebal's elem_ops.cuh pattern). The links are
+# PRIVATE, as every device-library link is.
 calaman_add_gpu_device_library(
   NAME
   calaman.feast.device
@@ -26,6 +29,7 @@ calaman_add_gpu_device_library(
   feast.cu
   LINK_PRIVATE
   wwr.device
+  calaman.common
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm
