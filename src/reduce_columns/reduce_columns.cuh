@@ -30,9 +30,9 @@
 #include <concepts>
 #include <cstddef>
 
-// binary_op_functor / unary_transform_functor (the launcher constraints below)
-// and identity_functor, off the same src/ root as the two wwr headers.
-#include "common/functor_concepts.h"
+// device_functor (the launcher constraints below) and identity_functor, off
+// the same src/ root as the two wwr headers.
+#include "common/device_functor.h"
 
 // WWR_WARP_SIZE (the block-size base) and wwrStream_t for the launcher signature
 // come from runtime.h; device_guard.h is the device-pass gate -- it #errors
@@ -47,8 +47,8 @@ namespace kernels {
 
 /// @brief [kernel] Reduce one column per block: `d_result[j] = fold_i pre(A(i, j))`
 ///
-/// The `requires` carries the callability checks the concepts
-/// (common/functor_concepts.h) cannot: a
+/// The `requires` carries the callability checks device_functor
+/// (common/device_functor.h) cannot: a
 /// `__global__` template is a device entity, so the probes accept the functors'
 /// `__device__`-only `operator()`.
 ///
@@ -128,8 +128,7 @@ __global__ void reduce_columns_kernel(const T *const d_A, ValT *const d_result, 
 /// @param lda      Leading dimension (column stride); lda >= n, so columns do not overlap
 /// @param pre      Per-element pre-transform applied before the fold
 /// @param op       Associative binary fold (no identity or commutativity required)
-template<typename T, typename ValT, unary_transform_functor<T, ValT> UnaryOp,
-         binary_op_functor<ValT> BinaryOp>
+template<typename T, typename ValT, device_functor UnaryOp, device_functor BinaryOp>
 void reduce_columns_transform(const wwr::wwrStream_t stream, const T *const d_A,
                               ValT *const d_result, const std::size_t n, const std::size_t ncols,
                               const std::size_t lda, const UnaryOp pre, const BinaryOp op) {
@@ -150,7 +149,7 @@ void reduce_columns_transform(const wwr::wwrStream_t stream, const T *const d_A,
 ///
 /// @tparam T        Element type
 /// @tparam BinaryOp Associative fold `T(T, T)`, trivially-copyable class
-template<typename T, binary_op_functor<T> BinaryOp>
+template<typename T, device_functor BinaryOp>
 void reduce_columns(const wwr::wwrStream_t stream, const T *const d_A, T *const d_result,
                     const std::size_t n, const std::size_t ncols, const std::size_t lda,
                     const BinaryOp op) {

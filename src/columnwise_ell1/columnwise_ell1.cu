@@ -28,7 +28,7 @@ namespace {
 /// @brief Per-element pre-transform |x|, the magnitude summed by the L1 norm
 ///
 /// A trivially-copyable class with a `__device__` call, as reduce_columns'
-/// unary_transform_functor requires. `x < 0 ? -x : x` matches the host spelling
+/// device_functor requires. `x < 0 ? -x : x` matches the host spelling
 /// calaman.diff_norm uses and needs no <cmath> in the device pass.
 template<typename T>
 struct AbsFunctor {

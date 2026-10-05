@@ -24,10 +24,9 @@ are asynchronous (enqueue one kernel, no synchronize) and no-op on empty input.
 submatrix view (columns non-contiguous) works unchanged.
 
 Both `pre` and `op` must be trivially-copyable class types — the
-`unary_transform_functor` / `binary_op_functor` concepts from
-`common/functor_concepts.h`, which also provides `identity_functor`. The
-callability checks live on the kernel template (a device entity), not the
-concepts; the header explains the split.
+`device_functor` concept from `common/device_functor.h`, which also provides
+`identity_functor`. The callability checks live on the kernel template (a
+device entity), not the concept; the header explains the split.
 
 ## Why a hand-written kernel, not Thrust
 
