@@ -9,6 +9,11 @@
  * device kernels of feast.cu -- written once against WarpWraps's `wwr*` names and
  * built for either backend.
  *
+ * Exported: feast_solver, feast_bufferSize, FeastOptions/FeastInfo/
+ * FeastStopReason, feast_rational_filter. The other partitions' declarations are
+ * module-internal; they are re-exported only because every interface partition
+ * must be.
+ *
  * Usage:
  *   import calaman.feast;
  *   using namespace calaman;

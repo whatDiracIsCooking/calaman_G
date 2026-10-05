@@ -10,10 +10,7 @@
  *   Z_e = center + r * exp(i theta_e)   [runtime: depends on the interval]
  * with center = (Emax + Emin) / 2 and r = (Emax - Emin) / 2; see
  * compute_quadrature.cppm, which turns these constants into Z_e and w_e.
- *
- * Usage:
- *   import calaman.feast;
- *   const auto& q = calaman::feast_gauss_legendre<double, 8>();
+ * Module-internal: nothing here is exported.
  */
 
 export module calaman.feast:feast_quadrature;
@@ -21,7 +18,7 @@ export module calaman.feast:feast_quadrature;
 import std;
 import calaman.common;  // real_fp
 
-export namespace calaman {
+namespace calaman {
 
 /**
  * @brief Compile-time FEAST Gauss-Legendre quadrature table.

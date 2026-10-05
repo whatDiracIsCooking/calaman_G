@@ -43,7 +43,7 @@ import wwr.wrappers.blas;   // getrfBatched, getrsBatched
 import :buffer_size;
 export import calaman.error_handling; // Status -- the cross-domain return type
 
-export namespace calaman {
+namespace calaman {
 
 /**
  * @brief Build the resolvents Z_e I - A and LU-factor them in one batched call.
