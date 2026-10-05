@@ -109,10 +109,10 @@ calaman_add_gpu_device_library(
   LINK_PRIVATE wwr.extension.parallel_for)
 ```
 
-> Illustrative: there is no such target yet. `deps/WarpWraps/src/extension/random_normal/CMakeLists.txt`
-> is the real call site to copy from, and note that a device library added here
-> must also be listed in `CROSS_CHECK_DEVICE_TARGETS` (`devtools/config.sh`) for
-> `cross-backend-check.sh --device-only` to reach it.
+> Illustrative: there is no such target. `src/nnls/CMakeLists.txt` is a real
+> call site to copy from. Every target the macro defines joins the
+> `calaman_device_libraries` umbrella, which is what
+> `cross-backend-check.sh --device-only` builds — no list to keep in step.
 
 ---
 

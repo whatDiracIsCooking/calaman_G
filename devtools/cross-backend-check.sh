@@ -37,9 +37,10 @@
 #   --device-only   build only the device .cu libraries instead of the whole
 #                   compile-time tier. Narrower: it catches a kernel-side
 #                   divergence but not one in a module unit, and it only knows
-#                   the targets CROSS_CHECK_DEVICE_TARGETS names. That list is
-#                   EMPTY until src/ has a .cu, and this flag refuses rather
-#                   than building nothing and calling it a pass.
+#                   the targets CROSS_CHECK_DEVICE_TARGETS names (default:
+#                   the calaman_device_libraries umbrella). Empty, and this
+#                   flag refuses rather than building nothing and calling it a
+#                   pass.
 #   --native        skip the container and run cmake here. Implied when this
 #                   host already has the target backend's toolchain.
 #
@@ -107,10 +108,10 @@ if [ "$device_only" = 1 ] && [ "${#device_targets[@]}" -eq 0 ]; then
   cat >&2 <<EOF
 cross-backend-check: --device-only has nothing to build.
 
-  CROSS_CHECK_DEVICE_TARGETS in devtools/config.sh is empty, which is correct
-  while src/ has no .cu sources. Run without the flag to compile the whole
-  compile-time tier for $CROSS_CHECK_BACKEND, and add each device library to
-  that list as it lands.
+  CROSS_CHECK_DEVICE_TARGETS is empty -- its default in devtools/config.sh is
+  the calaman_device_libraries umbrella, so something overrode it. Unset the
+  override, or run without the flag to compile the whole compile-time tier for
+  $CROSS_CHECK_BACKEND.
 EOF
   exit 2
 fi

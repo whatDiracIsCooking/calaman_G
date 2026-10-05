@@ -13,23 +13,26 @@ description: >-
 
 # Running tests, and trusting the result
 
-Two rules, and the second is specific to this repo right now:
+Two rules, and the second is about where this repo's numbers are proved:
 
 1. **A green run is meaningless until you read the skip list.** Tests that need
    a tool the environment lacks skip *silently*, so "all passed" can mean "the
    tests that would have caught this never ran." Always pass `-rs`. On a bare
    host that is the *normal* case here — the whole C++ toolchain lives in the
    CUDA image.
-2. **`src/` and `test/` are empty.** The C++ tier configures and builds, and it
-   asserts nothing about this project. A green `cpp-tier.sh` today means *the
-   toolchain, WarpWraps and the CMake wiring are healthy* — nothing more. Say that,
-   rather than "the C++ tests pass."
+2. **Only a run on a card proves a number.** `src/` and `test/` are live: the
+   numerical suites compare each routine's device result against the reference
+   LAPACK, and they carry the `gpu` ctest label. A green `cpp-tier.sh` on a box
+   with a GPU **does** assert this project's numbers, for the backend it built.
+   `ctest -LE gpu` — the `ci-cuda`/`ci-hip` presets, and so all of CI — excludes
+   every one of them and proves compile-and-link plus the host-only suites. Say
+   which of the two you ran.
 
 ## Two suites, and neither covers the other
 
 | | the C++ suite | the Python suite |
 |---|---|---|
-| Where | `test/` — **empty today** | `.claude/hooks/` (the only pytest path) |
+| Where | `test/` — one suite per `src/` module, plus `test/shared/` | `.claude/hooks/` (the only pytest path) |
 | Language | C++23, googletest | Python, pytest |
 | Runner | `ctest` via `devtools/cpp-tier.sh` | `pytest` |
 | Tests | the library's own units, incl. device kernels | one checker: `.claude/hooks/protect-main.py` — no built binary |
@@ -37,10 +40,10 @@ Two rules, and the second is specific to this repo right now:
 | Gated by | nothing automatic — see below | the pre-push hook, only on a `.py` |
 
 There is **no top-level `tests/` directory** — each test lives next to what it
-tests, and `testpaths` in `pyproject.toml` names `.claude/hooks`. Add
-`test/shared` (or whatever the C++ side needs) to `testpaths` in the same commit
-that creates it: a `testpaths` entry pointing at a directory that does not exist
-is a pytest **error**, not a skip.
+tests, and `testpaths` in `pyproject.toml` names `.claude/hooks` only — `test/`
+is C++ and has no pytest files. Add a directory to `testpaths` in the same
+commit that lands its first Python test: an entry pointing at a directory that
+does not exist is a pytest **error**, not a skip.
 
 **Which suite a change needs is not negotiable by convenience.** A change under
 `src/`, `deps/`, `cmake/` or `CMakeLists.txt` is verified by the C++ tier and by
@@ -103,9 +106,10 @@ Things that will bite:
   `calaman_add_gtest_suite_tests()` as an `add_test` with a `--gtest_filter`.
   Nothing uses `gtest_discover_tests`, so `-R` selects by suite name and there is
   no test-time discovery step.
-- **Deliberately no case counts quoted in this skill.** The suite is about to
-  grow from zero; a number written here would be stale immediately, and a stale
-  count is worse than none.
+- **Deliberately no case counts quoted in this skill.** The suite grows with
+  every module PR, so a number written here would be stale within days, and a
+  stale count is worse than none. Count from the run in front of you
+  (`ctest -N`, and `ctest -N -L gpu` for the labelled share).
 
 ### Two things that FAIL rather than skip
 
@@ -142,7 +146,7 @@ executes.
 ```bash
 devtools/cross-backend-check.sh               # compile the OTHER backend, docker included
 devtools/cross-backend-check.sh --fresh       # wipe its CMake cache first
-devtools/cross-backend-check.sh --device-only # NOT AVAILABLE YET -- see below
+devtools/cross-backend-check.sh --device-only # only the device .cu libraries
 ```
 
 Run it from the **host** — unlike every other tier, this one is not run inside
@@ -154,10 +158,13 @@ includes.** A `.cu` is compiled by nvcc under CUDA and clang under HIP, and nvcc
 is the more permissive of the two — so a whole class of error passes the C++ tier
 green and only appears when someone builds ROCm.
 
-`--device-only` needs `CROSS_CHECK_DEVICE_TARGETS` in `devtools/config.sh`, which
-is **empty** while `src/` has no `.cu`. The flag refuses with that reason and
-exits 2 rather than building nothing and reporting a pass; use the default
-whole-tier run, and add each device library to that list as it lands.
+`--device-only` builds `CROSS_CHECK_DEVICE_TARGETS` from `devtools/config.sh`,
+which defaults to the `calaman_device_libraries` umbrella: every
+`calaman_add_gpu_device_library()` target joins it, so a new `.cu` library is
+covered with no list to update. It catches a kernel-side divergence but not one
+in a module unit — the default whole-tier run is the stronger check. If the
+variable is overridden empty the flag refuses and exits 2 rather than building
+nothing and reporting a pass.
 
 Reading the result:
 
@@ -200,8 +207,10 @@ devtools/coverage.sh                   # configure + build + ctest + llvm-cov, b
 ```
 
 `COVERAGE_IGNORE_REGEX` in `devtools/config.sh` drops `/deps/` — WarpWraps and
-GoogleTest — from the summary, so the number is about this project. With `src/`
-empty there is nothing to measure yet; a percentage reported now is noise.
+GoogleTest — from the summary, so the number is about this project. Most of
+`src/` is exercised only by `gpu`-labelled suites, so a coverage run without a
+card measures the host-only suites alone — say which it was before quoting a
+percentage.
 
 ## Host vs container — the worker count differs
 
@@ -282,8 +291,16 @@ why. "N passed, M skipped — all M because <tool> is absent, so <what that
 covers> was not verified here" is an honest result; "all green" on the same run
 is not.
 
-And say what did *not* run at all. While `test/` is empty, the honest sentence
-for a C++ run is: "configure and build succeeded for <preset>, WarpWraps included;
-ctest ran N entries, none of them this project's — `test/` is empty." A change
-under `src/` reported as "tests pass" on a pytest-only run is the failure this
-skill exists to prevent.
+And say what did *not* run at all. For a C++ run, name the preset and backend,
+the entry count, and how many of those were `gpu`-labelled:
+
+- On a card: "`cpp-tier.sh --preset <p>` (<CUDA|HIP>, <device>): N/N ctest
+  entries passed, G of them `gpu`-labelled numerical suites checked against the
+  reference LAPACK." Say if the *other* backend was not run.
+- Without one (`ctest -LE gpu`, or CI): "compile-and-link for <backend> plus
+  the M host-only entries; the G `gpu` suites were excluded, so no device
+  number was checked."
+
+If the configure log has the missing-LAPACK `WARNING`, the numerical suites
+asserted nothing — say that too. A change under `src/` reported as "tests pass"
+on a pytest-only or `-LE gpu` run is the failure this skill exists to prevent.
