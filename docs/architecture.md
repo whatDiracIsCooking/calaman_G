@@ -166,3 +166,35 @@ the fields the others lack:
 ask which fields each holds that the others cannot, and merge or drop the ones
 that fail. A deterministic routine with a predictor needs one struct, not three;
 an iterative, knob-taking one may well need two.
+
+## 6. Typed constants extend to complex by brace-initialisation
+
+**Decision.** `common/constants.h`'s `kZero … kPi` specialise to
+`wwrFloatComplex` / `wwrDoubleComplex` by brace-initialisation (`{re, 0}`), not
+through WarpWraps' `make_wwr*Complex`. This is the only place in `src/` that
+builds a complex value off the `wwr*` neutral surface, and it is deliberate:
+runtime construction still uses the builders (`common/elem_ops.cuh`'s `from_real`
+/ `make_complex`), and `elem_ops<T>::zero()/one()` now return these constants
+rather than carrying their own `make_##CT(0,0)`, so the zero/one values live in
+one place.
+
+**Context.** A `constexpr` variable needs a constant initialiser, and
+`make_wwr*Complex` is `inline` (host) / `__device__ __forceinline__` (device),
+not `constexpr`, so it cannot initialise one on either backend.
+Brace-initialisation can: `cuFloatComplex` is an aggregate `float2`, and
+`hipFloatComplex` is a class (`HIP_vector_type<float, 2>`) carrying a `constexpr`
+constructor. Measured on the toolchain above, 2026-10-05: `constexpr T z = {0,0}`
+compiles for both complex types under CUDA 13.0 and ROCm 7.2.4, while `constexpr
+T z = make_wwr*Complex(0,0)` fails on both with "non-constexpr function … cannot
+be used in a constant expression". The vendor type shapes themselves are
+WarpWraps' domain (`deps/WarpWraps/docs/architecture.md`).
+
+**Consequence.** `constants.h` depends on both vendor complex types being
+brace-constructible with `{re, im}` — a property WarpWraps does not promise
+through a `constexpr` neutral builder; a future SDK dropping
+`HIP_vector_type`'s `constexpr` constructor would break it, and the fallback is
+the runtime `elem_ops` builders. Because the specialisations are `inline
+constexpr`, they must be present in every TU that instantiates `kZero<complex>`,
+so `constants.h` includes `complex.h` unconditionally — which is why the
+`:constants` partition now carries the `wwr.device` / `wwr_backend` dependency
+`:fp_types` already does.
