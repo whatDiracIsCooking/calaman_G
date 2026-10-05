@@ -58,8 +58,8 @@
 
 #pragma once
 
-#include "complex.h"              // wwr complex types + wwrC* arithmetic (device pass)
-#include "wrappers/math/math.cuh" // wwr::exp / cos / sin / fabs (device, float/double)
+#include <complex.h>              // wwr complex types + wwrC* arithmetic (device pass)
+#include <wrappers/math/math.cuh> // wwr::exp / cos / sin / fabs (device, float/double)
 
 #include <type_traits>
 

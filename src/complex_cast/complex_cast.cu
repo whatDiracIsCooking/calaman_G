@@ -18,9 +18,9 @@
 // to carry its own complex_ops struct for exactly that; it is now the shared header.
 #include "complex_cast_bridge.h"
 
-#include "complex.h"
+#include <complex.h>
 #include "common/elem_ops.cuh"
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cstddef>
 

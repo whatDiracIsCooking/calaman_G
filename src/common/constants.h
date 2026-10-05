@@ -24,7 +24,7 @@
 
 #pragma once
 
-#include "complex.h" // wwrFloatComplex / wwrDoubleComplex (types; host-safe)
+#include <complex.h> // wwrFloatComplex / wwrDoubleComplex (types; host-safe)
 
 namespace calaman {
 

@@ -19,7 +19,7 @@
 // (under HIP the CMakeLists forces -x hip), so no __CUDACC__.
 #include "pstrf_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cstddef>
 

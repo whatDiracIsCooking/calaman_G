@@ -22,9 +22,9 @@
 // n where balancing is worth doing.
 #include "gebal_bridge.h"
 
-#include "complex.h"
+#include <complex.h>
 #include "common/elem_ops.cuh"
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cmath>
 #include <cstddef>

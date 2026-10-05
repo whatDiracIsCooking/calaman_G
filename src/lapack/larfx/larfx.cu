@@ -18,7 +18,7 @@
 // is a micro-optimisation ?larfx wanted for the CPU, not a correctness property.
 #include "larfx_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cstddef>
 

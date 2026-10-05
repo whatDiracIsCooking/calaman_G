@@ -21,7 +21,7 @@
 // CMake needs (under HIP the CMakeLists forces -x hip), so no __CUDACC__ guard.
 #include "cg_unitary_bridge.h"
 
-#include "complex.h"
+#include <complex.h>
 
 #include <cstddef>
 

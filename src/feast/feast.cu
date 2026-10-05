@@ -22,7 +22,7 @@
 #include "feast_bridge.h"
 
 #include "common/block_reduce.cuh"
-#include "complex.h"
+#include <complex.h>
 
 #include <cstddef>
 

@@ -24,10 +24,10 @@
 // over elem_ops (fma_real / add_real below) rather than bloating the shared trait.
 #include "expm_bridge.h"
 
-#include "complex.h"
+#include <complex.h>
 #include "common/constants.h"
 #include "common/elem_ops.cuh"
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 #include "reduce_columns/reduce_columns.cuh"
 
 #include <cmath>

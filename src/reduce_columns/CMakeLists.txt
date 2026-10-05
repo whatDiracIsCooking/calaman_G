@@ -16,7 +16,7 @@ add_library(calaman.reduce_columns INTERFACE)
 add_library(calaman::reduce_columns ALIAS calaman.reduce_columns)
 
 # src/ itself is the include root: reduce_columns.cuh is reached as
-# "reduce_columns/reduce_columns.cuh" and pulls in the src/-root "runtime.h"
+# "reduce_columns/reduce_columns.cuh" and pulls in WarpWraps' <runtime.h>
 # (via wwr.device) alongside it; "common/device_functor.h" (calaman.common's
 # header) resolves off this same root, so no link on calaman.common is needed.
 target_include_directories(

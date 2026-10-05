@@ -6,7 +6,7 @@
  * A thin re-export layer: the concepts (real_fp, complex_fp, usual_fp) and the
  * type maps (ComplexToRealType, RealToComplexType) that src/ constrains its
  * element templates with are WarpWraps' own, defined in its
- * "wrappers/common/fp_types.h". This header pulls that in and republishes each
+ * <wrappers/common/fp_types.h>. This header pulls that in and republishes each
  * under its `calaman::` spelling so this project writes `calaman::usual_fp` and
  * `calaman::ComplexToRealType<T>` rather than reaching into `wwr::` for a type
  * trait -- the vendor names stay for the calls that genuinely are WarpWraps'
@@ -27,12 +27,12 @@
  *
  * Consumers include it root-relative as "common/fp_types.h"; the WarpWraps
  * header is reached through the include root wwr.device exports (the same root
- * elem_ops.cuh uses for "wrappers/math/math.cuh").
+ * elem_ops.cuh uses for <wrappers/math/math.cuh>).
  */
 
 #pragma once
 
-#include "wrappers/common/fp_types.h"
+#include <wrappers/common/fp_types.h>
 
 namespace calaman {
 

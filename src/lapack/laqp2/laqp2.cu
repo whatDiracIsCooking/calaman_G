@@ -17,7 +17,7 @@
 // host (laqp2.cppm) issues the exact norms after one sync of flags.
 #include "laqp2_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cmath>
 #include <cstddef>

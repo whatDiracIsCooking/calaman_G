@@ -16,7 +16,7 @@
 #include "ladiv.h"
 #include "ladiv_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cstddef>
 
