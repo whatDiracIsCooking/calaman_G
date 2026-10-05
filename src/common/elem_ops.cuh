@@ -5,7 +5,7 @@
  *        real and complex
  *
  * `calaman::device::elem_ops<T>` is a trait struct of `__device__` static
- * functions -- zero/one/from_real, add/sub/mul/div, conj, real_part, imag_part,
+ * functions -- from_real, add/sub/mul/div, conj, real_part, imag_part,
  * modulus, scale, exp -- with a primary template for the real types (float,
  * double) and explicit specializations for wwrFloatComplex / wwrDoubleComplex. A
  * generic kernel writes `ops::add(a, b)` once and never sees `+` vs `wwrCadd`;
@@ -58,7 +58,6 @@
 
 #pragma once
 
-#include "constants.h"            // calaman::kZero / kOne, the typed-constant source
 #include "complex.h"              // wwr complex types + wwrC* arithmetic (device pass)
 #include "wrappers/math/math.cuh" // wwr::exp / cos / sin / fabs (device, float/double)
 
@@ -80,8 +79,6 @@ struct elem_ops {
 
   using real_type = T;
 
-  static __device__ __forceinline__ T zero() { return calaman::kZero<T>; }
-  static __device__ __forceinline__ T one() { return calaman::kOne<T>; }
   static __device__ __forceinline__ T from_real(const T r) { return r; }
 
   static __device__ __forceinline__ T add(const T a, const T b) { return a + b; }
@@ -109,8 +106,6 @@ struct elem_ops {
   template<>                                                                                        \
   struct elem_ops<wwr::CT> {                                                                        \
     using real_type = RT;                                                                           \
-    static __device__ __forceinline__ wwr::CT zero() { return calaman::kZero<wwr::CT>; }            \
-    static __device__ __forceinline__ wwr::CT one() { return calaman::kOne<wwr::CT>; }              \
     static __device__ __forceinline__ wwr::CT from_real(const RT r) {                               \
       return wwr::make_##CT(r, RT(0));                                                               \
     }                                                                                               \
