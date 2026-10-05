@@ -8,7 +8,8 @@
  * mathematical constants), `:fp_types` (fp_types.cppm, the floating-point
  * concepts and real/complex type maps re-published under `calaman::` from
  * WarpWraps), `:align_up` (align_up.cppm, the integer rounding
- * helpers), `:enums` (enums.cppm, the LAPACK selector enums Jobz/Uplo),
+ * helpers), `:block_params` (block_params.cppm, kWarpSize and the num_warps
+ * launch-shape concept), `:enums` (enums.cppm, the LAPACK selector enums Jobz/Uplo),
  * `:workspace` (workspace.cppm, sizing and carving one device scratch buffer)
  * and `:validation` (validation.cppm, argument-checking predicates like
  * all_nonnull). This unit is only the assembly point.
@@ -31,6 +32,7 @@ export module calaman.common;
 export import :constants;
 export import :fp_types;
 export import :align_up;
+export import :block_params;
 export import :enums;
 export import :workspace;
 export import :validation;

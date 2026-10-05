@@ -8,6 +8,8 @@
 #                       real/complex type maps, re-published under `calaman::`
 #                       from WarpWraps' wrappers/common/fp_types.h
 #   :align_up           align_up.cppm + align_up.h -- integer rounding helpers
+#   :block_params       block_params.cppm + block_params.h -- kWarpSize and
+#                       the num_warps launch-shape concept
 #   :enums              enums.cppm + enums.h -- the LAPACK selector enums
 #   :workspace          workspace.cppm -- pointer carving (WorkspaceLayout)
 #                       and the carve-once idiom (SlicesFor, carve_workspace)
@@ -15,10 +17,11 @@
 #   :validation         validation.cppm -- argument-checking predicates
 #                       (all_nonnull); pure, constexpr, header-less
 #
-# The :constants, :fp_types, :align_up and :enums partitions have no device
-# code and no implementation unit: each is a header-plus-partition pair whose
-# values, helpers, enums or (for :fp_types) re-exported concepts and type maps
-# are `inline constexpr` / `constexpr` / scoped enums / `using`-declarations in
+# The :constants, :fp_types, :align_up, :block_params and :enums partitions
+# have no device code and no implementation unit: each is a
+# header-plus-partition pair whose values, helpers, enums, concepts or (for
+# :fp_types) re-exported concepts and type maps are `inline constexpr` /
+# `constexpr` / scoped enums / `concept`s / `using`-declarations in
 # the .h, while the .cppm only re-exports them (includes the header in its GMF
 # and republishes the names). The .h is a
 # GMF-shared header, #included both by other modules and by device .cu TUs as
@@ -70,8 +73,9 @@
 # define. PRIVATE because only calaman.common's own partition compiles need it
 # (importers see the finished module; a device .cu gets the define from its
 # compiler pass). This mirrors WarpWraps' own wwr.wrappers.common. These two
-# are the dependencies calaman.common carries; the non-fp_types partitions
-# remain self-contained.
+# are the dependencies calaman.common carries; :block_params leans on the same
+# pair (its GMF #includes runtime.h for WWR_WARP_SIZE), and the remaining
+# partitions are self-contained.
 #
 # IMPORT_STD: the :workspace partition uses std::size_t / std::max via
 # `import std;`.
@@ -84,6 +88,7 @@ calaman_add_cxx_module_library(
   constants.cppm
   fp_types.cppm
   align_up.cppm
+  block_params.cppm
   enums.cppm
   workspace.cppm
   validation.cppm
