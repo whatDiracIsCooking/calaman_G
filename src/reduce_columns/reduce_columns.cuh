@@ -29,7 +29,10 @@
 
 #include <concepts>
 #include <cstddef>
-#include <type_traits>
+
+// binary_op_functor / unary_transform_functor (the launcher constraints below)
+// and identity_functor, off the same src/ root as the two wwr headers.
+#include "common/functor_concepts.h"
 
 // WWR_WARP_SIZE (the block-size base) and wwrStream_t for the launcher signature
 // come from runtime.h; device_guard.h is the device-pass gate -- it #errors
@@ -40,38 +43,12 @@
 
 namespace calaman::device {
 
-/// @brief A trivially-copyable class functor usable as the binary fold `ValT(ValT, ValT)`
-///
-/// The callability probe `{ f(a, b) } -> ValT` is deliberately NOT here: it would
-/// run in HOST context and reject a `__device__`-only `operator()`. It lives on
-/// the kernel template below instead, a device entity. This mirrors
-/// wwr.extension.parallel_for's `device_functor`, which splits the checks the
-/// same way and for the same reason. @p ValT names the value type the call sites
-/// read as documentation; the host side here checks only the storage shape.
-template<typename F, typename ValT>
-concept binary_op_functor = std::is_trivially_copyable_v<F> && std::is_class_v<F>;
-
-/// @brief A trivially-copyable class functor usable as the pre-transform `ValT(T)`
-///
-/// Same split as binary_op_functor: the `{ f(a) } -> ValT` probe is on the
-/// kernel, not here.
-template<typename F, typename T, typename ValT>
-concept unary_transform_functor = std::is_trivially_copyable_v<F> && std::is_class_v<F>;
-
-/// @brief Pre-transform that passes each element through unchanged (ValT == T)
-///
-/// Seeds the common case reduce_columns() wraps. `__host__ __device__` so the
-/// same type is usable either side of the host/device line in a device TU.
-template<typename T>
-struct identity_functor {
-  __host__ __device__ T operator()(const T &x) const { return x; }
-};
-
 namespace kernels {
 
 /// @brief [kernel] Reduce one column per block: `d_result[j] = fold_i pre(A(i, j))`
 ///
-/// The `requires` carries the callability checks the concepts above cannot: a
+/// The `requires` carries the callability checks the concepts
+/// (common/functor_concepts.h) cannot: a
 /// `__global__` template is a device entity, so the probes accept the functors'
 /// `__device__`-only `operator()`.
 ///

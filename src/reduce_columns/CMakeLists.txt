@@ -17,7 +17,8 @@ add_library(calaman::reduce_columns ALIAS calaman.reduce_columns)
 
 # src/ itself is the include root: reduce_columns.cuh is reached as
 # "reduce_columns/reduce_columns.cuh" and pulls in the src/-root "runtime.h"
-# (via wwr.device) alongside it.
+# (via wwr.device) alongside it; "common/functor_concepts.h" (calaman.common's
+# header) resolves off this same root, so no link on calaman.common is needed.
 target_include_directories(
   calaman.reduce_columns
   INTERFACE $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
@@ -29,7 +30,7 @@ target_include_directories(
 # device-KERNEL consumer of this header links hip::device itself, scoped to its
 # own gpu_device_library -- see src/columnwise_ell1. runtime.h (wwrStream_t) and
 # device_guard.h (device-pass gate) both resolve off that same src/ root, so
-# wwr.device covers the two headers this one includes too.
+# wwr.device covers the wwr headers this one includes too.
 target_link_libraries(
   calaman.reduce_columns INTERFACE wwr.device
 )

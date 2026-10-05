@@ -23,6 +23,12 @@ are asynchronous (enqueue one kernel, no synchronize) and no-op on empty input.
 `d_A` is column-major: column `j` starts at `d_A + j*lda`, with `lda >= n` so a
 submatrix view (columns non-contiguous) works unchanged.
 
+Both `pre` and `op` must be trivially-copyable class types — the
+`unary_transform_functor` / `binary_op_functor` concepts from
+`common/functor_concepts.h`, which also provides `identity_functor`. The
+callability checks live on the kernel template (a device entity), not the
+concepts; the header explains the split.
+
 ## Why a hand-written kernel, not Thrust
 
 WarpWraps removed its Thrust-based `parallel_for` because Thrust's algorithms
@@ -42,5 +48,6 @@ ragged tail. So `op` need only be associative — no identity, no commutativity.
 
 ## Consumers
 
-`src/columnwise_ell1` (per-column L1 norm: `pre = |·|`, `op = +`). New column
+`src/columnwise_ell1` (per-column L1 norm: `pre = |·|`, `op = +`),
+`src/columnwise_ell2`, `src/lapack/lange`, and `src/expm`. New column
 reductions should reach for this rather than re-rolling a reduction.
