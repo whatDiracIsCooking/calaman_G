@@ -25,6 +25,7 @@
 #include "expm_bridge.h"
 
 #include "complex.h"
+#include "common/constants.h"
 #include "common/elem_ops.cuh"
 #include "extension/parallel_for/parallel_for.cuh"
 #include "reduce_columns/reduce_columns.cuh"
@@ -88,8 +89,8 @@ struct PadeEvenOddFunctor {
   R cw_[NP + 1];
 
   __device__ void operator()(const int idx) const {
-    T v = ops::zero();
-    T w = ops::zero();
+    T v = calaman::kZero<T>;
+    T w = calaman::kZero<T>;
 
 #pragma unroll
     for (int k = 0; k < NP; ++k) {
