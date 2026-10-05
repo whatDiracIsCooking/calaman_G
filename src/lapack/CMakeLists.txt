@@ -133,9 +133,18 @@ add_subdirectory(pstrf)
 # only calaman.common and calaman.error_handling, both added one level up.
 add_subdirectory(sytrs)
 
+# calaman.sytrs2 -- the level-3 symmetric Bunch-Kaufman solve (LAPACK's
+# ?sytrs2): the same solve as calaman.sytrs, but the interchanges batched to the
+# ends so the triangular solves are trsm calls. A host composition over its own
+# ?syconv VALUE move and D^-1 kernels; no build edge to calaman.sytrs (a
+# parallel implementation, not a caller), and links only calaman.common and
+# calaman.error_handling, both one level up.
+add_subdirectory(sytrs2)
+
 # calaman.sysv -- the symmetric indefinite solve driver (LAPACK's ?sysv): factor
-# by the vendor Bunch-Kaufman wwr::sytrf, then solve with calaman.sytrs. It
-# LINKS calaman.sytrs (the solve, added just above), so it follows it here.
+# by the vendor Bunch-Kaufman wwr::sytrf, then solve with calaman.sytrs2 when
+# workspace allows (else calaman.sytrs). It LINKS both solves (added above), so
+# it follows them here.
 add_subdirectory(sysv)
 
 # calaman.lasrt -- sort a 1-D array (increasing or decreasing), the GPU

@@ -4,9 +4,11 @@
  *        matrix, LAPACK's ?sysv
  *
  * The driver: factor A by the Bunch-Kaufman method (wwr::sytrf, the vendor
- * cuSOLVER/hipSOLVER routine, backend-neutral), then solve with the factor
- * (calaman.sytrs). Templated over the four element types; COMPLEX IS SYMMETRIC,
- * not Hermitian -- the Hermitian cousin is calaman.hesv.
+ * cuSOLVER/hipSOLVER routine, backend-neutral), then solve with the factor --
+ * the level-3 calaman.sytrs2 when the workspace holds >= n elements (the
+ * reference ?sysv's lwork test), else the level-2 calaman.sytrs. Templated over
+ * the four element types; COMPLEX IS SYMMETRIC, not Hermitian -- the Hermitian
+ * cousin is calaman.hesv.
  *
  * The factorization half is a single vendor call, so this module owns no device
  * code of its own; the only kernels it pulls in are calaman.sytrs's D^-1 applies.
@@ -40,7 +42,8 @@ import wwr.runtime_api;     // wwrStream_t, wwrMemcpy(Async), wwrStreamSynchroni
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex
 import wwr.wrappers.solver; // sytrf, sytrf_bufferSize
 import calaman.common;      // Uplo, usual_fp
-import calaman.sytrs;       // sytrs -- the solve against the factor
+import calaman.sytrs;       // sytrs -- the level-2 solve against the factor
+import calaman.sytrs2;      // sytrs2 -- the level-3 solve (used when d_work >= n)
 
 // export import, not a plain import: sysv RETURNS calaman::Status, so a consumer
 // of `import calaman.sysv;` must see Status's member functions -- the re-export
@@ -132,7 +135,14 @@ Status sysv(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t solver_ha
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
-  CLM_TRY(sytrs<T>(blas_handle, uplo, n, nrhs, d_A, lda, d_ipiv, d_B, ldb));
+  // The factorization is done, so d_work is free: when it holds at least n
+  // elements, reuse it as the level-3 solve's E vector (the reference ?sysv's
+  // lwork >= n test for ?sytrs2 vs ?sytrs).
+  if (lwork >= n) {
+    CLM_TRY(sytrs2<T>(blas_handle, uplo, n, nrhs, d_A, lda, d_ipiv, d_B, ldb, d_work));
+  } else {
+    CLM_TRY(sytrs<T>(blas_handle, uplo, n, nrhs, d_A, lda, d_ipiv, d_B, ldb));
+  }
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

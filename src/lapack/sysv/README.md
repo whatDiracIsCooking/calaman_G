@@ -14,9 +14,11 @@ matrix `A`. Like the reference driver, it is two steps:
 
 The factorization half is `wwr::sytrf` — the cuSOLVER / hipSOLVER routine, which
 WarpWraps exposes **backend-neutral for both vendors**, so `calaman.sysv` owns no
-factorization code. The solve half is `calaman.sytrs`, built on wrapped BLAS (the
-vendor ships `sytrf` but no `sytrs`). So this module is just the driver: it sizes
-and runs `wwr::sytrf`, then hands the factor to `calaman.sytrs`.
+factorization code. The solve half is ours, built on wrapped BLAS (the vendor
+ships `sytrf` but no `sytrs`): `calaman.sytrs2` (level-3) when the workspace holds
+at least `n` elements — the reference `?sysv`'s `lwork` test — else
+`calaman.sytrs` (level-2). So this module is just the driver: it sizes and runs
+`wwr::sytrf`, then hands the factor to whichever solve the workspace allows.
 
 `sysv_bufferSize` forwards to `wwr::sytrf_bufferSize`, so a size query and the
 routine reserve the **same** vendor workspace and cannot drift. The count is in
