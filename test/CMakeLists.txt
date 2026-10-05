@@ -68,6 +68,8 @@ add_subdirectory(pstf2)
 add_subdirectory(pstrf)
 add_subdirectory(random_unitary)
 add_subdirectory(set_element)
+add_subdirectory(sysv)
+add_subdirectory(sytrs)
 add_subdirectory(trevc3)
 add_subdirectory(trexc)
 

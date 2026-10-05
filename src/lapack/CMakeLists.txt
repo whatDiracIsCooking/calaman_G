@@ -125,6 +125,19 @@ add_subdirectory(pstf2)
 # that target exists when it links it.
 add_subdirectory(pstrf)
 
+# calaman.sytrs -- solve A X = B for a symmetric matrix already Bunch-Kaufman
+# factored (LAPACK's ?sytrs). A host walk of the pivot sequence over the wrapped
+# BLAS (ger/geru/gemv/swap) plus its own D^-1 block applies (the one stage no
+# BLAS expresses); complex is symmetric, not Hermitian. It shares no build edge
+# with the pivoted-Cholesky pair above (a different factorization) and links
+# only calaman.common and calaman.error_handling, both added one level up.
+add_subdirectory(sytrs)
+
+# calaman.sysv -- the symmetric indefinite solve driver (LAPACK's ?sysv): factor
+# by the vendor Bunch-Kaufman wwr::sytrf, then solve with calaman.sytrs. It
+# LINKS calaman.sytrs (the solve, added just above), so it follows it here.
+add_subdirectory(sysv)
+
 # calaman.lasrt -- sort a 1-D array (increasing or decreasing), the GPU
 # counterpart of LAPACK's ?lasrt. A single hand-launched device kernel
 # (quicksort/insertion), structurally laset's twin but functionally standalone:
