@@ -16,11 +16,12 @@
 // components are reached as .x/.y, but hipFloatComplex is a class -- so raw
 // field access is not portable. Components are read with complex.h's
 // wwrCreal*/wwrCimag* accessors and values built with make_wwr*Complex, matching
-// gebal.cu / complex_cast.cu. And the block reductions are shared-memory
-// tree-reduces (as reduce_columns.cuh / gebal.cu do), NOT warp shuffles or the
-// float-bits atomicMax trick, both of which are CUDA-only spellings.
+// gebal.cu / complex_cast.cu. The block reductions and their AddOp/MaxNanOp
+// folds come from common/block_reduce.cuh, whose header carries the
+// shared-tree-not-shuffle rationale.
 #include "feast_bridge.h"
 
+#include "common/block_reduce.cuh"
 #include "complex.h"
 
 #include <cstddef>
@@ -37,7 +38,7 @@ namespace {
 
 // 4 warps per block, matching lacpy/gebal/reduce_columns: a configure-time value
 // (WWR_WARP_SIZE is 32 default, 64 on CDNA), so 128 or 256, and a power of two --
-// the halving tree-reduce below relies on that.
+// block_reduce<kBlock>'s halving tree requires that.
 constexpr unsigned int kBlock = 4 * WWR_WARP_SIZE;
 constexpr std::size_t kMaxBlocks = 4096;
 
@@ -83,47 +84,6 @@ __device__ __forceinline__ R sym_at(const R *A, const std::size_t lda, const boo
                                      const std::size_t i, const std::size_t j) {
   const bool stored = lower ? (i >= j) : (i <= j);
   return stored ? A[i + j * lda] : A[j + i * lda];
-}
-
-/// The larger of two, with NaN winning: a NaN must not be dropped by a maximum.
-template<typename R>
-__device__ __forceinline__ R max_nan(const R a, const R b) {
-  return (a != a || a > b) ? a : b;
-}
-
-struct AddOp {
-  template<typename R>
-  __device__ R operator()(const R a, const R b) const {
-    return a + b;
-  }
-};
-struct MaxNanOp {
-  template<typename R>
-  __device__ R operator()(const R a, const R b) const {
-    return max_nan(a, b);
-  }
-};
-
-/// Fold @p v across the kBlock-thread block under @p op, result valid in every
-/// thread on return. A shared tree-reduce, so @p op needs only associativity --
-/// no warp intrinsic, no atomic. The leading and trailing barriers make it safe
-/// to call more than once per kernel over the one shared buffer.
-template<typename R, typename Op>
-__device__ R block_reduce(R v, const Op op) {
-  __shared__ R s[kBlock];
-  const unsigned int t = threadIdx.x;
-  __syncthreads();
-  s[t] = v;
-  __syncthreads();
-  for (unsigned int stride = kBlock / 2; stride > 0; stride >>= 1) {
-    if (t < stride) {
-      s[t] = op(s[t], s[t + stride]);
-    }
-    __syncthreads();
-  }
-  const R r = s[0];
-  __syncthreads();
-  return r;
 }
 
 /// How many of @p count ascending values are below @p key (or at most @p key,
@@ -212,7 +172,7 @@ __global__ void sym_colsum_kernel(const int lower, const int n, const R *A, cons
   for (std::size_t i = threadIdx.x; i < static_cast<std::size_t>(n); i += blockDim.x) {
     acc += abs_(sym_at(A, lda, lower != 0, i, j));
   }
-  acc = block_reduce(acc, AddOp{});
+  acc = block_reduce<kBlock>(acc, AddOp{});
   if (threadIdx.x == 0) {
     colsum[j] = acc;
   }
@@ -225,7 +185,7 @@ __global__ void max_kernel(const int count, const R *v, R *out) {
   for (int i = static_cast<int>(threadIdx.x); i < count; i += static_cast<int>(blockDim.x)) {
     acc = max_nan(acc, v[i]);
   }
-  acc = block_reduce(acc, MaxNanOp{});
+  acc = block_reduce<kBlock>(acc, MaxNanOp{});
   if (threadIdx.x == 0) {
     *out = acc;
   }
@@ -238,7 +198,7 @@ __global__ void residual_max_kernel(const int m0, const R *residuals, FeastStatu
   for (int i = static_cast<int>(threadIdx.x); i < m0; i += static_cast<int>(blockDim.x)) {
     acc = max_nan(acc, residuals[i]);
   }
-  acc = block_reduce(acc, MaxNanOp{});
+  acc = block_reduce<kBlock>(acc, MaxNanOp{});
   if (threadIdx.x == 0) {
     status->max_residual = acc;
   }
@@ -295,8 +255,8 @@ __global__ void residuals_kernel(const int n, const R *X, const R *AX, const R *
     r += abs_(ax[i] - lam * xi);
     q += abs_(xi);
   }
-  r = block_reduce(r, AddOp{});
-  q = block_reduce(q, AddOp{});
+  r = block_reduce<kBlock>(r, AddOp{});
+  q = block_reduce<kBlock>(q, AddOp{});
 
   if (threadIdx.x == 0) {
     residuals[j] = r / ((*norm_a + abs_(lam)) * q);
