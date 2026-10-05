@@ -511,7 +511,12 @@ if(CALAMAN_BUILD_EXPERIMENTAL)
   add_subdirectory(experimental)
 endif()
 
-add_subdirectory(test)
+# Every suite under test/ is a GoogleTest runtime suite, and GoogleTest is not
+# fetched under CALAMAN_COMPILE_TIME_ONLY (deps/), so the two guards move
+# together: without this one, configure fails on a missing GTest::gtest_main.
+if(NOT CALAMAN_COMPILE_TIME_ONLY)
+  add_subdirectory(test)
+endif()
 
 # ========================================================================
 # Install rules and the CMake package
