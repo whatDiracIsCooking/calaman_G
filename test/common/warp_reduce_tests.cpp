@@ -6,7 +6,7 @@
  * Every launch runs one tile through warp_reduce_bridge.h and checks EVERY
  * lane, since the contract is the fold in all of them. Inactive lanes are
  * seeded with poison so a lane >= nactive leaking into the fold shows. Needs a
- * card (REQUIRES_GPU when wired into CMake).
+ * card (REQUIRES_GPU).
  */
 #include "warp_reduce_bridge.h"
 
