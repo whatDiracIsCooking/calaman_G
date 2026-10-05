@@ -176,6 +176,18 @@ parent and re-runs `docker/install-rocm.sh` and `docker/install-rocm-ds.sh`
 (which is why `ROCM_VERSION`, `GPU_TARGETS` and `HIPCOMP_VERSION` are declared in
 both `Dockerfile.hip` and `Dockerfile.combined` — bump them together).
 
+**Claude Code itself is pinned in the three GPU files**, not installed by a
+devcontainer feature: each ends with `docker/install-claude-code.sh` (Node 22,
+then `@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`, then a check that what
+landed is what was asked for). It is at the leaves rather than in `base` so a
+bump re-runs one layer instead of the CUDA toolkit and ~19GB of ROCm, which
+means the version is declared **three times** — bump it with
+`devtools/claude-version.sh --apply`, which rewrites all three; `doctor.sh` and
+`devcontainer.sh up`/`rebuild` report when they disagree or the pin is behind
+the registry. The feature it replaced npm-installed an *unpinned* version into
+a permanently cached layer, and `devcontainer-lock.json` pins that feature's
+digest rather than the version it installs, so images drifted silently.
+
 Two front ends, both onto the `cuda` image: **`docker/compose.yaml`** for
 one-shot batch runs, and **`.devcontainer/cuda/`** (via `devtools/devcontainer.sh`)
 for interactive work. They cannot share a build directory — a CMake cache

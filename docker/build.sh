@@ -89,9 +89,9 @@ tags_of() {
 build_args_of() {
   case $1 in
     base)         echo "UBUNTU_TAG LLVM_VERSION CMAKE_VERSION CMAKE_MAJOR_MINOR NINJA_VERSION" ;;
-    cuda)         echo "CUDA_VERSION CUDA_ARCH" ;;
-    hip)          echo "ROCM_VERSION GPU_TARGETS ROCM_PRUNE" ;;
-    combined)     echo "ROCM_VERSION GPU_TARGETS" ;;
+    cuda)         echo "CUDA_VERSION CUDA_ARCH CLAUDE_CODE_VERSION" ;;
+    hip)          echo "ROCM_VERSION GPU_TARGETS ROCM_PRUNE CLAUDE_CODE_VERSION" ;;
+    combined)     echo "ROCM_VERSION GPU_TARGETS CLAUDE_CODE_VERSION" ;;
   esac
 }
 

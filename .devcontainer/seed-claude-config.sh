@@ -25,18 +25,21 @@ fi
 cp "$SRC" "$DST" || exit 0
 
 # Drop the host's installation bookkeeping. It records a native install at
-# ~/.local/bin/claude, a path that does not exist in here -- claude comes from
-# the devcontainer feature, at /usr/bin/claude -- and the startup health check
-# turns that into
+# ~/.local/bin/claude, a path that does not exist in here -- claude is
+# installed BY THE IMAGE at /usr/bin/claude, at the version
+# docker/Dockerfile.<variant> pins -- and the startup health check turns that
+# into
 #   claude command at /home/ubuntu/.local/bin/claude missing or broken
 # With installMethod absent it derives to "unknown" and that check does not run.
 #
 # autoUpdates is pinned false rather than dropped: it defaults to *true* when
-# absent (`e.autoUpdates ?? true`), and the feature installs claude npm-global
+# absent (`e.autoUpdates ?? true`), and the image installs claude npm-global
 # under root-owned /usr/lib/node_modules, so an enabled auto-update fails with
 #   Auto-update failed: no write permission to npm prefix
-# The claude in here is provisioned by the image, like every other tool in it;
-# it should not be updating itself behind the image's back.
+# The claude in here is provisioned by the image, like every other tool in it,
+# and AT A PINNED VERSION (docker/install-claude-code.sh); it should not be
+# updating itself behind the image's back. Bump it with
+# devtools/claude-version.sh, which is also what reports when the pin is old.
 #
 # Everything that matters for staying logged in (oauthAccount,
 # hasCompletedOnboarding) is untouched.

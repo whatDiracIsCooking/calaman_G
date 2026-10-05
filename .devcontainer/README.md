@@ -225,9 +225,17 @@ fetched and built by `deps/CMakeLists.txt` at configure time.
 ## Lockfiles
 
 Each variant has a `devcontainer-lock.json` beside its `devcontainer.json`, and
-**all three are tracked.** They pin the two `features` every variant declares
-(`claude-code`, `github-cli`) to an exact version and digest, the way `uv.lock`
-pins the Python side.
+**all three are tracked.** They pin the one `feature` every variant declares
+(`github-cli`) to an exact version and digest, the way `uv.lock` pins the
+Python side.
+
+**`claude-code` is no longer one of them**, and the reason is a limit of
+lockfiles rather than of this one: a lock pins the FEATURE's digest, while that
+feature's `install.sh` runs an unpinned `npm install -g
+@anthropic-ai/claude-code`, so what the lock holds still is the installer, not
+the installed. Claude Code is installed by the images instead, at an explicit
+`ARG CLAUDE_CODE_VERSION` — `docker/README.md` ("Claude Code is pinned") and
+`docker/install-claude-code.sh` have it.
 
 Tracking them is what keeps `devtools/devcontainer.sh` from dirtying the tree.
 Verified against the devcontainer CLI 0.89.0, both directions:

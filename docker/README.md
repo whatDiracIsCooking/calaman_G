@@ -108,6 +108,36 @@ tries to *pull* it, and fails with `pull access denied for calaman, repository
 does not exist`, which reads like a registry problem rather than a missing local
 build. `docker/Dockerfile.base`'s header has the rest of the reasoning.
 
+### Claude Code is pinned, and bumped on purpose
+
+Each GPU file ends with `docker/install-claude-code.sh`: Node 22 from
+nodesource, then `npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`,
+then a `test` that what landed is what was asked for — a typo'd dist-tag fails
+the build instead of quietly installing something else.
+
+```bash
+devtools/claude-version.sh              # pinned / registry / installed here
+devtools/claude-version.sh --apply      # rewrite the pin to the registry's latest
+devtools/claude-version.sh --apply 2.1.300
+devtools/claude-version.sh --rebuild    # ...and rebuild the images already built here
+```
+
+`ARG CLAUDE_CODE_VERSION` is declared in **all three** GPU files — the fourth
+version to bump in more than one place, after `ROCM_VERSION`, `GPU_TARGETS` and
+`HIPCOMP_VERSION` — which is why that script exists, and why `doctor.sh` warns
+when the three disagree or have fallen behind the registry.
+
+**It is deliberately not in `Dockerfile.base`.** A bump there invalidates the
+CUDA toolkit, the ~19GB ROCm install and the cuGraph wheels below it; at the
+leaves it is one ~10s layer, and the two lines after it.
+
+This replaced the `claude-code` devcontainer feature, whose `install.sh`
+npm-installs an **unpinned** `@anthropic-ai/claude-code` into a layer that is a
+permanent cache hit. `devcontainer-lock.json` pins that feature's digest, not
+the version it installs: measured on this box before the change, four images
+off one lockfile carried claude 2.1.197 (×3, built over three days) and 2.1.289
+— the version was a function of build date, and nothing reported it.
+
 ### The `-ci` variants, and the registry
 
 Three more environment knobs turn a local build into a published one. Only

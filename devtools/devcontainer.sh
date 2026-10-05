@@ -371,6 +371,39 @@ tag_variant_image() {
   fi
 }
 
+# Say so when the Claude Code the image installs has fallen behind, or when
+# the three Dockerfiles have drifted apart.
+#
+# WHY HERE: `up` and `rebuild` are the only moments the version in the
+# container can change, and the failure this guards against is a SILENT one --
+# the agent in the image used to come from a devcontainer feature that
+# npm-installed an unpinned version into a permanently cached layer, so every
+# rebuild reported success and moved nothing (docker/install-claude-code.sh
+# has the measurements). Now that the pin is a line in git, the only thing
+# left to notice is that the line is old, and nothing else would.
+#
+# Quiet when there is nothing to say, non-fatal always -- the container is
+# already up by this point, and a registry that cannot be reached is not a
+# reason to colour the run red. The timeout is short for the same reason: this
+# is on the path of every `up`.
+report_claude_pin() {
+  local cv out pinned registry files
+  cv="$REPO_ROOT/devtools/claude-version.sh"
+  [ -x "$cv" ] || return 0
+  [ -n "${CLAUDE_PIN_FILES:-}" ] || return 0
+  out=$(CLAUDE_REGISTRY_TIMEOUT=${CLAUDE_REGISTRY_TIMEOUT:-3} "$cv" --porcelain 2>/dev/null)
+  pinned=$(printf '%s\n' "$out" | sed -n 's/^pinned //p')
+  registry=$(printf '%s\n' "$out" | sed -n 's/^registry //p')
+  files=$(printf '%s\n' "$out" | sed -n 's/^files //p')
+  if [ -z "$pinned" ] || [ "$pinned" = "-" ]; then
+    echo "claude: the version pin disagrees across the Dockerfiles -- $files" >&2
+    echo "        fix: devtools/claude-version.sh --apply <version>" >&2
+  elif [ -n "$registry" ] && [ "$pinned" != "$registry" ]; then
+    echo "claude: image pins $pinned, npm has $registry" >&2
+    echo "        bump: devtools/claude-version.sh --apply, then $0 rebuild" >&2
+  fi
+}
+
 # The CLI prints the whole `docker run` invocation on failure, GH_TOKEN and
 # all. Everything below routes through this so a secret cannot reach the
 # terminal; the exit status is the CLI's, not sed's.
@@ -399,6 +432,7 @@ case "${1:-}" in
     run_cli up --workspace-folder "$WORKSPACE" "${DC_CONFIG[@]}" "$@"
     tag_variant_image
     apply_cpu_limits
+    report_claude_pin
     ;;
   rebuild)
     # Needed after editing devcontainer.json or the Dockerfile: a plain `up`
@@ -413,6 +447,7 @@ case "${1:-}" in
       --remove-existing-container "${DC_CONFIG[@]}" "$@"
     tag_variant_image
     apply_cpu_limits
+    report_claude_pin
     ;;
   shell)
     shift
