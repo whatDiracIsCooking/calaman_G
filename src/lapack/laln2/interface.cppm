@@ -24,7 +24,7 @@
  *
  * REAL ELEMENT TYPE: the reference is SLALN2 / DLALN2 (w may be complex, but A
  * and the arithmetic are real), so the surface is float / double, constrained by
- * wwr::real_fp. There is no bounds checking, matching the reference; @p info
+ * calaman::real_fp. There is no bounds checking, matching the reference; @p info
  * reports only the SMINI perturbation (1) the solve applied, not an argument
  * error.
  *
@@ -47,7 +47,7 @@ export module calaman.laln2;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 
 // export import, not a plain import: laln2 RETURNS calaman::Status, so a consumer
 // of `import calaman.laln2;` must see Status's member functions, not just its
@@ -91,7 +91,7 @@ namespace calaman {
 /// @param xnorm Device scalar; the infinity-norm of @p x is written here
 /// @param info Device int; 0 on success, 1 if C was perturbed
 /// @return Success, or the runtime error the kernel launch reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status laln2(const wwr::wwrStream_t stream, const bool ltrans, const int na, const int nw,
              const T smin, const T ca, const T *const a, const int lda, const T d1, const T d2,
              const T *const b, const int ldb, const T wr, const T wi, T *const x, const int ldx,

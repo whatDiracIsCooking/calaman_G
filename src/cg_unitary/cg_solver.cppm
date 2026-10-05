@@ -38,9 +38,8 @@ import std;
 import wwr.blas;            // wwrblasHandle_t/Status, WWRBLAS_*
 import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpy/MemsetAsync, wwrSuccess
-import wwr.wrappers.common; // usual_fp, real_fp, ComplexToRealType
 import wwr.wrappers.blas;   // gemm, axpy, scal
-import calaman.common;      // kOne, kZero, kNegativeOne
+import calaman.common;      // kOne, kZero, kNegativeOne, real_fp, usual_fp, ComplexToRealType
 import calaman.error_handling; // Status
 import calaman.expm;        // expm, expm_bufferSize
 import calaman.orthogonalize; // orthogonalize, orthogonalize_bufferSize
@@ -141,14 +140,14 @@ struct CgInfo {
  *          O(n^3) products it sequences. Requires the blas handle's DEFAULT
  *          (host) pointer mode on entry.
  */
-template<wwr::usual_fp T, typename CostF>
+template<calaman::usual_fp T, typename CostF>
   requires unitary_cost_function<CostF, T>
 Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                   wwr::wwrStream_t stream, const int n, T *d_W, const CostF &cost,
                   const CgDirection dir, void *d_work, const std::size_t lwork_bytes,
-                  const CgOptions<wwr::ComplexToRealType<T>> &opts = {},
-                  CgInfo<wwr::ComplexToRealType<T>> *info = nullptr) {
-  using RealT = wwr::ComplexToRealType<T>;
+                  const CgOptions<calaman::ComplexToRealType<T>> &opts = {},
+                  CgInfo<calaman::ComplexToRealType<T>> *info = nullptr) {
+  using RealT = calaman::ComplexToRealType<T>;
 
   if (n < 1) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
@@ -186,7 +185,7 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
 
   const RealT sgn = cg_sign<RealT>(dir);
   const int reset_period = (opts.reset_period > 0) ? opts.reset_period : (n * n);
-  const auto adj = wwr::real_fp<T> ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_C;
+  const auto adj = calaman::real_fp<T> ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_C;
   const int nn = n * n;
 
   // Power iteration warm-start vector: zeroed so the first call reseeds it.

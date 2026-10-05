@@ -69,7 +69,8 @@ import std;
 import wwr.solver;                   // wwrsolverDnHandle_t, wwrsolverStatus_t, wwrsolverDnGetStream
 import wwr.runtime_api;              // wwrStream_t, wwrGetLastError, wwrSuccess
 import wwr.rand;                     // wwrrandState
-import wwr.wrappers.common;          // usual_fp + wwrFloatComplex/wwrDoubleComplex
+import wwr.wrappers.common;          // wwrFloatComplex/wwrDoubleComplex
+import calaman.common;              // usual_fp
 import wwr.extension.random_normal;  // random_normal (the Gaussian fill)
 import calaman.orthogonalize;        // orthogonalize (+ _bufferSize)
 
@@ -94,7 +95,7 @@ export namespace calaman {
  * @param lwork Output: required workspace in elements of T
  * @return Success, or the first failing Status
  */
-template <wwr::usual_fp T>
+template <calaman::usual_fp T>
 Status random_unitary_bufferSize(
     wwr::wwrsolverDnHandle_t handle,
     const int n,
@@ -129,7 +130,7 @@ Status random_unitary_bufferSize(
  * @return Success, or the first failing Status -- the stream query, the fill's
  *         launch error, or whichever QR step failed
  */
-template <wwr::usual_fp T>
+template <calaman::usual_fp T>
 Status random_unitary(
     wwr::wwrsolverDnHandle_t handle,
     const int n,

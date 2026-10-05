@@ -23,7 +23,7 @@
  * scalar, not a host one, and there is no host round-trip.
  *
  * REAL ONLY: LAPACK's double-shift QR is the real path (float / double),
- * constrained by wwr::real_fp -- the scope the reference has.
+ * constrained by calaman::real_fp -- the scope the reference has.
  *
  * `extern template` below pairs with instantiations.cpp: the wrapper is
  * instantiated once inside this library, so an importer never re-instantiates a
@@ -53,7 +53,7 @@ export module calaman.lahqr;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 
 // export import, not a plain import: lahqr RETURNS calaman::Status, so a consumer
 // of `import calaman.lahqr;` must see Status's member functions, not just its
@@ -95,7 +95,7 @@ namespace calaman {
 /// @param ldz Leading dimension of @p z
 /// @param info Device int; 0 on success, or the index that failed to converge
 /// @return Success, or the runtime error the kernel launch reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status lahqr(const wwr::wwrStream_t stream, const bool wantt, const bool wantz, const int n,
              const int ilo, const int ihi, T *const h, const int ldh, T *const wr, T *const wi,
              const int iloz, const int ihiz, T *const z, const int ldz, int *const info) {

@@ -10,7 +10,7 @@ export module calaman.cg_unitary:cost_function;
 import std;
 import wwr.blas;          // wwrblasHandle_t, wwrblasStatus_t
 import wwr.runtime_api;   // wwrStream_t
-import wwr.wrappers.common; // usual_fp
+import calaman.common;  // usual_fp
 
 export namespace calaman {
 
@@ -61,7 +61,7 @@ constexpr R cg_sign(const CgDirection dir) {
  */
 template<typename F, typename T>
 concept unitary_cost_function =
-    wwr::usual_fp<T> &&
+    calaman::usual_fp<T> &&
     requires(const F f, wwr::wwrblasHandle_t handle, wwr::wwrStream_t stream, int n, const T *d_W,
              int ldw, T *d_out, int ldo, const T *d_Psi, void *d_work, std::size_t lwork) {
       { F::order } -> std::convertible_to<int>;

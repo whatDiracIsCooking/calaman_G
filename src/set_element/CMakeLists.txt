@@ -33,7 +33,7 @@ calaman_add_gpu_device_library(
 #
 # LINK_PUBLIC carries every module the exported surface names, so an importer
 # sees them: wwr.runtime_api (the wwrStream_t each forwards), wwr.complex (the
-# two complex element types in the extern-template list) and wwr.wrappers.common
+# two complex element types in the extern-template list) and calaman.common
 # (the usual_fp constraint and the ComplexToRealType the magnitude output is
 # spelled with).
 #
@@ -52,7 +52,7 @@ calaman_add_cxx_module_library(
   LINK_PUBLIC
   wwr.runtime_api
   wwr.complex
-  wwr.wrappers.common
+  calaman.common
   LINK_PRIVATE
   wwr_backend
   INCLUDE_DIRS_PRIVATE

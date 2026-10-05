@@ -41,7 +41,7 @@ calaman_add_gpu_device_library(
 # solver handle/status/enum layers (wwr.blas, wwr.solver), the wwrStream_t and
 # memcpy/sync (wwr.runtime_api), the complex element types and their host
 # constructors (wwr.complex), the usual_fp/ComplexToRealType traits
-# (wwr.wrappers.common), the type-safe BLAS and solver wrappers
+# (calaman.common), the type-safe BLAS and solver wrappers
 # (wwr.wrappers.blas, wwr.wrappers.solver), the ScopedPointerMode guard the
 # pade/expm bodies force host mode with (wwr.extension.blas) and the
 # WorkspaceLayout/align_up (calaman.common). calaman.error_handling is
@@ -72,7 +72,6 @@ calaman_add_cxx_module_library(
   wwr.solver
   wwr.runtime_api
   wwr.complex
-  wwr.wrappers.common
   wwr.wrappers.blas
   wwr.wrappers.solver
   wwr.extension.blas

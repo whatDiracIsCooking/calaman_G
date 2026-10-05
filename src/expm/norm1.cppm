@@ -17,7 +17,7 @@ export module calaman.expm:norm1;
 
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize, wwrMemcpyDeviceToHost
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex (the extern-template list)
-import wwr.wrappers.common; // usual_fp, ComplexToRealType
+import calaman.common;  // usual_fp, ComplexToRealType
 
 namespace calaman {
 
@@ -42,10 +42,10 @@ namespace calaman {
  *
  * @warning Synchronizes @p stream in order to return a host value.
  */
-export template<wwr::usual_fp T>
-wwr::ComplexToRealType<T> matrix_norm1(wwr::wwrStream_t stream, const int n, const T *d_A,
-                                       const int lda, wwr::ComplexToRealType<T> *d_colsum) {
-  using R = wwr::ComplexToRealType<T>;
+export template<calaman::usual_fp T>
+calaman::ComplexToRealType<T> matrix_norm1(wwr::wwrStream_t stream, const int n, const T *d_A,
+                                       const int lda, calaman::ComplexToRealType<T> *d_colsum) {
+  using R = calaman::ComplexToRealType<T>;
   device::abs_colsums<T, R>(stream, n, d_A, lda, d_colsum);
   device::max_reduce<R>(stream, n, d_colsum);
 
@@ -58,14 +58,14 @@ wwr::ComplexToRealType<T> matrix_norm1(wwr::wwrStream_t stream, const int n, con
 // Instantiated once in instantiations.cpp -- its body names the .cu-side
 // launchers declared only in the global module fragment, so an importer never
 // re-instantiates it.
-extern template wwr::ComplexToRealType<float> matrix_norm1<float>(wwr::wwrStream_t, int,
+extern template calaman::ComplexToRealType<float> matrix_norm1<float>(wwr::wwrStream_t, int,
                                                                   const float *, int, float *);
-extern template wwr::ComplexToRealType<double> matrix_norm1<double>(wwr::wwrStream_t, int,
+extern template calaman::ComplexToRealType<double> matrix_norm1<double>(wwr::wwrStream_t, int,
                                                                     const double *, int, double *);
-extern template wwr::ComplexToRealType<wwr::wwrFloatComplex>
+extern template calaman::ComplexToRealType<wwr::wwrFloatComplex>
 matrix_norm1<wwr::wwrFloatComplex>(wwr::wwrStream_t, int, const wwr::wwrFloatComplex *, int,
                                    float *);
-extern template wwr::ComplexToRealType<wwr::wwrDoubleComplex>
+extern template calaman::ComplexToRealType<wwr::wwrDoubleComplex>
 matrix_norm1<wwr::wwrDoubleComplex>(wwr::wwrStream_t, int, const wwr::wwrDoubleComplex *, int,
                                     double *);
 

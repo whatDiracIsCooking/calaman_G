@@ -8,7 +8,7 @@
  * diagonal scaling D and the symmetric permutation P, in place, on the n-by-m
  * column-major matrix of right or left eigenvectors V. Templated over all four
  * element types (float, double, and the two complex types), constrained by
- * wwr::usual_fp. @p scale and @p ilo / @p ihi are exactly gebal's outputs, fed
+ * calaman::usual_fp. @p scale and @p ilo / @p ihi are exactly gebal's outputs, fed
  * through unchanged -- the dual encoding of @p scale (diagonal of D inside
  * [ilo, ihi], interchange index outside) is a fact of the ?gebak contract.
  *
@@ -26,7 +26,7 @@
  * COMPLEX is a first-class path for the same reason as gebal: the back-transform
  * only multiplies by the real scales D and moves rows, so there is no complex tau
  * or conjugation to differ. @p scale is therefore real even for complex T -- its
- * type is wwr::ComplexToRealType<T>, matching ?gebak's real SCALE argument.
+ * type is calaman::ComplexToRealType<T>, matching ?gebak's real SCALE argument.
  *
  * Differences from the reference ?gebak: CHARACTER JOB / SIDE become the typed
  * GebakJob / GebakSide enums, the s/d/c/z variants become one template over T, and
@@ -58,7 +58,7 @@ export module calaman.gebak;
 import std;
 import wwr.runtime_api;      // wwrStream_t, wwrError_t, wwrSuccess, wwrGetLastError
 import wwr.complex;          // wwrFloatComplex, wwrDoubleComplex (extern template list)
-import wwr.wrappers.common;  // usual_fp, ComplexToRealType
+import calaman.common;  // usual_fp, ComplexToRealType
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
@@ -107,11 +107,11 @@ export enum class GebakSide { Right, Left };
 /// @param d_V     Device n-by-m matrix, column-major, overwritten in place
 /// @param ldv     Leading dimension of d_V (>= max(1, n))
 /// @return A success Status, or the first runtime error encountered
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 Status gebak(wwr::wwrStream_t stream, const GebakJob job, const GebakSide side, const int n,
-             const int ilo, const int ihi, const wwr::ComplexToRealType<T> *d_scale, const int m,
+             const int ilo, const int ihi, const calaman::ComplexToRealType<T> *d_scale, const int m,
              T *d_V, const int ldv) {
-  using R = wwr::ComplexToRealType<T>;
+  using R = calaman::ComplexToRealType<T>;
 
   const bool do_permute = (job == GebakJob::Permute) || (job == GebakJob::Both);
   const bool do_scale = (job == GebakJob::Scale) || (job == GebakJob::Both);

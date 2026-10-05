@@ -15,7 +15,8 @@
 #   wwr.solver          wwrsolverDnHandle_t / wwrsolverStatus_t / GetStream
 #   wwr.runtime_api              wwrStream_t (for the fill's stream)
 #   wwr.rand                     wwrrandState (the caller's generator states)
-#   wwr.wrappers.common          usual_fp + wwrFloatComplex/wwrDoubleComplex
+#   wwr.wrappers.common          wwrFloatComplex/wwrDoubleComplex
+#   calaman.common               usual_fp (the element-type constraint)
 #   calaman.error_handling       Status, the cross-domain return type
 #                                (re-exported; its src/ root also resolves the
 #                                CLM_TRY header "error_handling/error_macros.h")
@@ -33,6 +34,7 @@ calaman_add_cxx_module_library(
   wwr.runtime_api
   wwr.rand
   wwr.wrappers.common
+  calaman.common
   calaman.error_handling
   IMPORT_STD
 )

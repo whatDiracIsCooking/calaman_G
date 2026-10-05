@@ -55,10 +55,9 @@ import std;
 import wwr.blas;            // wwrblasHandle_t, WWRBLAS_OP_*/SIDE_*/FILL_MODE_*
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrMemcpyDeviceToDevice, wwrSuccess
-import wwr.wrappers.common; // real_fp
 import wwr.wrappers.blas;   // dgmm, gemm
 import wwr.wrappers.solver; // syevd, syevd_bufferSize
-import calaman.common;      // kOne, kZero
+import calaman.common;      // kOne, kZero, real_fp
 
 // export import, not a plain import: inv_sqrt and its _bufferSize RETURN
 // calaman::Status, so a consumer must see Status's member functions.
@@ -75,7 +74,7 @@ export namespace calaman {
  * @param lwork Output: required workspace in elements of T (0 when n <= 0)
  * @return Success, or the solver query's Status
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status inv_sqrt_bufferSize(wwr::wwrsolverDnHandle_t cusolver, const int n, int *lwork)
 {
     if (n <= 0) {
@@ -120,7 +119,7 @@ Status inv_sqrt_bufferSize(wwr::wwrsolverDnHandle_t cusolver, const int n, int *
  * @param eigenvalue_floor Eigenvalues at or below this are dropped; default 1e-10
  * @return Success, or the first failing Status from the copy/syevd/kernel/dgmm/gemm
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status inv_sqrt(wwr::wwrblasHandle_t cublas, wwr::wwrsolverDnHandle_t cusolver,
                 wwr::wwrStream_t stream, const int n, const T *s_dev, T *x_dev, T *u_scratch,
                 T *m_scratch, T *eigenvalues_dev, T *syevd_workspace, const int syevd_lwork,

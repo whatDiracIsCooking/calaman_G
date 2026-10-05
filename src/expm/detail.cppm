@@ -18,8 +18,7 @@ export module calaman.expm:detail;
 
 import std;
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex, make_wwr*Complex (host)
-import wwr.wrappers.common; // usual_fp, ComplexToRealType
-import calaman.common;      // WorkspaceLayout
+import calaman.common;      // WorkspaceLayout, usual_fp, ComplexToRealType
 
 export namespace calaman {
 
@@ -34,8 +33,8 @@ constexpr int kMaxDim = 46340;
 /// Legal here, in the module purview, where wwr.complex is imported and its host
 /// constructors are reachable -- unlike a GMF or a host constexpr, which cannot
 /// see them (calaman.common's constants.h header documents the two walls).
-template<wwr::usual_fp T>
-T as_element(const wwr::ComplexToRealType<T> x) {
+template<calaman::usual_fp T>
+T as_element(const calaman::ComplexToRealType<T> x) {
   if constexpr (std::is_same_v<T, wwr::wwrFloatComplex>) {
     return wwr::make_wwrFloatComplex(x, 0.0f);
   } else if constexpr (std::is_same_v<T, wwr::wwrDoubleComplex>) {
@@ -65,7 +64,7 @@ T as_element(const wwr::ComplexToRealType<T> x) {
  * by the time U is formed. Q reuses V: pade_split reads V(i) and writes Q(i)
  * from the same thread, so the denominator is built on top of the even half.
  */
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 struct PadeWorkspace {
   T *P[4] = {nullptr, nullptr, nullptr, nullptr};
   T *X = nullptr; // m = 13 only; aliases the P[3] slot
@@ -107,9 +106,9 @@ struct PadeWorkspace {
  *   [colsum | n   ComplexToRealType<T>  ]  per-column absolute sums
  *   [pade   | PadeWorkspace, sized for the whole ladder ]
  */
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 struct ExpmWorkspace {
-  using RealT = wwr::ComplexToRealType<T>;
+  using RealT = calaman::ComplexToRealType<T>;
 
   T *As = nullptr;
   T *sq = nullptr; // aliases As: only ever touched after pade() has returned
@@ -141,9 +140,9 @@ struct ExpmWorkspace {
  *   [eig_work | lwork_eig T    ]  the syevd/heevd scratch, whose length is the one
  *                                 region the caller must query first
  */
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 struct HermWorkspace {
-  using RealT = wwr::ComplexToRealType<T>;
+  using RealT = calaman::ComplexToRealType<T>;
 
   T *U = nullptr;
   T *M = nullptr;

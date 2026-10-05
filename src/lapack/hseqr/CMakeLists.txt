@@ -18,7 +18,7 @@
 # hseqr.cppm's GMF includes error_handling/error_macros.h (CLM_TRY), resolved
 # root-relative via that target's exported include root.
 #   wwr.runtime_api         wwrMemcpyAsync / wwrStreamSynchronize (staging)
-#   wwr.wrappers.common     real_fp (the T constraint)
+#   calaman.common          real_fp (the T constraint)
 #   calaman.lahqr           the n <= NMIN double-shift QR path
 #   calaman.laqr0           the n > NMIN multishift-with-AED path
 #   calaman.laset           Region + laset: Z identity init and trash clear
@@ -30,7 +30,7 @@ calaman_add_cxx_module_library(
   hseqr.cppm
   LINK_PUBLIC
   wwr.runtime_api
-  wwr.wrappers.common
+  calaman.common
   calaman.lahqr
   calaman.laqr0
   calaman.laset

@@ -37,7 +37,7 @@
  * module/.cu split calaman.lacpy / calaman.gebal use.
  *
  * TEMPLATED OVER ALL FOUR element types (float, double, and the two complex
- * types), constrained by wwr::usual_fp. The Pade coefficients are real even for
+ * types), constrained by calaman::usual_fp. The Pade coefficients are real even for
  * a complex matrix, so the only complex constants needed are built at run time
  * by :detail's as_element (wwr.complex host constructors, legal in a module
  * purview though not in a GMF -- calaman.common's constants.h documents why).

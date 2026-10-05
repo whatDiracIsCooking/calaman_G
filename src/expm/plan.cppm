@@ -17,7 +17,7 @@ module;
 export module calaman.expm:plan;
 
 import std;
-import wwr.wrappers.common; // usual_fp, ComplexToRealType
+import calaman.common;  // usual_fp, ComplexToRealType
 
 namespace calaman {
 
@@ -48,9 +48,9 @@ namespace calaman {
 //    13    5.371920351148152       1.124873763647540e1
 
 /// @brief Backward-error threshold for degree @p m, or 0 if m is not on the ladder.
-export template<wwr::usual_fp T>
-constexpr wwr::ComplexToRealType<T> pade_theta(const int m) {
-  using R = wwr::ComplexToRealType<T>;
+export template<calaman::usual_fp T>
+constexpr calaman::ComplexToRealType<T> pade_theta(const int m) {
+  using R = calaman::ComplexToRealType<T>;
   if constexpr (std::is_same_v<R, float>) {
     switch (m) {
     case 3:
@@ -109,9 +109,9 @@ export struct ExpmPlan {
  *
  * @param norm1 The matrix 1-norm; must be finite and non-negative.
  */
-export template<wwr::usual_fp T>
-ExpmPlan expm_plan(const wwr::ComplexToRealType<T> norm1) {
-  using R = wwr::ComplexToRealType<T>;
+export template<calaman::usual_fp T>
+ExpmPlan expm_plan(const calaman::ComplexToRealType<T> norm1) {
+  using R = calaman::ComplexToRealType<T>;
 
   for (int i = 0; i < kNumPadeDegrees; ++i) {
     const int m = kPadeDegrees[i];

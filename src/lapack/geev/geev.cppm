@@ -56,8 +56,7 @@ import wwr.blas;            // wwrblasHandle_t, wwrblasGetStream, WWRBLAS_OP_N, 
 import wwr.solver;          // wwrsolverDnHandle_t (calaman.orghr's handle)
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize
 import wwr.wrappers.blas;   // gemm (back-transform), nrm2 / scal / rot (normalize)
-import wwr.wrappers.common; // real_fp
-import calaman.common;      // Region, MatrixNorm, WorkspaceLayout, carve_workspace
+import calaman.common;      // Region, MatrixNorm, WorkspaceLayout, carve_workspace, real_fp
 import calaman.lange;       // lange -- the max-abs norm for the scaling decision
 import calaman.lascl;       // lascl -- scale a, rescale the eigenvalues
 import calaman.lacpy;       // lacpy -- copy the gehrd reflectors into Q
@@ -187,7 +186,7 @@ std::size_t map_workspace(wwr::wwrsolverDnHandle_t solver, void *base, const int
 /// to unit 2-norm, then a Givens rotation (?lartg + ?rot) makes its
 /// largest-modulus component real. @p wi is read to the host for the block
 /// structure (its zero/sign is scaling-invariant). Host-driven, host pointer mode.
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 Status normalize_side(wwr::wwrblasHandle_t blas, wwr::wwrStream_t stream, const int n,
                       const T *wi_dev, T *v, const int ldv) {
   using std::size_t;
@@ -270,7 +269,7 @@ Status normalize_side(wwr::wwrblasHandle_t blas, wwr::wwrStream_t stream, const 
 /// @param n      Order of the matrix
 /// @param jobvl  Whether left eigenvectors are wanted
 /// @param jobvr  Whether right eigenvectors are wanted
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 std::size_t geev_bufferSize(wwr::wwrsolverDnHandle_t solver, const int n, const GeevVectors jobvl,
                             const GeevVectors jobvr) {
   return geev_detail::map_workspace<T>(solver, nullptr, n, jobvl == GeevVectors::Vectors,
@@ -309,7 +308,7 @@ std::size_t geev_bufferSize(wwr::wwrsolverDnHandle_t solver, const int n, const 
 /// @param work_bytes Size of @p work in bytes
 /// @param info Device int receiving the ?geev INFO
 /// @return Success, or the runtime error a staged step reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status geev(wwr::wwrblasHandle_t blas, wwr::wwrsolverDnHandle_t solver, const GeevVectors jobvl,
             const GeevVectors jobvr, const int n, T *const a, const int lda, T *const wr,
             T *const wi, T *const vl, const int ldvl, T *const vr, const int ldvr,

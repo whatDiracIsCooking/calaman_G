@@ -17,7 +17,7 @@
  * the nodes/weights as plain real components (the kernels already do the complex
  * arithmetic from them by hand), and every launcher is generic in its complex
  * element type @c ComplexT and real component type @c RealT -- which the caller
- * spells as wwr::RealToComplexType<T> and T. feast.cu names the concrete
+ * spells as calaman::RealToComplexType<T> and T. feast.cu names the concrete
  * wwrFloatComplex / wwrDoubleComplex only in its explicit instantiations, in
  * device context.
  *

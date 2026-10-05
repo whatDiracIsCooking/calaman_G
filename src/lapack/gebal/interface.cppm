@@ -8,7 +8,7 @@
  * equilibrating what is left (a powers-of-two diagonal D, Parlett-Reinsch) so a
  * subsequent Hessenberg reduction and QR iteration see far smaller eigenvalue
  * condition numbers. Templated over all four element types (float, double, and
- * the two complex types), constrained by wwr::usual_fp.
+ * the two complex types), constrained by calaman::usual_fp.
  *
  * Unlike the geqp3 call graph, gebal is NOT a BLAS composition: both stages are
  * hand-written kernels (gebal.cu). But the DRIVER is a host composition and
@@ -23,7 +23,7 @@
  * deferred extension: balancing only measures magnitudes (CABS1, |Re| + |Im|,
  * matching CGEBAL/ZGEBAL) and applies real power-of-two scales, so there is no
  * complex reflector or conjugated row to differ materially. @p d_scale is
- * therefore real even for complex T -- its type is wwr::ComplexToRealType<T>.
+ * therefore real even for complex T -- its type is calaman::ComplexToRealType<T>.
  *
  * SYNCHRONIZES @p stream. Both stages are host-driven, so on return the outputs
  * are complete and nothing is left queued -- except GebalJob::None, which only
@@ -62,7 +62,7 @@ export module calaman.gebal;
 import std;
 import wwr.runtime_api;      // wwrStream_t, wwrError_t, wwrSuccess, wwrMemcpy/Memset/Sync
 import wwr.complex;          // wwrFloatComplex, wwrDoubleComplex (extern template list)
-import wwr.wrappers.common;  // usual_fp, ComplexToRealType
+import calaman.common;  // usual_fp, ComplexToRealType
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
@@ -84,7 +84,7 @@ export inline constexpr int gebal_default_max_sweeps = device::kGebalDefaultMaxS
 ///         for every T, but the template keeps the call symmetric with gebal.
 /// @param n     Matrix dimension.
 /// @param lwork Output: element count for the int workspace.
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 void gebal_bufferSize(const int n, int *lwork) {
   *lwork = device::gebal_workspace_ints(n);
 }
@@ -123,11 +123,11 @@ void gebal_bufferSize(const int n, int *lwork) {
 /// @param d_work  Device scratch of at least gebal_bufferSize<T>(n) ints
 /// @param max_sweeps Safety cap on scaling sweeps
 /// @return A success Status, or the first runtime error encountered
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 Status gebal(wwr::wwrStream_t stream, const GebalJob job, const int n, T *d_A, const int lda,
-             int *ilo, int *ihi, wwr::ComplexToRealType<T> *d_scale, int *d_work,
+             int *ilo, int *ihi, calaman::ComplexToRealType<T> *d_scale, int *d_work,
              const int max_sweeps = device::kGebalDefaultMaxSweeps) {
-  using R = wwr::ComplexToRealType<T>;
+  using R = calaman::ComplexToRealType<T>;
 
   const bool do_permute = (job == GebalJob::Permute) || (job == GebalJob::Both);
   const bool do_scale = (job == GebalJob::Scale) || (job == GebalJob::Both);

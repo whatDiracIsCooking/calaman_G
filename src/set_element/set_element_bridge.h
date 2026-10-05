@@ -14,7 +14,7 @@
  * device pass (where complex.h's builders exist), with no common spelling. So
  * the magnitude launcher is generic in the element type @c T and its real
  * component type @c RealT -- the caller spells RealT as
- * wwr::ComplexToRealType<T>, and the .cu names the concrete types only in its
+ * calaman::ComplexToRealType<T>, and the .cu names the concrete types only in its
  * explicit instantiations, in device context.
  *
  * wwrStream_t arrives from runtime.h, an include-only header, since a GMF cannot
@@ -50,7 +50,7 @@ void set_element(wwr::wwrStream_t stream, const T *d_x, int incx, const int *d_i
 /// the max-magnitude value cuBLAS/hipBLAS expose no call for.
 ///
 /// @tparam T     Element type (float, double, wwrFloatComplex, wwrDoubleComplex)
-/// @tparam RealT T's real component type; call with wwr::ComplexToRealType<T>
+/// @tparam RealT T's real component type; call with calaman::ComplexToRealType<T>
 template<typename T, typename RealT>
 void set_element_abs(wwr::wwrStream_t stream, const T *d_x, int incx, const int *d_idx,
                      RealT *d_result);

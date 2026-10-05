@@ -18,7 +18,7 @@ glue a complex solver needs when its inputs or outputs arrive as separate real
 and imaginary arrays.
 
 Supported element types: `wwrFloatComplex`, `wwrDoubleComplex` (constrained by
-`wwr::complex_fp`). The real component type is `wwr::ComplexToRealType<ComplexT>`
+`calaman::complex_fp`). The real component type is `calaman::ComplexToRealType<ComplexT>`
 — `float` for `wwrFloatComplex`, `double` for `wwrDoubleComplex`.
 
 Unlike `larfg` / `horner`, complex is the whole point here, not a deferred
@@ -35,24 +35,24 @@ import calaman.complex_cast;
 import wwr.runtime_api;   // wwrStream_t
 import wwr.complex;       // wwrDoubleComplex
 
-template<wwr::complex_fp ComplexT>
+template<calaman::complex_fp ComplexT>
 void calaman::set_real_part(wwr::wwrStream_t stream, ComplexT* output,
-                            const wwr::ComplexToRealType<ComplexT>* input,
+                            const calaman::ComplexToRealType<ComplexT>* input,
                             std::size_t count);
 
-template<wwr::complex_fp ComplexT>
+template<calaman::complex_fp ComplexT>
 void calaman::set_imag_part(wwr::wwrStream_t stream, ComplexT* output,
-                            const wwr::ComplexToRealType<ComplexT>* input,
+                            const calaman::ComplexToRealType<ComplexT>* input,
                             std::size_t count);
 
-template<wwr::complex_fp ComplexT>
+template<calaman::complex_fp ComplexT>
 void calaman::get_real_part(wwr::wwrStream_t stream,
-                            wwr::ComplexToRealType<ComplexT>* output,
+                            calaman::ComplexToRealType<ComplexT>* output,
                             const ComplexT* input, std::size_t count);
 
-template<wwr::complex_fp ComplexT>
+template<calaman::complex_fp ComplexT>
 void calaman::get_imag_part(wwr::wwrStream_t stream,
-                            wwr::ComplexToRealType<ComplexT>* output,
+                            calaman::ComplexToRealType<ComplexT>* output,
                             const ComplexT* input, std::size_t count);
 ```
 

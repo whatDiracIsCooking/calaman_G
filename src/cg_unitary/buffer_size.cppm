@@ -22,8 +22,7 @@ export module calaman.cg_unitary:buffer_size;
 import std;
 import wwr.blas;            // WWRBLAS_STATUS_* (invalid-value / success returns)
 import wwr.solver;         // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_STATUS_*
-import wwr.wrappers.common; // usual_fp, ComplexToRealType, RealToComplexType
-import calaman.common;      // WorkspaceLayout, carve_workspace
+import calaman.common;      // WorkspaceLayout, carve_workspace, usual_fp, ComplexToRealType, RealToComplexType
 import calaman.error_handling; // Status
 import calaman.expm;        // expm_bufferSize
 import :cost_function;
@@ -38,10 +37,10 @@ export namespace calaman {
  * carve(). Every matrix slice is packed (leading dimension n), which the
  * Frobenius reductions and the cost functor's device-mode dot both require.
  */
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 struct CgSlices {
-  using RealT = wwr::ComplexToRealType<T>;
-  using CplxT = wwr::RealToComplexType<RealT>;
+  using RealT = calaman::ComplexToRealType<T>;
+  using CplxT = calaman::RealToComplexType<RealT>;
 
   // ── persistent across the iteration ───────────────────────────────────
   T *psi = nullptr;       ///< Euclidean gradient at the current point
@@ -123,7 +122,7 @@ struct CgSlices {
  * @param cost_bytes      The cost functor's bufferSize(n).
  * @param lwork_bytes     Output: bytes required.
  */
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 Status cg_unitary_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n,
                              const std::size_t cost_bytes, std::size_t *lwork_bytes) {
   if (n < 1) {
@@ -148,7 +147,7 @@ Status cg_unitary_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int
  * @param expm_bytes  The exponential's workspace size, from expm_bufferSize.
  * @param cost_bytes  The cost functor's bufferSize(n).
  */
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 CgSlices<T> make_cg_slices(void *d_work, const int n, const std::size_t expm_bytes,
                            const std::size_t cost_bytes) {
   CgSlices<T> s;

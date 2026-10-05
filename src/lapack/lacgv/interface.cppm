@@ -13,7 +13,7 @@
  *
  * COMPLEX ONLY. ?lacgv exists only as clacgv / zlacgv: the conjugate of a real
  * vector is the vector, so there is no s/d variant and the surface is the two
- * complex types, constrained by wwr::complex_fp -- the same scope complex_cast
+ * complex types, constrained by calaman::complex_fp -- the same scope complex_cast
  * has. The result is sign-of-incx-independent (conjugation is per-element), so a
  * negative incx conjugates the same elements, matching LAPACK's ioff stepping.
  *
@@ -50,7 +50,7 @@ export module calaman.lacgv;
 import std;
 import wwr.runtime_api;      // wwrStream_t, wwrGetLastError
 import wwr.complex;          // wwrFloatComplex, wwrDoubleComplex (extern template list)
-import wwr.wrappers.common;  // complex_fp
+import calaman.common;  // complex_fp
 
 // export import, not a plain import: lacgv RETURNS calaman::Status, so a consumer
 // of `import calaman.lacgv;` must see Status's member functions, not just its
@@ -76,7 +76,7 @@ namespace calaman {
 /// @param x Device vector, conjugated in place, stride @p incx
 /// @param incx Stride between elements of x (non-zero)
 /// @return Success, or the runtime error the kernel launch reported
-export template<wwr::complex_fp ComplexT>
+export template<calaman::complex_fp ComplexT>
 Status lacgv(const wwr::wwrStream_t stream, const int n, ComplexT *const x, const int incx) {
   if (n <= 0) {
     return wwr::wwrSuccess;

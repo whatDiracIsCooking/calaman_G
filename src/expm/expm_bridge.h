@@ -23,7 +23,7 @@
  * out: this header is parsed in a host GMF that cannot `import wwr.complex`, and
  * complex.h's complex builders are gated to a device pass. So every launcher is
  * generic in the element type @c T and its real component type @c R, which the
- * interface spells as wwr::ComplexToRealType<T>; the .cu names the concrete
+ * interface spells as calaman::ComplexToRealType<T>; the .cu names the concrete
  * wwrFloatComplex / wwrDoubleComplex only in its explicit instantiations, in
  * device context.
  *

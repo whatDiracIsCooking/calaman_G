@@ -23,7 +23,7 @@ turns that device index into the element's value. That gap is this module:
 - `set_element_abs<T>(stream, d_x, incx, d_idx, d_result)` — writes
   `|d_x[(*d_idx - 1) * incx]|`, the max-magnitude **value** iamax never gives
   you, entirely on the device. The output is real, so `d_result` is
-  `wwr::ComplexToRealType<T>` (which is `T` for a real element).
+  `calaman::ComplexToRealType<T>` (which is `T` for a real element).
 - `set_element<T>(stream, d_x, incx, d_idx, d_result)` — the same indexed read
   **without** the `|·|`: the generic "gather the element at a device-computed
   index" primitive. Output type `T`.
@@ -48,7 +48,7 @@ launcher, no new kernel. The single element is set through one
 ## Types
 
 `float`, `double`, `wwrFloatComplex`, `wwrDoubleComplex` (constrained
-`wwr::usual_fp`). For a complex element, `set_element` gathers the complex value
+`calaman::usual_fp`). For a complex element, `set_element` gathers the complex value
 and `set_element_abs` writes its real modulus.
 
 ## Consumers

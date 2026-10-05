@@ -19,7 +19,7 @@
 export module calaman.feast:feast_quadrature;
 
 import std;
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 
 export namespace calaman {
 
@@ -29,7 +29,7 @@ export namespace calaman {
  * @tparam T Real floating-point type (float or double).
  * @tparam N Number of quadrature points (4 or 8).
  */
-template<wwr::real_fp T, std::size_t N>
+template<calaman::real_fp T, std::size_t N>
   requires(N == 4 || N == 8)
 struct FeastQuadrature {
   std::array<T, N> x;     ///< GL nodes on [-1, 1]
@@ -41,7 +41,7 @@ struct FeastQuadrature {
  *
  * Nodes and weights from np.polynomial.legendre.leggauss(4).
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 inline constexpr FeastQuadrature<T, 4> feast_quadrature_4 = {
     .x =
         {
@@ -65,7 +65,7 @@ inline constexpr FeastQuadrature<T, 4> feast_quadrature_4 = {
  * Nodes and weights from np.polynomial.legendre.leggauss(8), matching the
  * reference values in Fig. 2 of Polizzi (arXiv:0901.2665).
  */
-template<wwr::real_fp T>
+template<calaman::real_fp T>
 inline constexpr FeastQuadrature<T, 8> feast_quadrature_8 = {
     .x =
         {
@@ -92,7 +92,7 @@ inline constexpr FeastQuadrature<T, 8> feast_quadrature_8 = {
 };
 
 /// @brief The quadrature table for @p N nodes.
-template<wwr::real_fp T, std::size_t N>
+template<calaman::real_fp T, std::size_t N>
   requires(N == 4 || N == 8)
 constexpr const FeastQuadrature<T, N> &feast_gauss_legendre() {
   if constexpr (N == 4) {

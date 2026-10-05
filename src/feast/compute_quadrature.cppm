@@ -48,8 +48,7 @@ module;
 export module calaman.feast:compute_quadrature;
 
 import std;
-import wwr.wrappers.common; // real_fp
-import calaman.common;      // kPi
+import calaman.common;      // kPi, real_fp
 import :feast_quadrature;
 
 export namespace calaman {
@@ -63,7 +62,7 @@ export namespace calaman {
  * @param Emin Left end of the interval (Emin < Emax).
  * @param Emax Right end.
  */
-template<wwr::real_fp T, std::size_t N>
+template<calaman::real_fp T, std::size_t N>
   requires(N == 4 || N == 8)
 device::FeastContour<T> make_feast_contour(const T Emin, const T Emax) {
   const auto &gl = feast_gauss_legendre<T, N>();
@@ -90,7 +89,7 @@ device::FeastContour<T> make_feast_contour(const T Emin, const T Emax) {
  * @brief rho(lambda), the factor the FEAST filter for [Emin, Emax] multiplies an
  *        eigenvector with eigenvalue lambda by. Host-side, for analysis and tests.
  */
-template<wwr::real_fp T, std::size_t N>
+template<calaman::real_fp T, std::size_t N>
   requires(N == 4 || N == 8)
 T feast_rational_filter(const T Emin, const T Emax, const T lambda) {
   const device::FeastContour<T> c = make_feast_contour<T, N>(Emin, Emax);

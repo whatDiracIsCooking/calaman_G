@@ -46,11 +46,10 @@ import wwr.runtime_api;     // wwrStream_t
 import wwr.blas;            // wwrblasHandle_t, wwrblasFillMode_t, wwrblasOperation_t, WWRBLAS_*
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex (the extern-template list)
-import wwr.wrappers.common; // usual_fp, ComplexToRealType
 import wwr.wrappers.blas;   // geam, gemm
 import wwr.wrappers.solver; // syevd, heevd, and their *_bufferSize queries
 import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the geam/gemm)
-import calaman.common;      // carve_workspace
+import calaman.common;      // carve_workspace, usual_fp, ComplexToRealType
 import calaman.error_handling; // Status, PointerModeStatus
 import :detail;             // as_element, kMaxDim, HermWorkspace
 // device::herm_exp_scale arrives by #include "expm_bridge.h" in the GMF above.
@@ -65,10 +64,10 @@ namespace calaman {
 // Non-exported: shared between the bufferSize query and the driver so the two
 // cannot disagree on which eigensolver backs a given T. The if constexpr keeps
 // syevd (real-only) and heevd (complex-only) each out of the other's branch.
-template<wwr::usual_fp T>
+template<calaman::usual_fp T>
 Status herm_eig_lwork(wwr::wwrsolverDnHandle_t handle, const wwr::wwrblasFillMode_t uplo,
                       const int n, int *lwork) {
-  using RealT = wwr::ComplexToRealType<T>;
+  using RealT = calaman::ComplexToRealType<T>;
   if constexpr (std::is_same_v<T, RealT>) {
     return wwr::syevd_bufferSize<T>(handle, wwr::WWRSOLVER_EIG_MODE_VECTOR, uplo, n,
                                     static_cast<const T *>(nullptr), n,
@@ -94,7 +93,7 @@ Status herm_eig_lwork(wwr::wwrsolverDnHandle_t handle, const wwr::wwrblasFillMod
  * @return Status: SUCCESS, WWRBLAS_STATUS_INVALID_VALUE for n < 1, or the
  *         solver-domain status if the eigensolver query fails.
  */
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 Status expm_herm_bufferSize(wwr::wwrsolverDnHandle_t handle, const wwr::wwrblasFillMode_t uplo,
                             const int n, std::size_t *lwork_bytes) {
   if (n < 1) {
@@ -142,12 +141,12 @@ Status expm_herm_bufferSize(wwr::wwrsolverDnHandle_t handle, const wwr::wwrblasF
  * @pre Both handles must be bound to @p stream.
  * @post The pointer mode of @p cublas_handle is left as it was found.
  */
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 Status expm_herm(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                  wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
                  const T *d_A, const int lda, T *d_expA, const int lde, void *d_work,
                  const std::size_t lwork_bytes, int *d_info) {
-  using RealT = wwr::ComplexToRealType<T>;
+  using RealT = calaman::ComplexToRealType<T>;
 
   if (n < 1 || n > kMaxDim || lda < n || lde < n || d_work == nullptr) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;

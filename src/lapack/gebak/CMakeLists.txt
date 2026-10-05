@@ -35,7 +35,7 @@ calaman_add_gpu_device_library(
 # LINK_PUBLIC carries every module the exported surface names, so an importer
 # sees them: wwr.runtime_api (the stream/error types and wwrGetLastError the
 # driver checks), wwr.complex (the two complex element types),
-# wwr.wrappers.common (usual_fp and ComplexToRealType, the scale array's type)
+# calaman.common (usual_fp and ComplexToRealType, the scale array's type)
 # and calaman.error_handling (gebak re-exports it for Status, its return type).
 #
 # LINK_PRIVATE wwr_backend is for the runtime.h that gebak_bridge.h pulls into
@@ -52,7 +52,7 @@ calaman_add_cxx_module_library(
   LINK_PUBLIC
   wwr.runtime_api
   wwr.complex
-  wwr.wrappers.common
+  calaman.common
   calaman.error_handling #  Status, the cross-domain return type
   LINK_PRIVATE
   wwr_backend

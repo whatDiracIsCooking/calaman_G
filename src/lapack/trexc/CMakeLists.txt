@@ -14,7 +14,7 @@
 # consumer must see. trexc.cppm's GMF includes error_handling/error_macros.h
 # (CLM_TRY), resolved root-relative via that target's exported include root.
 #   wwr.runtime_api         wwrStream_t, wwrMemcpyAsync, wwrStreamSync, bad arg
-#   wwr.wrappers.common     real_fp -- the T constraint on the exported template
+#   calaman.common          real_fp -- the T constraint on the exported template
 #   calaman.laexc           calaman::laexc -- the adjacent-block swap per step
 #   calaman.error_handling  Status, the cross-domain return type (re-exported)
 calaman_add_cxx_module_library(
@@ -24,7 +24,7 @@ calaman_add_cxx_module_library(
   trexc.cppm
   LINK_PUBLIC
   wwr.runtime_api
-  wwr.wrappers.common
+  calaman.common
   calaman.laexc
   calaman.error_handling
   IMPORT_STD

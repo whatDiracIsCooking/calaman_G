@@ -24,7 +24,7 @@ calaman::gebal(stream, calaman::GebalJob::Both, n, d_A, lda, &ilo, &ihi,
 
 `GebalJob` selects which halves to run — `None` (`'N'`), `Permute` (`'P'`),
 `Scale` (`'S'`), `Both` (`'B'`). `ilo` and `ihi` are host outputs and 1-based, as
-in LAPACK. `d_scale` is **real even for complex `T`** (`wwr::ComplexToRealType<T>`)
+in LAPACK. `d_scale` is **real even for complex `T`** (`calaman::ComplexToRealType<T>`)
 and carries LAPACK's two overloaded conventions unchanged, so the array feeds
 `?gebak` as-is: inside `[ilo, ihi]` it holds the diagonal of `D`; outside it holds
 the 1-based index that position was exchanged with.

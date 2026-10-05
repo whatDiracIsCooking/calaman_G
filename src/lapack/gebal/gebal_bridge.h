@@ -22,7 +22,7 @@
  * GMF cannot import) and complex.h's complex constructors are gated to a device
  * pass (the host GMF parse does not get them). So every launcher is generic in
  * the element type @c T and, where it needs the real scale/norm type, in a
- * second parameter @c R, which the caller spells as wwr::ComplexToRealType<T>.
+ * second parameter @c R, which the caller spells as calaman::ComplexToRealType<T>.
  * The .cu names the concrete wwrFloatComplex / wwrDoubleComplex only in its
  * explicit instantiations, in device context.
  *

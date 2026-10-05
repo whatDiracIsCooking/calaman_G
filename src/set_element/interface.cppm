@@ -24,8 +24,8 @@
  * requirement: one kernel, no allocation. Everything is enqueued on @p stream
  * and nothing synchronizes; the caller synchronizes when it needs d_result.
  *
- * The element type is constrained to wwr::usual_fp (float, double, and the two
- * complex types); the magnitude's real output type is wwr::ComplexToRealType<T>,
+ * The element type is constrained to calaman::usual_fp (float, double, and the two
+ * complex types); the magnitude's real output type is calaman::ComplexToRealType<T>,
  * which is T itself for a real element. A valid in-range element is assumed to
  * exist -- an empty vector has no index to read, so the caller (as diff_norm
  * does for n == 0) must not call here in that case.
@@ -48,7 +48,7 @@ export module calaman.set_element;
 import std;
 import wwr.runtime_api;     // wwrStream_t
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex (extern template list)
-import wwr.wrappers.common; // usual_fp, ComplexToRealType
+import calaman.common;  // usual_fp, ComplexToRealType
 
 namespace calaman {
 
@@ -68,7 +68,7 @@ namespace calaman {
 /// @param incx Stride between elements of @p d_x
 /// @param d_idx Device pointer to a 1-based index (as iamax writes)
 /// @param d_result Device scalar the selected element is written to
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 void set_element(const wwr::wwrStream_t stream, const T *d_x, const int incx, const int *d_idx,
                  T *d_result) {
   device::set_element<T>(stream, d_x, incx, d_idx, d_result);
@@ -77,7 +77,7 @@ void set_element(const wwr::wwrStream_t stream, const T *d_x, const int incx, co
 /// @brief Write |d_x[(*d_idx - 1) * incx]| into d_result[0] on @p stream
 ///
 /// Like set_element, but writes the element's magnitude -- a real value, so
-/// @p d_result is spelled wwr::ComplexToRealType<T> (T itself for a real
+/// @p d_result is spelled calaman::ComplexToRealType<T> (T itself for a real
 /// element). The device-pointer-mode companion to iamax. Enqueued on @p stream;
 /// returns without synchronizing. A valid in-range index is assumed to exist.
 ///
@@ -87,10 +87,10 @@ void set_element(const wwr::wwrStream_t stream, const T *d_x, const int incx, co
 /// @param incx Stride between elements of @p d_x
 /// @param d_idx Device pointer to a 1-based index (as iamax writes)
 /// @param d_result Device real scalar the magnitude is written to
-export template<wwr::usual_fp T>
+export template<calaman::usual_fp T>
 void set_element_abs(const wwr::wwrStream_t stream, const T *d_x, const int incx, const int *d_idx,
-                     wwr::ComplexToRealType<T> *d_result) {
-  device::set_element_abs<T, wwr::ComplexToRealType<T>>(stream, d_x, incx, d_idx, d_result);
+                     calaman::ComplexToRealType<T> *d_result) {
+  device::set_element_abs<T, calaman::ComplexToRealType<T>>(stream, d_x, incx, d_idx, d_result);
 }
 
 extern template void set_element<float>(wwr::wwrStream_t, const float *, int, const int *, float *);

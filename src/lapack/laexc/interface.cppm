@@ -23,7 +23,7 @@
  *
  * REAL ONLY: a complex Schur form is already triangular with no 2x2 blocks to
  * swap, so LAPACK ships no complex ?laexc; the surface is float / double,
- * constrained by wwr::real_fp -- the scope the reference has.
+ * constrained by calaman::real_fp -- the scope the reference has.
  *
  * `extern template` below pairs with instantiations.cpp: the wrapper is
  * instantiated once inside this library, so an importer never re-instantiates a
@@ -52,7 +52,7 @@ export module calaman.laexc;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.wrappers.common; // real_fp
+import calaman.common;  // real_fp
 
 // export import, not a plain import: laexc RETURNS calaman::Status, so a consumer
 // of `import calaman.laexc;` must see Status's member functions, not just its
@@ -90,7 +90,7 @@ namespace calaman {
 /// @param n2 Order of the second block (1 or 2)
 /// @param info Device int; 0 on success, 1 if the swap was rejected
 /// @return Success, or the runtime error the kernel launch reported
-export template<wwr::real_fp T>
+export template<calaman::real_fp T>
 Status laexc(const wwr::wwrStream_t stream, const bool wantq, const int n, T *const t,
              const int ldt, T *const q, const int ldq, const int j1, const int n1, const int n2,
              int *const info) {

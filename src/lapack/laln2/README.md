@@ -46,7 +46,7 @@ device pointers, not host scalars: nothing is ever read back here.
 
 The reference is `SLALN2` / `DLALN2`: `A` and the arithmetic are real, but the
 scalar `w` may be complex (then `X` and `B` carry real and imaginary columns). So
-the surface is `float` / `double`, constrained by `wwr::real_fp`. The complex
+the surface is `float` / `double`, constrained by `calaman::real_fp`. The complex
 `1x1` and `2x2` divisions go through `calaman::ladiv_scalar` from
 `calaman.ladiv`'s header-only, host/device `ladiv.h` — included root-relative by
 this module's `.cu` and called per-thread, which is the reason `?ladiv` was built
