@@ -17,7 +17,8 @@
 # level-1/3 BLAS wrappers the iteration drives (wwr.wrappers.blas --
 # gemm/axpy/dot/nrm2/scal) and the eigensolver wrappers (wwr.wrappers.solver --
 # syevd and the *_bufferSize queries), the kOne/kZero/kNegativeOne constants and
-# WorkspaceLayout/align_up carving (calaman.common), and
+# WorkspaceLayout/align_up carving (calaman.common), the ScopedPointerMode
+# guard the solve forces host mode with (wwr.extension.blas), and
 #   calaman.error_handling  Status, the cross-domain return type
 # (every entry point returns it).
 calaman_add_cxx_module_library(
@@ -34,6 +35,7 @@ calaman_add_cxx_module_library(
   wwr.solver
   wwr.wrappers.blas
   wwr.wrappers.solver
+  wwr.extension.blas
   calaman.common
   calaman.error_handling
   IMPORT_STD

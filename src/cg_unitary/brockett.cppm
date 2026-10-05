@@ -22,6 +22,8 @@ import wwr.runtime_api;     // wwrStream_t
 import wwr.complex;         // wwrFloatComplex, wwrDoubleComplex
 import wwr.wrappers.blas;   // gemm, dgmm, dot, dotc
 import calaman.common;      // kOne, kZero, real_fp, usual_fp
+import wwr.extension.blas;  // ScopedPointerMode
+import calaman.error_handling; // PointerModeStatus
 
 export namespace calaman {
 
@@ -63,31 +65,24 @@ struct brockett_cost {
     }
     T *d_tmp = static_cast<T *>(d_work);
 
-    wwr::wwrblasPointerMode_t mode;
-    wwr::wwrblasStatus_t status = wwr::wwrblasGetPointerMode(handle, &mode);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return status;
+    wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+    const wwr::extension::ScopedPointerMode guard{handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                  PointerModeStatus{&pm_status}};
+    if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+      return pm_status;
     }
-    status = wwr::wwrblasSetPointerMode(handle, wwr::WWRBLAS_POINTER_MODE_HOST);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return status;
-    }
-
-    const auto restore = [&](const wwr::wwrblasStatus_t s) {
-      wwr::wwrblasSetPointerMode(handle, mode);
-      return s;
-    };
 
     // tmp = R W
-    status = wwr::gemm<T, int>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>, d_R,
-                               ldr, d_W, ldw, &kZero<T>, d_tmp, n);
+    wwr::wwrblasStatus_t status =
+        wwr::gemm<T, int>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>, d_R, ldr,
+                          d_W, ldw, &kZero<T>, d_tmp, n);
     if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(status);
+      return status;
     }
 
     // Psi = tmp diag(N)
     status = wwr::dgmm<T, int>(handle, wwr::WWRBLAS_SIDE_RIGHT, n, n, d_tmp, n, d_N, 1, d_Psi, ldp);
-    return restore(status);
+    return status;
   }
 
   /**
@@ -136,24 +131,17 @@ private:
       return wwr::WWRBLAS_STATUS_INVALID_VALUE;
     }
 
-    wwr::wwrblasPointerMode_t mode;
-    wwr::wwrblasStatus_t status = wwr::wwrblasGetPointerMode(handle, &mode);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return status;
+    wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+    const wwr::extension::ScopedPointerMode guard{handle, wwr::WWRBLAS_POINTER_MODE_DEVICE,
+                                                  PointerModeStatus{&pm_status}};
+    if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+      return pm_status;
     }
-    status = wwr::wwrblasSetPointerMode(handle, wwr::WWRBLAS_POINTER_MODE_DEVICE);
-    if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return status;
-    }
-
     if constexpr (calaman::real_fp<T>) {
-      status = wwr::dot<T, int>(handle, n * n, d_W, 1, d_Psi, 1, d_out);
+      return wwr::dot<T, int>(handle, n * n, d_W, 1, d_Psi, 1, d_out);
     } else {
-      status = wwr::dotc<T, int>(handle, n * n, d_W, 1, d_Psi, 1, d_out);
+      return wwr::dotc<T, int>(handle, n * n, d_W, 1, d_Psi, 1, d_out);
     }
-
-    wwr::wwrblasSetPointerMode(handle, mode);
-    return status;
   }
 };
 

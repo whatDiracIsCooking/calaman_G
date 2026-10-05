@@ -39,8 +39,9 @@ import wwr.blas;            // wwrblasHandle_t/Status, WWRBLAS_*
 import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpy/MemsetAsync, wwrSuccess
 import wwr.wrappers.blas;   // gemm, axpy, scal
+import wwr.extension.blas;  // ScopedPointerMode
 import calaman.common;      // kOne, kZero, kNegativeOne, real_fp, usual_fp, ComplexToRealType
-import calaman.error_handling; // Status
+import calaman.error_handling; // Status, PointerModeStatus
 import calaman.expm;        // expm, expm_bufferSize
 import calaman.orthogonalize; // orthogonalize, orthogonalize_bufferSize
 import :buffer_size;
@@ -202,16 +203,21 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
       return cst;
     }
 
+    wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
     { // X = Psi W^H, in host pointer mode
-      const cg_detail::HostPointerMode guard{cublas_handle};
-      if (!guard.ok) {
-        return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
+      const wwr::extension::ScopedPointerMode guard{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                    PointerModeStatus{&pm_status}};
+      if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+        return pm_status;
       }
       cst = wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, adj, n, n, n, &kOne<T>, s.psi, n,
                               d_point, n, &kZero<T>, s.tmp, n);
     }
     if (cst != wwr::WWRBLAS_STATUS_SUCCESS) {
       return cst;
+    }
+    if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) { // the restore, checked after it ran
+      return pm_status;
     }
 
     // G = X - X^H, the projection onto u(n).
@@ -301,15 +307,20 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
       return publish(CgStopReason::NumericalFailure, status);
     }
 
+    wwr::wwrblasStatus_t pm_step = wwr::WWRBLAS_STATUS_SUCCESS;
     {
-      const cg_detail::HostPointerMode guard{cublas_handle};
-      if (!guard.ok) {
-        return publish(CgStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_NOT_INITIALIZED);
+      const wwr::extension::ScopedPointerMode guard{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                    PointerModeStatus{&pm_step}};
+      if (pm_step != wwr::WWRBLAS_STATUS_SUCCESS) {
+        return publish(CgStopReason::NumericalFailure, pm_step);
       }
       if (wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>,
                             s.rot, n, d_W, n, &kZero<T>, s.w_new, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
         return publish(CgStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
       }
+    }
+    if (pm_step != wwr::WWRBLAS_STATUS_SUCCESS) {
+      return publish(CgStopReason::NumericalFailure, pm_step);
     }
 
     if (wwr::wwrMemcpyAsync(d_W, s.w_new, static_cast<std::size_t>(nn) * sizeof(T),
@@ -345,15 +356,20 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
                             wwr::wwrMemcpyDeviceToDevice, stream) != wwr::wwrSuccess) {
       return publish(CgStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
     }
+    wwr::wwrblasStatus_t pm_diff = wwr::WWRBLAS_STATUS_SUCCESS;
     {
-      const cg_detail::HostPointerMode guard{cublas_handle};
-      if (!guard.ok) {
-        return publish(CgStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_NOT_INITIALIZED);
+      const wwr::extension::ScopedPointerMode guard{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                    PointerModeStatus{&pm_diff}};
+      if (pm_diff != wwr::WWRBLAS_STATUS_SUCCESS) {
+        return publish(CgStopReason::NumericalFailure, pm_diff);
       }
       if (wwr::axpy<T, int>(cublas_handle, nn, &kNegativeOne<T>, d_G, 1, s.tmp, 1) !=
           wwr::WWRBLAS_STATUS_SUCCESS) {
         return publish(CgStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
       }
+    }
+    if (pm_diff != wwr::WWRBLAS_STATUS_SUCCESS) {
+      return publish(CgStopReason::NumericalFailure, pm_diff);
     }
 
     // gamma = <G' - G, G'> / <G, G>, eq. (10). Both inner products carry the same
@@ -368,10 +384,12 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
     const RealT gamma = (gg > RealT{0}) ? (numerator / (RealT{2} * gg)) : RealT{0};
 
     // H <- G' + gamma H
+    wwr::wwrblasStatus_t pm_dir = wwr::WWRBLAS_STATUS_SUCCESS;
     {
-      const cg_detail::HostPointerMode guard{cublas_handle};
-      if (!guard.ok) {
-        return publish(CgStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_NOT_INITIALIZED);
+      const wwr::extension::ScopedPointerMode guard{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                    PointerModeStatus{&pm_dir}};
+      if (pm_dir != wwr::WWRBLAS_STATUS_SUCCESS) {
+        return publish(CgStopReason::NumericalFailure, pm_dir);
       }
       const T gamma_t = cg_detail::cg_as_element<T>(gamma);
       wwr::wwrblasStatus_t cst = wwr::scal<T, int>(cublas_handle, nn, &gamma_t, s.dir, 1);
@@ -381,6 +399,9 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
       if (cst != wwr::WWRBLAS_STATUS_SUCCESS) {
         return publish(CgStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
       }
+    }
+    if (pm_dir != wwr::WWRBLAS_STATUS_SUCCESS) {
+      return publish(CgStopReason::NumericalFailure, pm_dir);
     }
 
     std::swap(d_G, d_G_next);

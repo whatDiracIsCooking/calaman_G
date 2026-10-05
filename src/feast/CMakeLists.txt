@@ -43,7 +43,8 @@ calaman_add_gpu_device_library(
 # RealToComplexType traits (calaman.common), the type-safe BLAS and
 # eigensolver wrappers (wwr.wrappers.blas, wwr.wrappers.solver), the typed
 # constants kOne/kZero/kPi and align_up (calaman.common), the QR
-# orthonormalizer (calaman.orthogonalize) and
+# orthonormalizer (calaman.orthogonalize), the ScopedPointerMode guard
+# Rayleigh-Ritz forces host mode with (wwr.extension.blas) and
 #   calaman.error_handling  Status, the cross-domain return type
 # (every entry point returns it). wwr.complex is not listed: no partition names
 # the vendor complex type, and RealToComplexType's target is reachable
@@ -71,6 +72,7 @@ calaman_add_cxx_module_library(
   wwr.solver
   wwr.wrappers.blas
   wwr.wrappers.solver
+  wwr.extension.blas
   calaman.common
   calaman.orthogonalize
   calaman.error_handling

@@ -48,8 +48,9 @@ import wwr.solver;          // wwrsolverDnHandle_t
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrSuccess, wwrError_t
 import wwr.complex;         // make_wwrFloatComplex / make_wwrDoubleComplex (host)
 import wwr.wrappers.blas;   // gemm, gemv, dot, dotc, nrm2, scal, geam
+import wwr.extension.blas;  // ScopedPointerMode
 import calaman.common;      // kOne, kZero, real_fp, usual_fp, ComplexToRealType, RealToComplexType
-import calaman.error_handling; // Status
+import calaman.error_handling; // Status, PointerModeStatus
 import calaman.expm;        // expm, matrix_norm1
 import :buffer_size;
 import :cost_function;
@@ -129,37 +130,17 @@ T cg_as_element(const calaman::ComplexToRealType<T> x) {
   }
 }
 
-/// A scoped host pointer mode: query, force HOST, restore on scope exit. Keeps
-/// the level-1 reductions below (host-result nrm2/dot) and host-scalar products
-/// correct regardless of the mode the caller left the handle in.
-struct HostPointerMode {
-  wwr::wwrblasHandle_t handle;
-  wwr::wwrblasPointerMode_t saved{};
-  bool ok = false;
-  explicit HostPointerMode(wwr::wwrblasHandle_t h) : handle{h} {
-    if (wwr::wwrblasGetPointerMode(handle, &saved) == wwr::WWRBLAS_STATUS_SUCCESS) {
-      ok = wwr::wwrblasSetPointerMode(handle, wwr::WWRBLAS_POINTER_MODE_HOST) ==
-           wwr::WWRBLAS_STATUS_SUCCESS;
-    }
-  }
-  ~HostPointerMode() {
-    if (ok) {
-      wwr::wwrblasSetPointerMode(handle, saved);
-    }
-  }
-  HostPointerMode(const HostPointerMode &) = delete;
-  HostPointerMode &operator=(const HostPointerMode &) = delete;
-};
-
 /// alpha * H into dst, with a real alpha widened to the element type.
 template<calaman::usual_fp T>
 wwr::wwrblasStatus_t scale_into(wwr::wwrblasHandle_t handle, const int n,
                                 const calaman::ComplexToRealType<T> alpha, const T *d_H, const int ldh,
                                 T *d_dst, const int ldd) {
   const T a = cg_as_element<T>(alpha);
-  const HostPointerMode guard{handle};
-  if (!guard.ok) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode guard{handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                PointerModeStatus{&pm_status}};
+  if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    return pm_status;
   }
   return wwr::geam<T, int>(handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, &a, d_H, ldh,
                            &kZero<T>, d_H, ldh, d_dst, ldd);
@@ -173,9 +154,11 @@ wwr::wwrblasStatus_t skew_hermitian_part(wwr::wwrblasHandle_t handle, const int 
   const T a = cg_as_element<T>(alpha);
   const T b = cg_as_element<T>(-alpha);
   const auto adj = calaman::real_fp<T> ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_C;
-  const HostPointerMode guard{handle};
-  if (!guard.ok) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode guard{handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                PointerModeStatus{&pm_status}};
+  if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    return pm_status;
   }
   return wwr::geam<T, int>(handle, wwr::WWRBLAS_OP_N, adj, n, n, &a, d_X, ldx, &b, d_X, ldx, d_G,
                            ldg);
@@ -185,9 +168,11 @@ wwr::wwrblasStatus_t skew_hermitian_part(wwr::wwrblasHandle_t handle, const int 
 template<calaman::usual_fp T>
 wwr::wwrblasStatus_t frobenius_norm(wwr::wwrblasHandle_t handle, const int m, const int n,
                                     const T *d_A, const int /*lda*/, calaman::ComplexToRealType<T> *out) {
-  const HostPointerMode guard{handle};
-  if (!guard.ok) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode guard{handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                PointerModeStatus{&pm_status}};
+  if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    return pm_status;
   }
   return wwr::nrm2<T, int>(handle, m * n, d_A, 1, out);
 }
@@ -200,9 +185,11 @@ wwr::wwrblasStatus_t frobenius_dot_real(wwr::wwrblasHandle_t handle, const int m
                                         const int /*ldb*/, calaman::ComplexToRealType<T> *out) {
   using RealT = calaman::ComplexToRealType<T>;
   const int count = m * n;
-  const HostPointerMode guard{handle};
-  if (!guard.ok) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode guard{handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                PointerModeStatus{&pm_status}};
+  if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    return pm_status;
   }
   if constexpr (calaman::real_fp<T>) {
     return wwr::dot<T, int>(handle, count, d_A, 1, d_B, 1, out);
@@ -217,24 +204,17 @@ wwr::wwrblasStatus_t frobenius_dot_real(wwr::wwrblasHandle_t handle, const int m
 template<calaman::usual_fp T>
 wwr::wwrblasStatus_t dot_to_device(wwr::wwrblasHandle_t handle, const int count, const T *d_x,
                                    const T *d_y, T *d_out) {
-  wwr::wwrblasPointerMode_t mode;
-  wwr::wwrblasStatus_t status = wwr::wwrblasGetPointerMode(handle, &mode);
-  if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return status;
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode guard{handle, wwr::WWRBLAS_POINTER_MODE_DEVICE,
+                                                PointerModeStatus{&pm_status}};
+  if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    return pm_status;
   }
-  status = wwr::wwrblasSetPointerMode(handle, wwr::WWRBLAS_POINTER_MODE_DEVICE);
-  if (status != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return status;
-  }
-
   if constexpr (calaman::real_fp<T>) {
-    status = wwr::dot<T, int>(handle, count, d_x, 1, d_y, 1, d_out);
+    return wwr::dot<T, int>(handle, count, d_x, 1, d_y, 1, d_out);
   } else {
-    status = wwr::dotc<T, int>(handle, count, d_x, 1, d_y, 1, d_out);
+    return wwr::dotc<T, int>(handle, count, d_x, 1, d_y, 1, d_out);
   }
-
-  wwr::wwrblasSetPointerMode(handle, mode);
-  return status;
 }
 
 /**
@@ -259,9 +239,11 @@ Status skew_spectral_radius(wwr::wwrblasHandle_t handle, wwr::wwrStream_t stream
   T *z = d_work + n;
   const auto adj = calaman::real_fp<T> ? wwr::WWRBLAS_OP_T : wwr::WWRBLAS_OP_C;
 
-  const HostPointerMode guard{handle};
-  if (!guard.ok) {
-    return wwr::WWRBLAS_STATUS_NOT_INITIALIZED;
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode guard{handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                PointerModeStatus{&pm_status}};
+  if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    return pm_status;
   }
 
   // Seed v with ones when the warm-start vector is empty (first call reseeds it).
@@ -382,19 +364,13 @@ Status sample_derivative(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHan
   }
 
   // Every product below takes host scalars; the derivative dot does not, and
-  // restores the mode itself.
-  wwr::wwrblasPointerMode_t saved_mode;
-  if (wwr::wwrblasGetPointerMode(cublas_handle, &saved_mode) != wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
+  // restores the mode itself. The guard restores the caller's mode on every exit.
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode guard{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                PointerModeStatus{&pm_status}};
+  if (pm_status != wwr::WWRBLAS_STATUS_SUCCESS) {
+    return pm_status;
   }
-  if (wwr::wwrblasSetPointerMode(cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST) !=
-      wwr::WWRBLAS_STATUS_SUCCESS) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
-  const auto restore = [&](const Status st) {
-    wwr::wwrblasSetPointerMode(cublas_handle, saved_mode);
-    return st;
-  };
 
   // R_i is advanced by repeated multiplication rather than re-exponentiated:
   // exp(i mu H) = [exp(mu H)]^i (§3.3). Hence one exponential per search. gemm
@@ -416,13 +392,13 @@ Status sample_derivative(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHan
       if (i == 1) {
         if (wwr::wwrMemcpyAsync(r_cur, s.rot, block_bytes, wwr::wwrMemcpyDeviceToDevice, stream) !=
             wwr::wwrSuccess) {
-          return restore(wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
+          return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
         }
       } else {
         if (wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>,
                               r_cur, n, s.rot, n, &kZero<T>, r_next, n) !=
             wwr::WWRBLAS_STATUS_SUCCESS) {
-          return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+          return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
         }
         std::swap(r_cur, r_next);
       }
@@ -430,12 +406,12 @@ Status sample_derivative(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHan
       // W_i = R_i W
       if (wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>,
                             r_cur, n, d_W, n, &kZero<T>, s.w_new, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+        return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
       }
 
       if (cost.euclidean_gradient(cublas_handle, stream, n, s.w_new, n, s.psi_trial, n, s.scratch,
                                   s.scratch_bytes) != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+        return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
       }
 
       w_trial = s.w_new;
@@ -448,25 +424,25 @@ Status sample_derivative(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHan
     // B = H W_i, the second factor of eq. (14) before conjugation.
     if (wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n, n, &kOne<T>,
                           d_H, ldh, w_trial, n, &kZero<T>, s.tmp, n) != wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+      return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
     }
 
     // The sample itself: Re trace{Psi B^H} as one dot, straight to device memory.
     if (dot_to_device<T>(cublas_handle, n * n, s.tmp, psi_trial, s.dots + i) !=
         wwr::WWRBLAS_STATUS_SUCCESS) {
-      return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+      return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
     }
 
     if (want_cost) {
       if (cost.value(cublas_handle, stream, n, w_trial, n, psi_trial, n, s.cost_dots + i, s.scratch,
                      s.scratch_bytes) != wwr::WWRBLAS_STATUS_SUCCESS) {
-        return restore(wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+        return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
       }
       wwr::wwrblasSetPointerMode(cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST);
     }
   }
 
-  return restore(wwr::WWRBLAS_STATUS_SUCCESS);
+  return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 
 } // namespace cg_detail
