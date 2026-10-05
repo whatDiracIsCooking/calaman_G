@@ -42,8 +42,15 @@ set -euo pipefail
 NODE_MAJOR=${NODE_MAJOR:-22}
 
 install -d -m 0755 /etc/apt/keyrings
+# --batch --yes is load-bearing, not boilerplate: Dockerfile.combined runs this
+# script ON TOP OF the `cuda` image, which already ran it, so the keyring is
+# already there. A bare `gpg --dearmor -o` on an existing file asks whether to
+# overwrite, opens /dev/tty to ask, and dies with `cannot open '/dev/tty'` in a
+# build that has none. The cuda and hip images never see it -- they come off
+# base, where the file is absent -- so the breakage lands on `combined` alone,
+# and only once this layer is no longer cached.
 curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-  | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+  | gpg --batch --yes --dearmor -o /etc/apt/keyrings/nodesource.gpg
 echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] \
 https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
   > /etc/apt/sources.list.d/nodesource.list
