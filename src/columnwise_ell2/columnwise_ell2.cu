@@ -36,7 +36,7 @@ namespace {
 /// @brief Per-element pre-transform x^2, the square summed by the L2 norm
 ///
 /// A trivially-copyable class with a `__device__` call, as reduce_columns'
-/// unary_transform_functor requires. `x * x` needs no <cmath> in the device pass.
+/// device_functor requires. `x * x` needs no <cmath> in the device pass.
 template<typename T>
 struct SquareFunctor {
   __device__ T operator()(const T x) const { return x * x; }
