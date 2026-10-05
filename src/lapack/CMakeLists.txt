@@ -155,6 +155,19 @@ add_subdirectory(sysv)
 # calaman.common and calaman.error_handling, both one level up.
 add_subdirectory(hetrs)
 
+# calaman.hetf2 -- the unblocked Hermitian Bunch-Kaufman factorization (LAPACK
+# ?hetf2), the from-scratch factorization the vendors omit for Hermitian (they
+# ship only the symmetric ?sytrf). A host-driven pivot search over wrapped BLAS
+# (iamax/her/scal) plus its own interchange and rank-2 device kernels. Complex
+# only. It links only calaman.common and calaman.error_handling, both one level
+# up.
+add_subdirectory(hetf2)
+
+# calaman.hesv -- the Hermitian indefinite solve driver (LAPACK ?hesv): factor
+# by calaman.hetf2, then solve with calaman.hetrs. It LINKS both (added above),
+# so it follows them here.
+add_subdirectory(hesv)
+
 # calaman.lasrt -- sort a 1-D array (increasing or decreasing), the GPU
 # counterpart of LAPACK's ?lasrt. A single hand-launched device kernel
 # (quicksort/insertion), structurally laset's twin but functionally standalone:
