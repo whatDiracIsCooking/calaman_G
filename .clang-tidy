@@ -76,8 +76,10 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.LocalConstantCase
     value: lower_case
+  # Plus matrix names, as in the math and in LAPACK: an all-caps token (A, RW,
+  # VL) may stand alone or as one part of a snake_case name (d_A, R_host).
   - key: readability-identifier-naming.LocalConstantIgnoredRegexp
-    value: 'k[A-Z][A-Za-z0-9]*'
+    value: '(k[A-Z][A-Za-z0-9]*|([a-z][a-z0-9]*|[A-Z][A-Z0-9]*)(_([a-z0-9]+|[A-Z][A-Z0-9]*))*)'
   # Two naming systems this project does not own, exempted rather than annotated
   # at each site:
   #
@@ -99,6 +101,7 @@ CheckOptions:
   - key: readability-identifier-naming.GlobalConstantIgnoredRegexp
     value: '(wwr[a-zA-Z]*[A-Z].*|[a-z][a-z0-9_]*_v)'
   # A WWR_FUNCTION alias is a reference, which is never const-qualified, so it
-  # is linted as a plain variable rather than a constant.
+  # is linted as a plain variable rather than a constant. Matrix names as for
+  # LocalConstantIgnoredRegexp above.
   - key: readability-identifier-naming.VariableIgnoredRegexp
-    value: 'wwr[a-zA-Z]*[A-Z].*'
+    value: '(wwr[a-zA-Z]*[A-Z].*|([a-z][a-z0-9]*|[A-Z][A-Z0-9]*)(_([a-z0-9]+|[A-Z][A-Z0-9]*))*)'

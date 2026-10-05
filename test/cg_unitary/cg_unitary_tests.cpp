@@ -272,8 +272,8 @@ void expect_brockett_maximizes(int n, unsigned seed, LineSearchMethod method) {
   for (std::size_t i = 0; i < W.size(); ++i) {
     W[i] = traits<T>::to(W_out[i]);
   }
-  const auto Rat = [&](int i, int j) { return R_host[static_cast<std::size_t>(j) * n + i]; };
-  const auto Wat = [&](int i, int j) { return W[static_cast<std::size_t>(j) * n + i]; };
+  const auto R_at = [&](int i, int j) { return R_host[static_cast<std::size_t>(j) * n + i]; };
+  const auto W_at = [&](int i, int j) { return W[static_cast<std::size_t>(j) * n + i]; };
 
   // RW[i,j] = sum_k R[i,k] W[k,j]
   std::vector<C> RW(static_cast<std::size_t>(n) * n, C{});
@@ -281,7 +281,7 @@ void expect_brockett_maximizes(int n, unsigned seed, LineSearchMethod method) {
     for (int i = 0; i < n; ++i) {
       C acc{};
       for (int k = 0; k < n; ++k) {
-        acc += Rat(i, k) * Wat(k, j);
+        acc += R_at(i, k) * W_at(k, j);
       }
       RW[static_cast<std::size_t>(j) * n + i] = acc;
     }
@@ -292,7 +292,7 @@ void expect_brockett_maximizes(int n, unsigned seed, LineSearchMethod method) {
     for (int a = 0; a < n; ++a) {
       C acc{};
       for (int i = 0; i < n; ++i) {
-        acc += conj_of(Wat(i, a)) * RW[static_cast<std::size_t>(b) * n + i];
+        acc += conj_of(W_at(i, a)) * RW[static_cast<std::size_t>(b) * n + i];
       }
       M[static_cast<std::size_t>(b) * n + a] = acc;
     }
@@ -309,7 +309,7 @@ void expect_brockett_maximizes(int n, unsigned seed, LineSearchMethod method) {
     for (int b = 0; b < n; ++b) {
       C acc{};
       for (int i = 0; i < n; ++i) {
-        acc += conj_of(Wat(i, a)) * Wat(i, b);
+        acc += conj_of(W_at(i, a)) * W_at(i, b);
       }
       const double expected = (a == b) ? 1.0 : 0.0;
       EXPECT_NEAR(re_of(acc), expected, (std::is_same_v<R, float> ? 1e-3 : 1e-9))

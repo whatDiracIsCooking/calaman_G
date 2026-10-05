@@ -76,10 +76,13 @@ not `constexpr`:**
 | namespace scope, `static` member, function-`static` | `kCamelCase` | `kWarpSize`, `kGehrdBlockSize`, `kFeastQuadrature4` |
 | function-local | `lower_case` or `kCamelCase` | `n`, `ld`, `nb`, `n_roots`; `kBlockSize` |
 | a trait variable template | `lower_case_v`, like std | `is_complex_v` |
+| a matrix, in a variable or local constant | all-caps token, alone or as one `_` part | `A`, `RW`, `d_A`, `R_host`, `get_H`; not `Hptr`, `Tf` |
 | `wwr*` aliases from WarpWraps | as WarpWraps spells them | `wwrsolverDnXgetrf` |
 
 Locals may stay `lower_case` because they usually mirror LAPACK's own argument
-names, and `kLd` would read worse than `ld`. The config has **no
+names, and `kLd` would read worse than `ld`. Matrix names are capitals for the
+same reason (`A`, `d_A`); the all-caps-token rule is what keeps that from
+letting arbitrary camelCase (`Hptr`) back in. The config has **no
 `ConstexprVariable*` key on purpose**: clang-tidy checks it before every
 scope key, so setting it applies one spelling to every `constexpr` and
 discards the split above. clang-tidy-20 has no scoped `*ConstexprVariable`
