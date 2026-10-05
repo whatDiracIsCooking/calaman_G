@@ -76,6 +76,8 @@ namespace calaman {
 export enum class GebalJob { None, Permute, Scale, Both };
 
 /// @brief Default cap on scaling sweeps; see device::kGebalDefaultMaxSweeps
+// Exported API is spelled like the LAPACK routines it sits beside, not kCamelCase.
+// NOLINTNEXTLINE(readability-identifier-naming)
 export inline constexpr int gebal_default_max_sweeps = device::kGebalDefaultMaxSweeps;
 
 /// @brief Query the device scratch gebal needs, in ints (2n + 1)

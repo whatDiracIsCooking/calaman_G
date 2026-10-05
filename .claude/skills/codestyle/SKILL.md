@@ -6,7 +6,8 @@ description: >-
   brackets for everything external (the standard library, vendor SDKs,
   LAPACKE/CBLAS, GoogleTest, and WarpWraps). Use when writing or reviewing
   `#include` lines under src/, experimental/ or test/, adding a new header or
-  include root, or when the user asks about code style or include conventions.
+  include root, naming a constant (kCamelCase vs lower_case), or when the user
+  asks about code style or include conventions.
   Not for comments and doc blocks — that's `docstyle`.
 ---
 
@@ -63,6 +64,32 @@ Either one turns WarpWraps' root into an `-isystem` directory, and the lookup
 order between it and libc++'s wrappers then depends on the toolchain. If you
 make either change, rebuild both backends and check that `wwrFloatComplex`
 still resolves.
+
+## Naming constants: `kCamelCase` by scope
+
+`.clang-tidy` enforces this one (`readability-identifier-naming`), but only
+when someone runs clang-tidy, so here is the rule in words. **Scope decides,
+not `constexpr`:**
+
+| Where the constant lives | Spelling | Examples |
+|---|---|---|
+| namespace scope, `static` member, function-`static` | `kCamelCase` | `kWarpSize`, `kGehrdBlockSize`, `kFeastQuadrature4` |
+| function-local | `lower_case` or `kCamelCase` | `n`, `ld`, `nb`, `n_roots`; `kBlockSize` |
+| a trait variable template | `lower_case_v`, like std | `is_complex_v` |
+| `wwr*` aliases from WarpWraps | as WarpWraps spells them | `wwrsolverDnXgetrf` |
+
+Locals may stay `lower_case` because they usually mirror LAPACK's own argument
+names, and `kLd` would read worse than `ld`. The config has **no
+`ConstexprVariable*` key on purpose**: clang-tidy checks it before every
+scope key, so setting it applies one spelling to every `constexpr` and
+discards the split above. clang-tidy-20 has no scoped `*ConstexprVariable`
+keys either; the `*Constant` keys (which also cover plain `const`) are what
+do the work.
+
+Two kinds of name are public API and keep their spelling with a `NOLINT` that
+says why: an **exported** constant that sits beside LAPACK-named routines
+(`gebal_default_max_sweeps`), and a static member a **concept requires by
+name** (`unitary_cost_function`'s `F::order`, like std's `::value`).
 
 ## Check
 

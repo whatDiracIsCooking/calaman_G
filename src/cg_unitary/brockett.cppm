@@ -38,7 +38,8 @@ export namespace calaman {
 template<calaman::usual_fp T>
 struct brockett_cost {
   /// q for this cost function: trace{W^H R W N} is quadratic in W.
-  static constexpr int order = 2;
+  // The name is fixed by the unitary_cost_function concept, like std's ::value.
+  static constexpr int order = 2;  // NOLINT(readability-identifier-naming)
 
   const T *d_R = nullptr; ///< n x n Hermitian, column-major.
   int ldr = 0;            ///< Leading dimension of d_R.

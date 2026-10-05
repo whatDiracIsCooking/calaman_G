@@ -82,7 +82,7 @@ static_assert(sizeof(std::complex<float>) == sizeof(wwr::wwrFloatComplex));
 static_assert(sizeof(std::complex<double>) == sizeof(wwr::wwrDoubleComplex));
 
 template<typename T>
-constexpr bool is_complex = !std::is_same_v<Host<T>, T>;
+constexpr bool is_complex_v = !std::is_same_v<Host<T>, T>;
 
 template<typename T>
 DeviceBuffer<T> upload(std::shared_ptr<DeviceHandle> h, const std::vector<Host<T>> &host) {
@@ -108,7 +108,7 @@ std::vector<Host<T>> download(std::shared_ptr<DeviceHandle> h, const DeviceBuffe
 
 template<typename T>
 double abs2(const Host<T> &v) {
-  if constexpr (is_complex<T>) {
+  if constexpr (is_complex_v<T>) {
     return std::norm(v);
   } else {
     return static_cast<double>(v) * static_cast<double>(v);
@@ -125,7 +125,7 @@ Real<T> fro(const std::vector<Host<T>> &a) {
 template<typename T>
 Host<T> rnd(std::mt19937 &g) {
   std::uniform_real_distribution<double> d(-1.0, 1.0);
-  if constexpr (is_complex<T>) {
+  if constexpr (is_complex_v<T>) {
     return Host<T>(static_cast<Real<T>>(d(g)), static_cast<Real<T>>(d(g)));
   } else {
     return static_cast<Host<T>>(d(g));
