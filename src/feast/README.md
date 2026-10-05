@@ -23,6 +23,12 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 | `:rayleigh_ritz` | QR, projection, `syevd`, selection, residuals |
 | `:feast_solver` | the iteration |
 
+Only `feast_solver`, `feast_bufferSize`, `FeastOptions`, `FeastInfo`,
+`FeastStopReason` and `feast_rational_filter` are exported. The rest — the
+per-iteration steps, `FeastSlices`, the contour and quadrature tables — are
+module-internal: reachable from the header-only `feast_solver` template when an
+importer instantiates it, but not nameable by that importer.
+
 ## The idea
 
 The spectral projector onto the eigenvectors with eigenvalues inside a contour

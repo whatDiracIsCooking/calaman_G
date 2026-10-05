@@ -52,7 +52,7 @@ import calaman.orthogonalize; // orthogonalize
 import :buffer_size;
 export import calaman.error_handling; // Status, PointerModeStatus
 
-export namespace calaman {
+namespace calaman {
 
 /**
  * @brief Ritz pairs of A on span(s.basis): values into @p d_lambda, vectors into @p d_X.

@@ -42,7 +42,7 @@ import calaman.common;      // align_up, WorkspaceLayout, carve_workspace, real_
 import calaman.orthogonalize; // orthogonalize_bufferSize
 export import calaman.error_handling; // Status -- the cross-domain return type
 
-export namespace calaman {
+namespace calaman {
 
 /**
  * @brief Pointers into the solver's single workspace buffer.
@@ -137,7 +137,7 @@ struct FeastSlices {
 
 } // namespace calaman
 
-export namespace calaman {
+namespace calaman {
 
 /**
  * @brief Carve @p d_work into FeastSlices for an n x n problem with an m0-column
@@ -180,7 +180,7 @@ Status make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, 
  * @param m0          Subspace size, 1 <= m0 <= n.
  * @param lwork_bytes Out: bytes required.
  */
-template<calaman::real_fp T, std::size_t Ne = 8>
+export template<calaman::real_fp T, std::size_t Ne = 8>
   requires(Ne == 4 || Ne == 8)
 Status feast_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int m0,
                         std::size_t *lwork_bytes) {
