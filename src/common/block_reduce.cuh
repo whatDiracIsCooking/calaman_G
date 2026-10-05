@@ -18,7 +18,7 @@
  * #include'd into a .cu (CUDA) or -x hip device-compiled (HIP) TU, like
  * elem_ops.cuh: no module face, reached root-relative as
  * "common/block_reduce.cuh". Link calaman.common for the src/ root and,
- * through it, wwr.device (device_guard.h, the device-pass gate).
+ * through it, wwr.device (device_guard.h, runtime.h).
  *
  * Usage:
  *   #include "common/block_reduce.cuh"
@@ -36,6 +36,10 @@
 // The device-pass gate: #errors outside a CUDA or HIP device compile, so this
 // header carries no guard of its own, like reduce_columns.cuh.
 #include <device_guard.h>
+
+// __forceinline__, __syncthreads, threadIdx: nvcc pre-includes the runtime,
+// HIP does not.
+#include <runtime.h>
 
 namespace calaman::device {
 
