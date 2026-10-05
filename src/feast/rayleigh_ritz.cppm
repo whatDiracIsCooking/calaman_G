@@ -42,42 +42,15 @@ export module calaman.feast:rayleigh_ritz;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, pointer-mode get/set
+import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.wrappers.blas;   // symm, gemm
 import wwr.wrappers.solver; // syevd
+import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the BLAS calls)
 import calaman.common;      // kOne, kZero, real_fp
 import calaman.orthogonalize; // orthogonalize
 import :buffer_size;
-export import calaman.error_handling; // Status -- the cross-domain return type
-
-namespace calaman::feast_detail {
-
-/// Host pointer mode for a scope, restoring whatever the caller had set.
-class HostPointerMode {
-public:
-  explicit HostPointerMode(wwr::wwrblasHandle_t handle) : handle_(handle) {
-    ok_ = wwr::wwrblasGetPointerMode(handle_, &saved_) == wwr::WWRBLAS_STATUS_SUCCESS &&
-          wwr::wwrblasSetPointerMode(handle_, wwr::WWRBLAS_POINTER_MODE_HOST) ==
-              wwr::WWRBLAS_STATUS_SUCCESS;
-  }
-  ~HostPointerMode() {
-    if (ok_) {
-      wwr::wwrblasSetPointerMode(handle_, saved_);
-    }
-  }
-  HostPointerMode(const HostPointerMode &) = delete;
-  HostPointerMode &operator=(const HostPointerMode &) = delete;
-
-  bool ok() const { return ok_; }
-
-private:
-  wwr::wwrblasHandle_t handle_;
-  wwr::wwrblasPointerMode_t saved_ = wwr::WWRBLAS_POINTER_MODE_HOST;
-  bool ok_ = false;
-};
-
-} // namespace calaman::feast_detail
+export import calaman.error_handling; // Status, PointerModeStatus
 
 export namespace calaman {
 
@@ -98,10 +71,10 @@ Status feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
                            const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
                            const int lda, const int m0, const T Emin, const T Emax,
                            const FeastSlices<T> &s, T *d_lambda, T *d_X) {
-  const feast_detail::HostPointerMode mode(cublas_handle);
-  if (!mode.ok()) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode mode{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                               PointerModeStatus{&pm_status}};
+  CLM_TRY(pm_status);
 
   orthogonalize<T>(cusolver_handle, n, m0, s.basis, s.scratch, s.lwork_qr, s.qr_info,
                    s.qr_info + 1);

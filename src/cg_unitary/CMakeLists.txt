@@ -32,9 +32,10 @@ calaman_add_gpu_device_library(
 #   wwr.blas / wwr.solver / wwr.runtime_api  handle, status and stream types
 #   wwr.complex                              the complex element types
 #   wwr.wrappers.blas                        gemm/gemv/geam/dot/dotc/dgmm/...
+#   wwr.extension.blas                       ScopedPointerMode
 #   calaman.common                           kOne/kZero/..., carve_workspace,
 #                                            usual_fp / ComplexToRealType
-#   calaman.error_handling                   Status, the cross-domain return
+#   calaman.error_handling                   Status, PointerModeStatus
 #   calaman.expm                             expm, expm_bufferSize, matrix_norm1
 #   calaman.orthogonalize                    the optional reunitarization
 # LINK_PRIVATE wwr_backend is for the runtime.h that cg_unitary_bridge.h pulls
@@ -57,6 +58,7 @@ calaman_add_cxx_module_library(
   wwr.runtime_api
   wwr.complex
   wwr.wrappers.blas
+  wwr.extension.blas
   calaman.common
   calaman.error_handling
   calaman.expm

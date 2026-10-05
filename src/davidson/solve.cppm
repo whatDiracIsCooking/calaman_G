@@ -40,14 +40,15 @@ module;
 export module calaman.davidson:solve;
 
 import std;
-import wwr.blas;            // wwrblasHandle_t, pointer-mode get/set, WWRBLAS_*
+import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR, WWRSOLVER_EIG_TYPE_1
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize
 import wwr.wrappers.blas;   // gemm, axpy, dot, nrm2, scal
 import wwr.wrappers.solver; // syevd, sygvd
+import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the solve)
 import :buffer_size;        // DavidsonSlices
 import calaman.common;      // kOne, kZero, kNegativeOne, real_fp
-export import calaman.error_handling; // Status -- the cross-domain return type
+export import calaman.error_handling; // Status, PointerModeStatus
 
 export namespace calaman {
 
@@ -109,36 +110,6 @@ using DavidsonMetricFn =
 
 } // namespace calaman
 
-namespace calaman::davidson_detail {
-
-/// Host pointer mode for a scope, restoring whatever the caller had set -- the
-/// level-1 reductions (dot/nrm2) and the scaled updates take HOST scalars and
-/// write HOST results, so the handle must be in host pointer mode across the
-/// solve. Mirrors calaman.feast's guard.
-class HostPointerMode {
-public:
-  explicit HostPointerMode(wwr::wwrblasHandle_t handle) : handle_(handle) {
-    ok_ = wwr::wwrblasGetPointerMode(handle_, &saved_) == wwr::WWRBLAS_STATUS_SUCCESS &&
-          wwr::wwrblasSetPointerMode(handle_, wwr::WWRBLAS_POINTER_MODE_HOST) ==
-              wwr::WWRBLAS_STATUS_SUCCESS;
-  }
-  ~HostPointerMode() {
-    if (ok_) {
-      wwr::wwrblasSetPointerMode(handle_, saved_);
-    }
-  }
-  HostPointerMode(const HostPointerMode &) = delete;
-  HostPointerMode &operator=(const HostPointerMode &) = delete;
-  [[nodiscard]] bool ok() const { return ok_; }
-
-private:
-  wwr::wwrblasHandle_t handle_;
-  wwr::wwrblasPointerMode_t saved_ = wwr::WWRBLAS_POINTER_MODE_HOST;
-  bool ok_ = false;
-};
-
-} // namespace calaman::davidson_detail
-
 export namespace calaman {
 
 /**
@@ -179,8 +150,12 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
   CLM_REQUIRE(!use_metric || (s.mv != nullptr && s.s_sub != nullptr && s.metric_scratch != nullptr),
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
 
-  const davidson_detail::HostPointerMode mode(cublas_handle);
-  CLM_REQUIRE(mode.ok(), wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+  // The level-1 reductions (dot/nrm2) and the scaled updates take HOST scalars and
+  // write HOST results, so the handle is in host pointer mode across the solve.
+  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+  const wwr::extension::ScopedPointerMode mode{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                               PointerModeStatus{&pm_status}};
+  CLM_TRY(pm_status);
 
   const auto nz = static_cast<std::size_t>(n);
   const std::size_t n_bytes = sizeof(T) * nz;
