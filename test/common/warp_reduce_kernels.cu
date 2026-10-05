@@ -8,10 +8,8 @@
  */
 #include "warp_reduce_bridge.h"
 
-// warp_reduce.cuh first: it reaches runtime.h (and __forceinline__ under HIP),
-// which block_reduce.cuh uses without including.
-#include "common/warp_reduce.cuh"
 #include "common/block_reduce.cuh" // AddOp, MaxNanOp
+#include "common/warp_reduce.cuh"
 
 #include <runtime.h>
 

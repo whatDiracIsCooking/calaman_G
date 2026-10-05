@@ -47,8 +47,8 @@
 # root-relative as "common/<name>.cuh" -- elem_ops.cuh having been folded in
 # from the former standalone calaman.elem_ops INTERFACE library. Its WarpWraps
 # device dependency is why calaman.common is no longer dependency-free (see
-# LINK_PUBLIC below); block_reduce.cuh needs only device_guard.h off the same
-# wwr.device root.
+# LINK_PUBLIC below); block_reduce.cuh needs only device_guard.h + runtime.h off
+# the same wwr.device root.
 #
 # device_functor.h (the device_functor concept + identity_functor) is also
 # module-less, but host-AND-device includable: the concept is a plain trait,
