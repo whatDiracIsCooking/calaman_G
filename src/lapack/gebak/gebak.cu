@@ -22,7 +22,7 @@
 // uses, and what keeps the host driver free of any device read-back.
 #include "gebak_bridge.h"
 
-#include "complex.h"
+#include <complex.h>
 #include "common/elem_ops.cuh"
 
 #include <cstddef>

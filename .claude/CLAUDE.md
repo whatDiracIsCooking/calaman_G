@@ -145,6 +145,7 @@ file is the map; reach for the skill when you act.
 | [pr](skills/pr/SKILL.md) | ship the current work end to end: commit → push → PR → merge, with the repo's gotchas (never on `main`, fill the template, never `--admin`/`--delete-branch`). |
 | [doctor](skills/doctor/SKILL.md) | diagnose a degraded environment — `doctor.sh` plus the failures it cannot see (a stale container, orphaned pytest workers, a stale CMake cache). |
 | [docstyle](skills/docstyle/SKILL.md) | write or review source documentation under `src/`/`cmake/` — what belongs in a header vs a declaration vs `docs/architecture.md` vs a README, and the line budget each gets. |
+| [codestyle](skills/codestyle/SKILL.md) | write or review C++ source conventions nothing enforces — `#include` style first: `"quotes"` for this project's headers, `<angles>` for everything external including WarpWraps, plus a check for the tree. |
 | [workspace](skills/workspace/SKILL.md) | write or review a routine's device workspace — the carve-once convention (`slices_for` + `carve_workspace` + `WorkspaceLayout`), the canonical `XSlices`/`make_X_slices`/`*_bufferSize` shape, fixed-vs-scratch rules, and the review checklist. |
 | [audit](skills/audit/SKILL.md) | verify that documentation (skills, READMEs, this file, memory) still matches reality — extract each claim, check it against the tree, report drift. |
 | [milestone](skills/milestone/SKILL.md) | turn a plan into a GitHub milestone plus a DAG of PR-sized issues wired for parallel work. |
@@ -244,9 +245,13 @@ carries that cost instead.
 - **`#include` style tracks header ownership.** A header this project owns uses
   quotes, spelled by the path its include root makes resolve — bare for a
   same-directory header, root-relative otherwise — **never a `../` relative
-  climb**. The standard library, the vendor SDKs and LAPACKE use angle brackets.
-  A non-module header a `.cppm` includes from its global module fragment must
-  have its include root exported (PUBLIC/INTERFACE), not PRIVATE.
+  climb**. Everything external uses angle brackets — the standard library, the
+  vendor SDKs, LAPACKE/CBLAS, GoogleTest, **and WarpWraps** (`<runtime.h>`,
+  `<complex.h>`, `<wrappers/math/math.cuh>`: a submodule, not ours, even though
+  its `-I` root would let quotes compile). A non-module header a `.cppm`
+  includes from its global module fragment must have its include root exported
+  (PUBLIC/INTERFACE), not PRIVATE. The **codestyle** skill has the table and a
+  check.
 - **Documentation under `src/`/`cmake/` follows the `docstyle` skill — apply it
   when you write or edit a header, declaration, or CMake comment, not only when
   asked to review.** Its budget (25-line header, 5-line declaration) is enforced

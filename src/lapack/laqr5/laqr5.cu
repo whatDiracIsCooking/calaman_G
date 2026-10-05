@@ -36,8 +36,8 @@
 // headers.
 #include "laqr5_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
-#include "wrappers/math/math.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
+#include <wrappers/math/math.cuh>
 
 #include <cfloat>
 #include <cstddef>

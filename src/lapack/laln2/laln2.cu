@@ -30,7 +30,7 @@
 
 #include "lapack/ladiv/ladiv.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cfloat>
 #include <cstddef>

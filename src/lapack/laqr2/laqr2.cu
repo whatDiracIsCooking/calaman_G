@@ -42,8 +42,8 @@
 // device headers, so the unit is shared unchanged between both backends.
 #include "laqr2_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
-#include "wrappers/math/math.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
+#include <wrappers/math/math.cuh>
 
 #include <cfloat>
 #include <cstddef>

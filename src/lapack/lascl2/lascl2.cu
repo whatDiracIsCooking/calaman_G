@@ -15,7 +15,7 @@
 #include "lascl2_bridge.h"
 
 #include "common/align_up.h"
-#include "runtime.h"
+#include <runtime.h>
 
 #include <cstddef>
 

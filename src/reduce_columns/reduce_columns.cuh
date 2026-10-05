@@ -38,8 +38,8 @@
 // come from runtime.h; device_guard.h is the device-pass gate -- it #errors
 // outside a CUDA or HIP device compile, so this header carries no guard of its
 // own, like parallel_for.cuh.
-#include "device_guard.h"
-#include "runtime.h"
+#include <device_guard.h>
+#include <runtime.h>
 
 namespace calaman::device {
 

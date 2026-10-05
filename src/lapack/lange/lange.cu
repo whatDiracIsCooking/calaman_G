@@ -26,7 +26,7 @@
 // later extension -- see interface.cppm.
 #include "lange_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 #include "reduce_columns/reduce_columns.cuh"
 
 #include <cstddef>

@@ -20,7 +20,7 @@
 // exactly after the panel gemm.
 #include "laqps_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cmath>
 #include <cstddef>

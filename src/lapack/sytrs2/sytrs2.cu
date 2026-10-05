@@ -18,7 +18,7 @@
 
 #include "common/constants.h"
 #include "common/elem_ops.cuh"
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cstddef>
 

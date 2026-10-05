@@ -35,7 +35,7 @@
 
 // The device-pass gate: #errors outside a CUDA or HIP device compile, so this
 // header carries no guard of its own, like reduce_columns.cuh.
-#include "device_guard.h"
+#include <device_guard.h>
 
 namespace calaman::device {
 

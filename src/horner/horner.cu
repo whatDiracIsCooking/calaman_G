@@ -22,7 +22,7 @@
 // later extension calaman.common's constants.h documents.
 #include "horner_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 
 #include <cstddef>
 

@@ -24,7 +24,7 @@
 // deliberate later extension -- see interface.cppm.
 #include "columnwise_ell2_bridge.h"
 
-#include "extension/parallel_for/parallel_for.cuh"
+#include <extension/parallel_for/parallel_for.cuh>
 #include "reduce_columns/reduce_columns.cuh"
 
 #include <cstddef>
