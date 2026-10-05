@@ -15,8 +15,10 @@ matrix `A`. Two steps, like the reference driver:
 Unlike `calaman.sysv`, whose factorization is a single vendor call (`wwr::sytrf`),
 the Hermitian factorization has **no vendor counterpart** — cuSOLVER/hipSOLVER
 ship `sytrf` but not `hetrf`. So `calaman.hesv` factors with `calaman.hetf2` (the
-from-scratch unblocked Hermitian Bunch-Kaufman) and solves with `calaman.hetrs`.
-Both halves run on the one BLAS handle; there is no solver handle.
+from-scratch unblocked Hermitian Bunch-Kaufman) and solves with `calaman.hetrs2`
+(level-3) when the workspace holds at least `n` elements — the reference `?hesv`'s
+`lwork` test — else `calaman.hetrs` (level-2). Both halves run on the one BLAS
+handle; there is no solver handle.
 
 `hesv_bufferSize` forwards to `hetf2_bufferSize` (= `2n` elements), so a size query
 and the routine reserve the same workspace.
