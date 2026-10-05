@@ -9,11 +9,11 @@ calaman_add_gtest_executable(
   SOURCES
   error_handling_tests.cpp
   LINK
-  calaman.error_handling
-  wwr.extension.common
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
+  calaman::error_handling
+  wwr::extension::common
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
 )
 
 calaman_add_gtest_suite_tests(

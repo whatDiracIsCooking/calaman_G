@@ -163,6 +163,11 @@ function(calaman_install_package)
   # call, because FILE_SET CXX_MODULES needs a per-target DESTINATION (rule 2).
   # They all name the same EXPORT set, which is what makes them one package.
   foreach(_target IN LISTS _targets)
+    # Unify the exported name with the in-tree `::` alias. Set before
+    # install(TARGETS ... EXPORT), which is what reads EXPORT_NAME.
+    _calaman_export_name(${_target} _export_name)
+    set_target_properties(${_target} PROPERTIES EXPORT_NAME "${_export_name}")
+
     get_target_property(_type ${_target} TYPE)
 
     if(_type STREQUAL "INTERFACE_LIBRARY")

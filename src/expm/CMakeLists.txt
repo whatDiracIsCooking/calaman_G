@@ -28,9 +28,9 @@ calaman_add_gpu_device_library(
   SOURCES
   expm.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
-  calaman.reduce_columns
-  calaman.common
+  wwr::extension::parallel_for
+  calaman::reduce_columns
+  calaman::common
 )
 
 # The module itself: ordinary host C++23, no device code. instantiations.cpp is
@@ -68,17 +68,17 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.complex
-  wwr.wrappers.blas
-  wwr.wrappers.solver
-  wwr.extension.blas
-  calaman.common
-  calaman.error_handling
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::complex
+  wwr::wrappers::blas
+  wwr::wrappers::solver
+  wwr::extension::blas
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -90,7 +90,4 @@ calaman_add_cxx_module_library(
 # horner and columnwise_ell1 need. The install-interface spelling waits on the
 # install tier (CALAMAN_INSTALL, docs/architecture.md §2); this build-interface
 # link is what the tests need meanwhile.
-target_link_libraries(
-  calaman.expm
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.expm.device>"
-)
+calaman_link_device_archive(calaman.expm calaman.expm.device)

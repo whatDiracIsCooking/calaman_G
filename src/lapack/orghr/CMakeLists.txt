@@ -17,8 +17,8 @@ calaman_add_gpu_device_library(
   SOURCES
   orghr.cu
   LINK_PRIVATE
-  wwr.device
-  calaman.common
+  wwr::device
+  calaman::common
 )
 
 # The module itself: ordinary host C++23, no device code. instantiations.cpp is
@@ -47,14 +47,14 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.solver
-  calaman.error_handling
+  wwr::solver
+  calaman::error_handling
   LINK_PRIVATE
-  wwr.blas
-  wwr.runtime_api
-  wwr.wrappers.solver
-  calaman.common
-  wwr_backend
+  wwr::blas
+  wwr::runtime_api
+  wwr::wrappers::solver
+  calaman::common
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -63,7 +63,4 @@ calaman_add_cxx_module_library(
 # Force the device archive members in, or the explicit device::orghr_prep<T>
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link -- the whole-archive link lacpy needs.
-target_link_libraries(
-  calaman.orghr
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.orghr.device>"
-)
+calaman_link_device_archive(calaman.orghr calaman.orghr.device)

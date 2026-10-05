@@ -19,12 +19,12 @@ calaman_add_gtest_executable(
   SOURCES
   linalg_scaffold_tests.cpp
   LINK
-  calaman.larfg
-  calaman.larf
-  calaman.laqp2
-  calaman.laqps
-  calaman.geqp3
-  calaman.test.shared.tolerance
+  calaman::larfg
+  calaman::larf
+  calaman::laqp2
+  calaman::laqps
+  calaman::geqp3
+  calaman::test::shared::tolerance
   calaman::lapack_reference
 )
 

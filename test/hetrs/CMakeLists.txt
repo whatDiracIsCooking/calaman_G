@@ -15,17 +15,17 @@ calaman_add_gtest_executable(
   SOURCES
   hetrs_tests.cpp
   LINK
-  calaman.hetrs
-  calaman.common
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  calaman.test.shared.tolerance
+  calaman::hetrs
+  calaman::common
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  calaman::test::shared::tolerance
   calaman::lapack_reference
-  wwr.blas
-  wwr.runtime_api
-  wwr.complex
-  wwr.extension.memory_buffer
+  wwr::blas
+  wwr::runtime_api
+  wwr::complex
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

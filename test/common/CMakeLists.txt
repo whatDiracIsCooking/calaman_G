@@ -8,7 +8,7 @@ calaman_add_gtest_executable(
   SOURCES
   workspace_tests.cpp
   LINK
-  calaman.common
+  calaman::common
 )
 
 calaman_add_gtest_suite_tests(

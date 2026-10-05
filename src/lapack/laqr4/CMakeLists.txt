@@ -28,11 +28,11 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   laqr4.cppm
   LINK_PUBLIC
-  wwr.runtime_api
-  calaman.common
-  calaman.lahqr
-  calaman.laqr2
-  calaman.laqr5
-  calaman.error_handling
+  wwr::runtime_api
+  calaman::common
+  calaman::lahqr
+  calaman::laqr2
+  calaman::laqr5
+  calaman::error_handling
   IMPORT_STD
 )

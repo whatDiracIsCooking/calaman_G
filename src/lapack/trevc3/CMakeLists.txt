@@ -25,7 +25,7 @@ calaman_add_gpu_device_library(
   SOURCES
   trevc3.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 target_include_directories(
   calaman.trevc3.device PRIVATE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
@@ -53,11 +53,11 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.runtime_api
-  calaman.common
-  calaman.error_handling
+  wwr::runtime_api
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -66,6 +66,4 @@ calaman_add_cxx_module_library(
 # Force the device archive members in, or the explicit device::trevc3<T>
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link -- the whole-archive link laqr5 needs too.
-target_link_libraries(
-  calaman.trevc3 PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.trevc3.device>"
-)
+calaman_link_device_archive(calaman.trevc3 calaman.trevc3.device)

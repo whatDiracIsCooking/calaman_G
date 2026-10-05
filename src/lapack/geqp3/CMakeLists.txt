@@ -26,13 +26,13 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   geqp3.cppm
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.wrappers.solver
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  calaman.laqp2
-  calaman.laqps
-  calaman.error_handling
+  wwr::wrappers::blas
+  wwr::wrappers::solver
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  calaman::laqp2
+  calaman::laqps
+  calaman::error_handling
   IMPORT_STD
 )

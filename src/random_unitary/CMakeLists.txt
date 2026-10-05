@@ -28,13 +28,13 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  calaman.orthogonalize
-  wwr.extension.random_normal
-  wwr.solver
-  wwr.runtime_api
-  wwr.rand
-  wwr.wrappers.common
-  calaman.common
-  calaman.error_handling
+  calaman::orthogonalize
+  wwr::extension::random_normal
+  wwr::solver
+  wwr::runtime_api
+  wwr::rand
+  wwr::wrappers::common
+  calaman::common
+  calaman::error_handling
   IMPORT_STD
 )

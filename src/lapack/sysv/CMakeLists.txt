@@ -27,14 +27,14 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   sysv.cppm
   LINK_PUBLIC
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.complex
-  wwr.wrappers.solver
-  calaman.common
-  calaman.sytrs
-  calaman.sytrs2
-  calaman.error_handling
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::complex
+  wwr::wrappers::solver
+  calaman::common
+  calaman::sytrs
+  calaman::sytrs2
+  calaman::error_handling
   IMPORT_STD
 )

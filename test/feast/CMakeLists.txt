@@ -21,15 +21,15 @@ calaman_add_gtest_executable(
   SOURCES
   feast_tests.cpp
   LINK
-  calaman.feast
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.wrappers.common
-  wwr.extension.memory_buffer
+  calaman::feast
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::wrappers::common
+  wwr::extension::memory_buffer
   calaman::lapack_reference
 )
 

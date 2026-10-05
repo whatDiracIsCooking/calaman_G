@@ -22,14 +22,14 @@ calaman_add_gtest_executable(
   SOURCES
   trevc3_tests.cpp
   LINK
-  calaman.trevc3
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.shared.tolerance
-  calaman.test.utils.shared_device
+  calaman::trevc3
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::shared::tolerance
+  calaman::test::utils::shared_device
   calaman::lapack_reference
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

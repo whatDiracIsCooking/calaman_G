@@ -16,8 +16,8 @@ calaman_add_gpu_device_library(
   SOURCES
   sytrs.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
-  calaman.common
+  wwr::extension::parallel_for
+  calaman::common
 )
 
 # All module links are PUBLIC because sytrs() is an exported template DEFINED in
@@ -38,14 +38,14 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   sytrs.cppm
   LINK_PUBLIC
-  wwr.wrappers.blas
-  wwr.blas
-  wwr.runtime_api
-  wwr.complex
-  calaman.common
-  calaman.error_handling
+  wwr::wrappers::blas
+  wwr::blas
+  wwr::runtime_api
+  wwr::complex
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -54,6 +54,4 @@ calaman_add_cxx_module_library(
 # Force the device archive members in, or the explicit device::sytrs_* kernel
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link -- the whole-archive link lacpy needs.
-target_link_libraries(
-  calaman.sytrs PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.sytrs.device>"
-)
+calaman_link_device_archive(calaman.sytrs calaman.sytrs.device)

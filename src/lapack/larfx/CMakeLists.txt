@@ -16,7 +16,7 @@ calaman_add_gpu_device_library(
   SOURCES
   larfx.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # All module links are PUBLIC because larfx() is an exported template DEFINED in
@@ -41,13 +41,13 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   larfx.cppm
   LINK_PUBLIC
-  wwr.blas
-  wwr.runtime_api
-  calaman.common
-  calaman.larf
-  calaman.error_handling
+  wwr::blas
+  wwr::runtime_api
+  calaman::common
+  calaman::larf
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -56,7 +56,4 @@ calaman_add_cxx_module_library(
 # Force the device archive members in, or the explicit device::larfx<T>
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link -- the whole-archive link laqp2 needs.
-target_link_libraries(
-  calaman.larfx
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.larfx.device>"
-)
+calaman_link_device_archive(calaman.larfx calaman.larfx.device)

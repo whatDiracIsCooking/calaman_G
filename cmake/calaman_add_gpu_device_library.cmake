@@ -72,3 +72,17 @@ macro(calaman_add_gpu_device_library)
   endif()
 
 endmacro()
+
+# calaman_link_device_archive(<target> <device_target>) — link a module's
+# `.device` archive PUBLIC and WHOLE_ARCHIVE, spelled once per interface so the
+# force survives install(EXPORT). See cmake/README.md, "Forcing a device archive
+# into an exported target".
+function(calaman_link_device_archive target device_target)
+  _calaman_export_name(${device_target} _export_name)
+  set(_build "$<LINK_LIBRARY:WHOLE_ARCHIVE,${device_target}>")
+  set(_install "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman::${_export_name}>")
+  target_link_libraries(
+    ${target} PUBLIC "$<BUILD_INTERFACE:${_build}>"
+                     "$<INSTALL_INTERFACE:${_install}>"
+  )
+endfunction()

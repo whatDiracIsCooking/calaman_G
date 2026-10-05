@@ -15,7 +15,7 @@ calaman_add_gpu_device_library(
   SOURCES
   nnls.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # nnls() is instantiated once here (IMPLEMENTATION instantiations.cpp + the
@@ -41,15 +41,15 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.blas
-  wwr.solver
+  wwr::blas
+  wwr::solver
   LINK_PRIVATE
-  wwr.wrappers.blas
-  wwr.wrappers.solver
-  wwr.runtime_api
-  calaman.common
-  calaman.geqp3
-  wwr_backend
+  wwr::wrappers::blas
+  wwr::wrappers::solver
+  wwr::runtime_api
+  calaman::common
+  calaman::geqp3
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -59,7 +59,4 @@ calaman_add_cxx_module_library(
 # instantiations are dropped (the module only names them through
 # lazily-resolved calls) and a consumer fails to link -- the whole-archive link
 # lacpy needs.
-target_link_libraries(
-  calaman.nnls
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.nnls.device>"
-)
+calaman_link_device_archive(calaman.nnls calaman.nnls.device)

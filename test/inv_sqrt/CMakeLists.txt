@@ -15,15 +15,15 @@ calaman_add_gtest_executable(
   SOURCES
   inv_sqrt_tests.cpp
   LINK
-  calaman.inv_sqrt
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  calaman.test.shared.tolerance
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  calaman::inv_sqrt
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  calaman::test::shared::tolerance
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 # Every case stages S/scratch on the device, creates the handles and runs

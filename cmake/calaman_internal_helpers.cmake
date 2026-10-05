@@ -34,6 +34,20 @@ function(_calaman_create_alias target)
   add_library(${_alias} ALIAS ${target})
 endfunction()
 
+# The exported name for a target: its in-tree `::` alias without the
+# `calaman::` namespace. Strip a leading `calaman.`/`calaman_` and turn the
+# remaining dots into `::`, so `calaman.larfg` exports as `larfg` and, under
+# install(EXPORT ... NAMESPACE calaman::), an installed consumer links the same
+# `calaman::larfg` an in-tree CMakeLists links -- one spelling everywhere.
+function(_calaman_export_name target out_var)
+  string(REGEX REPLACE "^calaman[._]" "" _name "${target}")
+  string(REPLACE "." "::" _name "${_name}")
+  set(${out_var}
+      "${_name}"
+      PARENT_SCOPE
+  )
+endfunction()
+
 # Add explicit include directories (PUBLIC and/or PRIVATE).
 function(_calaman_configure_include_dirs target)
   cmake_parse_arguments(

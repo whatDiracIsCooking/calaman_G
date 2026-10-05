@@ -30,13 +30,13 @@ calaman_add_cxx_module_library(
   buffer_size.cppm
   solve.cppm
   LINK_PUBLIC
-  wwr.runtime_api
-  wwr.blas
-  wwr.solver
-  wwr.wrappers.blas
-  wwr.wrappers.solver
-  wwr.extension.blas
-  calaman.common
-  calaman.error_handling
+  wwr::runtime_api
+  wwr::blas
+  wwr::solver
+  wwr::wrappers::blas
+  wwr::wrappers::solver
+  wwr::extension::blas
+  calaman::common
+  calaman::error_handling
   IMPORT_STD
 )

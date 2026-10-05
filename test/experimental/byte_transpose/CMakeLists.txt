@@ -8,7 +8,7 @@ calaman_add_gtest_executable(
   SOURCES
   byte_transpose_tests.cpp
   LINK
-  calaman.experimental.byte_transpose
+  calaman::experimental::byte_transpose
 )
 
 calaman_add_gtest_suite_tests(

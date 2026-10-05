@@ -16,13 +16,13 @@ calaman_add_gtest_executable(
   SOURCES
   lange_tests.cpp
   LINK
-  calaman.lange
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
+  calaman::lange
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
   calaman::lapack_reference
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 # Every case stages A on the device and runs the reduction kernels -- including

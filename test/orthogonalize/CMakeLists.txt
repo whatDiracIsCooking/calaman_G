@@ -21,15 +21,15 @@ calaman_add_gtest_executable(
   SOURCES
   orthogonalize_tests.cpp
   LINK
-  calaman.orthogonalize
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  calaman.test.shared.tolerance
-  wwr.solver
-  wwr.complex
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  calaman::orthogonalize
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  calaman::test::shared::tolerance
+  wwr::solver
+  wwr::complex
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

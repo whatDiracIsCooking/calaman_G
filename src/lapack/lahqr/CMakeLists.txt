@@ -18,7 +18,7 @@ calaman_add_gpu_device_library(
   SOURCES
   lahqr.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries
@@ -43,11 +43,11 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.runtime_api
-  calaman.common
-  calaman.error_handling
+  wwr::runtime_api
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -56,6 +56,4 @@ calaman_add_cxx_module_library(
 # Force the device archive members in, or the explicit device::lahqr<T>
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link -- the whole-archive link laexc needs too.
-target_link_libraries(
-  calaman.lahqr PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.lahqr.device>"
-)
+calaman_link_device_archive(calaman.lahqr calaman.lahqr.device)

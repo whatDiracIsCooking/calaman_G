@@ -16,15 +16,15 @@ calaman_add_gtest_executable(
   SOURCES
   set_element_tests.cpp
   LINK
-  calaman.set_element
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  wwr.blas
-  wwr.wrappers.blas
-  wwr.runtime_api
-  wwr.complex
-  wwr.wrappers.common
-  wwr.extension.memory_buffer
+  calaman::set_element
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  wwr::blas
+  wwr::wrappers::blas
+  wwr::runtime_api
+  wwr::complex
+  wwr::wrappers::common
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

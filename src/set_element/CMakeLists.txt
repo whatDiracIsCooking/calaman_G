@@ -23,8 +23,8 @@ calaman_add_gpu_device_library(
   SOURCES
   set_element.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
-  calaman.common
+  wwr::extension::parallel_for
+  calaman::common
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries
@@ -50,11 +50,11 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.runtime_api
-  wwr.complex
-  calaman.common
+  wwr::runtime_api
+  wwr::complex
+  calaman::common
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -66,7 +66,4 @@ calaman_add_cxx_module_library(
 # complex_cast and laset need. The install-interface spelling waits on the
 # install tier (CALAMAN_INSTALL, docs/architecture.md §2); this build-interface
 # link is what the tests need meanwhile.
-target_link_libraries(
-  calaman.set_element
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.set_element.device>"
-)
+calaman_link_device_archive(calaman.set_element calaman.set_element.device)

@@ -21,7 +21,7 @@ calaman_add_gpu_device_library(
   SOURCES
   cg_unitary.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # The module: ordinary host C++23. Its public functions are templates over the
@@ -53,18 +53,18 @@ calaman_add_cxx_module_library(
   geodesic_search.cppm
   cg_solver.cppm
   LINK_PUBLIC
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.complex
-  wwr.wrappers.blas
-  wwr.extension.blas
-  calaman.common
-  calaman.error_handling
-  calaman.expm
-  calaman.orthogonalize
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::complex
+  wwr::wrappers::blas
+  wwr::extension::blas
+  calaman::common
+  calaman::error_handling
+  calaman::expm
+  calaman::orthogonalize
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -74,7 +74,4 @@ calaman_add_cxx_module_library(
 # instantiations are dropped (the module only names them through
 # lazily-resolved calls) and a consumer fails to link -- the whole-archive link
 # lacpy/expm/nnls need.
-target_link_libraries(
-  calaman.cg_unitary
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.cg_unitary.device>"
-)
+calaman_link_device_archive(calaman.cg_unitary calaman.cg_unitary.device)

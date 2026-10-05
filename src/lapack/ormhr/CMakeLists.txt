@@ -20,11 +20,11 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   ormhr.cppm
   LINK_PUBLIC
-  wwr.wrappers.solver
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  calaman.common
-  calaman.error_handling
+  wwr::wrappers::solver
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  calaman::common
+  calaman::error_handling
   IMPORT_STD
 )

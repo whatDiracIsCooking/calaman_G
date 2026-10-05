@@ -15,7 +15,7 @@ calaman_add_gpu_device_library(
   SOURCES
   inv_sqrt.cu
   LINK_PRIVATE
-  wwr.extension.parallel_for
+  wwr::extension::parallel_for
 )
 
 # The module itself: ordinary host C++23 driving the wrapped syevd/dgmm/gemm.
@@ -42,15 +42,15 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   instantiations.cpp
   LINK_PUBLIC
-  wwr.blas
-  wwr.solver
-  wwr.runtime_api
-  wwr.wrappers.blas
-  wwr.wrappers.solver
-  calaman.common
-  calaman.error_handling
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::wrappers::blas
+  wwr::wrappers::solver
+  calaman::common
+  calaman::error_handling
   LINK_PRIVATE
-  wwr_backend
+  wwr::backend
   INCLUDE_DIRS_PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   IMPORT_STD
@@ -59,7 +59,4 @@ calaman_add_cxx_module_library(
 # Force the device archive members in, or the explicit device::inverse_sqrt<T>
 # instantiations are dropped (the module only names them through lazily-resolved
 # calls) and a consumer fails to link.
-target_link_libraries(
-  calaman.inv_sqrt
-  PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,calaman.inv_sqrt.device>"
-)
+calaman_link_device_archive(calaman.inv_sqrt calaman.inv_sqrt.device)

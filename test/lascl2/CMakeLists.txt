@@ -15,12 +15,12 @@ calaman_add_gtest_executable(
   SOURCES
   lascl2_tests.cpp
   LINK
-  calaman.lascl2
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  calaman::lascl2
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

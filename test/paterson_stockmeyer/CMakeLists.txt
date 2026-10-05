@@ -25,16 +25,16 @@ calaman_add_gtest_executable(
   SOURCES
   paterson_stockmeyer_tests.cpp
   LINK
-  calaman.paterson_stockmeyer
-  calaman.horner
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
-  calaman.test.shared.tolerance
+  calaman::paterson_stockmeyer
+  calaman::horner
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
+  calaman::test::shared::tolerance
   calaman::lapack_reference
-  wwr.blas
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::blas
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 # Two registrations for one target (the drift guard unions them): the block-size

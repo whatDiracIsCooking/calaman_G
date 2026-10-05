@@ -35,10 +35,10 @@ calaman_add_cxx_module_library(
   PARTITIONS
   pointer_mode_policy.cppm
   LINK_PUBLIC
-  wwr.runtime_api
-  wwr.extension.common
-  wwr.extension.blas
-  wwr.extension.solver
+  wwr::runtime_api
+  wwr::extension::common
+  wwr::extension::blas
+  wwr::extension::solver
   INCLUDE_DIRS_PUBLIC
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
   IMPORT_STD

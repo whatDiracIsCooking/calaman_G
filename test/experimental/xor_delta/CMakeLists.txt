@@ -8,7 +8,7 @@ calaman_add_gtest_executable(
   SOURCES
   xor_delta_tests.cpp
   LINK
-  calaman.experimental.xor_delta
+  calaman::experimental::xor_delta
 )
 
 calaman_add_gtest_suite_tests(

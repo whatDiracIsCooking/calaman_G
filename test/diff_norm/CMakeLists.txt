@@ -24,14 +24,14 @@ calaman_add_gtest_executable(
   SOURCES
   diff_norm_tests.cpp
   LINK
-  calaman.diff_norm
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.utils.shared_device
+  calaman::diff_norm
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::utils::shared_device
   calaman::lapack_reference
-  wwr.blas
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::blas
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(

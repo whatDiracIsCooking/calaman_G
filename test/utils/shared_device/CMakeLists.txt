@@ -14,7 +14,7 @@ calaman_add_cxx_module_library(
   IMPLEMENTATION
   shared_device.cpp
   LINK_PUBLIC
-  calaman.test.shared.device_handle
+  calaman::test::shared::device_handle
   LINK_PRIVATE
   GTest::gtest
   IMPORT_STD

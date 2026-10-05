@@ -17,15 +17,15 @@ calaman_add_gtest_executable(
   SOURCES
   orghr_tests.cpp
   LINK
-  calaman.orghr
-  calaman.test.shared.abort_policy
-  calaman.test.shared.device_handle
-  calaman.test.shared.tolerance
-  calaman.test.utils.shared_device
+  calaman::orghr
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::shared::tolerance
+  calaman::test::utils::shared_device
   calaman::lapack_reference
-  wwr.solver
-  wwr.runtime_api
-  wwr.extension.memory_buffer
+  wwr::solver
+  wwr::runtime_api
+  wwr::extension::memory_buffer
 )
 
 calaman_add_gtest_suite_tests(
