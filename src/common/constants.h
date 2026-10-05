@@ -1,44 +1,35 @@
 /**
  * @file constants.h
- * @brief Typed mathematical constants (kZero, kOne, ... kPi) over the element
- *        types, as a header shareable by device .cu code and module GMFs alike
+ * @brief Typed mathematical constants (kZero, kOne, kTwo, kNegativeOne, kPi)
+ *        over the four element types, shareable by device .cu and module GMFs
  *
- * A plain header, not a module unit, for the same reason calaman.lacpy's
- * lacpy_bridge.h is: it must be #includable from BOTH a device translation unit
- * (a .cu, which is a plain TU) and a module's global module fragment (which
- * cannot `import`). Everything here is `inline constexpr`, so it is usable in
- * host and device code and needs no separate definition.
+ * A plain header, not a module unit, so it is #includable from BOTH a device .cu
+ * and a module's global module fragment (which cannot `import`); the sibling
+ * constants.cppm includes it and re-exports these names so importers of
+ * calaman.common see the same calaman:: spellings. Everything is `inline
+ * constexpr`, usable in host and device code with no separate definition.
  *
- * Backend-neutral by construction (CLAUDE.md): no cu- or hip-prefixed vendor
- * names appear. That is also why this is float/double only. Complex would need
- * wwrFloatComplex / wwrDoubleComplex, and both walls that block them are real:
+ * The real primary templates cover float and double; the complex types
+ * (wwrFloatComplex, wwrDoubleComplex) are explicit specialisations built by
+ * brace-initialisation `{re, im}` -- the only constexpr-capable spelling, since
+ * WarpWraps' make_wwr*Complex builders are not constexpr. Runtime complex
+ * construction still goes through those builders (common/elem_ops.cuh); the
+ * constants are the one off-surface exception. See docs/architecture.md §6.
  *
- *   1. The types are reachable only from `import wwr.complex` (a module, which a
- *      GMF cannot import) or from complex.h. complex.h is host-safe and can be
- *      included here, but its complex *constructors* are gated behind a device
- *      pass (__CUDACC__/__HIP__), so a host compile of constants.cppm would see
- *      the types with no usable way to build a value.
- *   2. Even past that, there is no portable `constexpr` spelling of a complex
- *      literal: cuFloatComplex is a brace-initialisable float2 but hipFloatComplex
- *      is a class, so `{1.0f, 0.0f}` compiles on CUDA and breaks on HIP, and the
- *      portable make_wwr*Complex is __device__ __forceinline__ -- not usable in a
- *      host constexpr. WarpWraps documents this in complex.h's header.
- *
- * So complex is the same deliberate later extension it is for lacpy and vec_diff:
- * it belongs in a device-compiled `.cu` reached through the backend switch, not
- * as a constexpr specialization here.
- *
- * Consumers include this by its root-relative path, `"common/constants.h"`; the
- * sibling constants.cppm includes it bare and re-exports these names so importers
- * of `calaman.common` see the same `calaman::` spellings.
+ * Those specialisations are `inline constexpr`, so they must exist in every TU
+ * that uses kZero<complex>: this header therefore includes complex.h for the
+ * types, which is why :constants links wwr.device + wwr_backend as :fp_types
+ * does. Consumers include it root-relative as "common/constants.h".
  */
 
 #pragma once
 
+#include "complex.h" // wwrFloatComplex / wwrDoubleComplex (types; host-safe)
+
 namespace calaman {
 
 // ========================================================================
-// Mathematical Constants
+// Mathematical Constants -- real primary templates (float, double)
 // ========================================================================
 
 /// @brief The value 0 in element type @p T
@@ -64,5 +55,32 @@ inline constexpr T kNegativeOne = T{-1.0};
 /// is the correctly-rounded float rather than a compile error.
 template<typename T>
 inline constexpr T kPi = T{3.141592653589793238462643383};
+
+// ========================================================================
+// Complex specialisations (wwrFloatComplex, wwrDoubleComplex)
+//
+// Brace-initialised because make_wwr*Complex is not constexpr (file header; §6).
+// One token-pasting macro stamps both precisions so they cannot drift, as
+// elem_ops.cuh's complex ops do; #undef'd so it does not leak. CT is the complex
+// type, R its real component type; each constant is the real value with a zero
+// imaginary part.
+// ========================================================================
+
+#define CLM_DEFINE_COMPLEX_CONSTANTS(CT, R)                                                        \
+  template<>                                                                                       \
+  inline constexpr wwr::CT kZero<wwr::CT> = {R(0), R(0)};                                           \
+  template<>                                                                                       \
+  inline constexpr wwr::CT kOne<wwr::CT> = {R(1), R(0)};                                            \
+  template<>                                                                                       \
+  inline constexpr wwr::CT kTwo<wwr::CT> = {R(2), R(0)};                                            \
+  template<>                                                                                       \
+  inline constexpr wwr::CT kNegativeOne<wwr::CT> = {R(-1), R(0)};                                   \
+  template<>                                                                                       \
+  inline constexpr wwr::CT kPi<wwr::CT> = {R(3.141592653589793238462643383), R(0)};
+
+CLM_DEFINE_COMPLEX_CONSTANTS(wwrFloatComplex, float)
+CLM_DEFINE_COMPLEX_CONSTANTS(wwrDoubleComplex, double)
+
+#undef CLM_DEFINE_COMPLEX_CONSTANTS
 
 } // namespace calaman
