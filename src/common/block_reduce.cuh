@@ -30,6 +30,9 @@
 
 #include <type_traits>
 
+// binary_op_functor, the constraint on Op below.
+#include "functor_concepts.h"
+
 // The device-pass gate: #errors outside a CUDA or HIP device compile, so this
 // header carries no guard of its own, like reduce_columns.cuh.
 #include "device_guard.h"
@@ -66,7 +69,7 @@ struct MaxNanOp {
 ///
 /// @tparam kBlock  blockDim.x of the calling kernel; a power of two
 /// @param nactive  Threads whose @p v enters the fold; 1 <= nactive <= kBlock
-template<unsigned int kBlock, typename R, typename Op>
+template<unsigned int kBlock, typename R, binary_op_functor<R> Op>
 __device__ __forceinline__ R block_reduce(const R v, const Op op,
                                           const unsigned int nactive = kBlock) {
   static_assert(kBlock > 0 && (kBlock & (kBlock - 1)) == 0,

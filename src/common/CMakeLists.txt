@@ -1,6 +1,6 @@
 # calaman.common -- the shared building blocks, as ONE module split into
-# partitions, plus two device-only headers (elem_ops.cuh, block_reduce.cuh)
-# that ride along on the same src/ include root:
+# partitions, plus module-less headers (elem_ops.cuh, block_reduce.cuh,
+# functor_concepts.h) that ride along on the same src/ include root:
 #
 #   common.cppm         primary interface; only `export import`s the partitions
 #   :constants          constants.cppm + constants.h -- typed constants
@@ -46,6 +46,12 @@
 # device dependency is why calaman.common is no longer dependency-free (see
 # LINK_PUBLIC below); block_reduce.cuh needs only device_guard.h off the same
 # wwr.device root.
+#
+# functor_concepts.h (the device-functor concepts + identity_functor) is also
+# module-less, but host-AND-device includable: the concepts are plain traits,
+# and the one device entity is gated to a device pass (WarpWraps' complex.h
+# shape). Deliberately no :functor_concepts partition until a host interface
+# imports the names -- today every consumer is a .cuh/.cu.
 #
 # INCLUDE_DIRS_PUBLIC is the src/ root, wrapped in $<BUILD_INTERFACE:> so the
 # raw build path does not leak into the install interface; the install-interface
