@@ -81,8 +81,9 @@ Things that will bite:
   alongside this project (`deps/CMakeLists.txt` says why). So a cold run is
   dominated by the dependency, a warm one is not, and **a compile error may well
   be in `deps/WarpWraps/` rather than in your change** — read the path in the
-  diagnostic before assuming it is yours. `ccache` is what makes this bearable;
-  `doctor.sh` warns when it is absent.
+  diagnostic before assuming it is yours. `sccache` is what makes this
+  bearable — it caches the module-interface compiles, which is most of what a
+  cold run spends its time on; `doctor.sh` warns when it is absent.
 - **A missing submodule is the first thing to check** on a fresh clone:
   `git submodule update --init --recursive`. `doctor.sh` reports it.
 - Only `default`, `workstation`, `debug`, `asan`, `hip`, `compile-time`,

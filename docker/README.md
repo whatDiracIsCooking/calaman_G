@@ -213,6 +213,7 @@ BUILD_ONLY=1 dc build
 | `RECONFIGURE=1` | Wipe cmake cache and reconfigure from scratch |
 | `REBUILD=1` | Both clean and reconfigure (nuclear) |
 | `BUILD_ONLY=1` | Skip configure, just build |
+| `CALAMAN_SCCACHE_HOST_DIR` | Host path of the shared sccache store, bound to `/sccache` in every service (default: this checkout's own `../.sccache`). From a worktree, point it at main's to share **hits** as well as the store — every service mounts the tree at `/workspace`, so the keys match whichever worktree you ran from. Must already exist; `create_host_path: false` makes compose say so rather than let docker create it as root. See `docs/architecture.md` §7. |
 
 ## Run Tests
 

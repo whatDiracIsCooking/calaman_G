@@ -267,15 +267,23 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       # A C++23 named-module build is expensive enough that a cold cache
-      # dominates the job. CCACHE_DIR has to live INSIDE the workspace: the
-      # image points it at /home/ubuntu/.ccache, which is not the mounted
+      # dominates the job. SCCACHE_DIR has to live INSIDE the workspace: the
+      # image points it at /home/ubuntu/.sccache, which is not the mounted
       # directory, so actions/cache on the host would never see it.
+      #
+      # NOTE this cached nothing while it named ccache: ccache declares the
+      # module-interface compile uncacheable (two outputs from one invocation),
+      # and nothing wired it in as a compiler launcher in the first place. The
+      # launcher now lives in CMakeLists.txt behind find_program, so until
+      # images.yml republishes the -ci images with sccache in them, this job
+      # finds no sccache, compiles everything, and saves an empty directory --
+      # the intended degradation rather than a failure.
       - uses: actions/cache@v6
         with:
-          path: .ccache
-          key: ccache-${{ matrix.backend }}-${{ github.sha }}
+          path: .sccache
+          key: sccache-${{ matrix.backend }}-${{ github.sha }}
           restore-keys: |
-            ccache-${{ matrix.backend }}-
+            sccache-${{ matrix.backend }}-
 
       # BUILD_JOBS rather than Ninja's default of cores+2. A hosted runner is
       # 4 vCPU / 16GB and a module build is memory-hungry per job (the scanner
@@ -290,7 +298,7 @@ jobs:
         env:
           BUILD_JOBS: '4'
         run: |
-          export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache"
+          export SCCACHE_DIR="$GITHUB_WORKSPACE/.sccache"
           devtools/cpp-tier.sh --preset ${{ matrix.preset }} ${{ matrix.tidy }}
 
       - uses: actions/upload-artifact@v7

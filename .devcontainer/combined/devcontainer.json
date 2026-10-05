@@ -87,6 +87,28 @@
     "source=calaman-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
     "source=calaman-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
     "source=calaman-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT
+    // The shared sccache compiler-cache store, bound onto the image's
+    // SCCACHE_DIR -- a FIXED path inside the container, not a workspace-
+    // relative one, which is what lets every checkout reach the SAME store even
+    // though
+    // each is mounted at its own host path: a .claude/worktrees/<name> mount
+    // does not contain the primary checkout's .sccache at all. Deliberately NOT
+    // suffixed by ${localWorkspaceFolderBasename} like the volumes above --
+    // sharing one store across worktrees is the entire point.
+    //
+    // Note what IS and IS NOT shared. The store is; HITS are not, between trees
+    // mounted at different absolute paths, because a restored BMI keeps the
+    // path it was built under. That is correct, not a misconfiguration -- see
+    // CMakeLists.txt's "Compiler cache" section. docker/compose.yaml mounts
+    // every service at /workspace instead, so hits DO cross worktrees there.
+    //
+    // Host path injected as CALAMAN_SCCACHE_DIR by devtools/devcontainer.sh (up
+    // / rebuild), which creates the directory first -- docker would otherwise
+    // create a missing bind source as root and the first compile would die on a
+    // permission error that never mentions a mount. The literal after the colon
+    // is only a fallback for opening this config directly, as with the .git
+    // mount below; edit it to your own checkout then.
+    "source=${localEnv:CALAMAN_SCCACHE_DIR:/absolute/path/to/your-root/main/.sccache},target=/home/ubuntu/.sccache,type=bind",
     // Host path injected as CALAMAN_GIT_DIR by devtools/devcontainer.sh (up /
     // rebuild); the literal after the colon is only a fallback for opening this
     // config directly (VS Code "Reopen in Container"), which you then edit to

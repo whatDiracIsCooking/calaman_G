@@ -35,7 +35,8 @@ devtools/devcontainer.sh shell -c devtools/doctor.sh  # the CUDA container
 On a bare host, **around a dozen warnings is the expected, healthy state**.
 What is genuinely container-only is the clang/GPU toolchain -- `cmake`,
 `ninja`, `clang++`, `clang-scan-deps`, `clang-format`, `nvcc`,
-`compute-sanitizer`, `nsys`, `ccache` -- plus `hipconfig`, which is present only
+`compute-sanitizer`, `nsys`, `sccache` -- plus `hipconfig`, which is present
+only
 in the images built from `docker/Dockerfile.hip` and
 `docker/Dockerfile.combined`, not the `cuda` one, and
 `/usr/include/lapacke.h`, the CPU reference oracle, which

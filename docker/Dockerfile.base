@@ -12,10 +12,10 @@
 #                                (reuses install-rocm.sh, not the hip image)
 #
 # Everything the build needs EXCEPT a GPU SDK: clang-20 with libc++, CMake 4.2,
-# Ninja, ccache, the CPU reference LAPACK the tests check their results against,
-# and a uv-managed venv for the Python tooling. Useful on its own to check the
-# toolchain half in isolation, and the shared parent of `cuda` and `hip` so the
-# two cannot drift apart.
+# Ninja, sccache, the CPU reference LAPACK the tests check their results
+# against, and a uv-managed venv for the Python tooling. Useful on its own to
+# check the toolchain half in isolation, and the shared parent of `cuda` and
+# `hip` so the two cannot drift apart.
 #
 #   docker/build.sh base          # the normal way: tags <PROJECT_NAME>:base
 #   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile.base -t calaman:base .
@@ -72,6 +72,11 @@ ARG LLVM_VERSION=20
 ARG CMAKE_VERSION=4.2.3
 ARG CMAKE_MAJOR_MINOR=4.2
 ARG NINJA_VERSION=1.13.1
+# Not in apt at any usable version, so it comes from the upstream release
+# tarball like CMake and Ninja do. 0.18 is the floor: it is the version
+# measured to cache a module-interface compile (two outputs, one invocation),
+# which is the only reason this image carries a compiler cache at all.
+ARG SCCACHE_VERSION=0.18.0
 
 # ============================================================================
 # Stage 1: base-system -- OS packages every later stage shares
@@ -109,7 +114,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     apt-get update && apt-get install -y --no-install-recommends \
-      bash build-essential ca-certificates ccache curl git gnupg jq less \
+      bash build-essential ca-certificates curl git gnupg jq less \
       lcov patch pkg-config shellcheck software-properties-common ssh tree \
       unzip valgrind vim-tiny wget zlib1g-dev \
       gfortran liblapack-dev liblapacke-dev \
@@ -124,6 +129,7 @@ FROM ubuntu:${UBUNTU_TAG} AS downloads
 
 ARG CMAKE_VERSION
 ARG NINJA_VERSION
+ARG SCCACHE_VERSION
 # Supplied automatically by BuildKit: "amd64" or "arm64".
 ARG TARGETARCH
 
@@ -135,11 +141,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certifi
 RUN --mount=type=cache,target=/download-cache \
     set -e; \
     case "$TARGETARCH" in \
-      amd64) cmake_arch=x86_64;  ninja_asset=ninja-linux.zip ;; \
-      arm64) cmake_arch=aarch64; ninja_asset=ninja-linux-aarch64.zip ;; \
+      amd64) cmake_arch=x86_64;  ninja_asset=ninja-linux.zip; \
+             sccache_arch=x86_64 ;; \
+      arm64) cmake_arch=aarch64; ninja_asset=ninja-linux-aarch64.zip; \
+             sccache_arch=aarch64 ;; \
       *) echo "unsupported TARGETARCH: '$TARGETARCH'" >&2; exit 1 ;; \
     esac; \
     cmake_asset="cmake-${CMAKE_VERSION}-linux-${cmake_arch}.sh"; \
+    sccache_dir="sccache-v${SCCACHE_VERSION}-${sccache_arch}-unknown-linux-musl"; \
     mkdir -p /downloads; \
     [ -f "/download-cache/${cmake_asset}" ] || \
       wget -q -O "/download-cache/${cmake_asset}" \
@@ -147,9 +156,14 @@ RUN --mount=type=cache,target=/download-cache \
     [ -f "/download-cache/ninja-${NINJA_VERSION}-${ninja_asset}" ] || \
       wget -q -O "/download-cache/ninja-${NINJA_VERSION}-${ninja_asset}" \
         "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/${ninja_asset}"; \
+    [ -f "/download-cache/${sccache_dir}.tar.gz" ] || \
+      wget -q -O "/download-cache/${sccache_dir}.tar.gz" \
+        "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/${sccache_dir}.tar.gz"; \
     cp "/download-cache/${cmake_asset}" /downloads/cmake-installer.sh; \
     cp "/download-cache/ninja-${NINJA_VERSION}-${ninja_asset}" /downloads/ninja.zip; \
-    chmod +x /downloads/cmake-installer.sh
+    chmod +x /downloads/cmake-installer.sh; \
+    tar -xzf "/download-cache/${sccache_dir}.tar.gz" -C /tmp; \
+    install -m 0755 "/tmp/${sccache_dir}/sccache" /downloads/sccache
 
 # ============================================================================
 # Stage 3: compilers -- LLVM/clang with libc++ and its module manifest
@@ -233,6 +247,10 @@ COPY --link --from=build-tools /usr/local/bin/cmake /usr/local/bin/cmake
 COPY --link --from=build-tools /usr/local/bin/ctest /usr/local/bin/ctest
 COPY --link --from=build-tools /usr/local/bin/cpack /usr/local/bin/cpack
 COPY --link --from=build-tools /usr/local/bin/ninja /usr/local/bin/ninja
+# The compiler cache, wired in by CMakeLists.txt (find_program) rather than by
+# a preset, so an image or host without it still builds -- it just caches
+# nothing. See the "Compiler cache" section there for why it is sccache.
+COPY --link --from=downloads /downloads/sccache /usr/local/bin/sccache
 # CMake installs to share/cmake-<MAJOR>.<MINOR>, not -<MAJOR>.<MINOR>.<PATCH>.
 COPY --link --from=build-tools /usr/local/share/cmake-${CMAKE_MAJOR_MINOR} /usr/local/share/cmake-${CMAKE_MAJOR_MINOR}
 
@@ -266,11 +284,23 @@ RUN cd /tmp/uvroot && uv sync --frozen --no-install-project && rm -rf /tmp/uvroo
 RUN install -d -o 1000 -g 1000 \
         /workspace \
         /tmp/pytest-of-ubuntu \
-        /home/ubuntu/.ccache \
+        /home/ubuntu/.sccache \
         /home/ubuntu/.claude/plugins \
         /home/ubuntu/.claude/backups
 
-ENV CCACHE_DIR=/home/ubuntu/.ccache \
+# SCCACHE_DIR is a FIXED path inside the image on purpose, not a workspace-
+# relative one: the shared store is bind-mounted onto it, so one value works
+# from every checkout no matter where its workspace lands -- which is the whole
+# point for .claude/worktrees/<name>, whose mount does not contain the primary
+# checkout's store. .devcontainer/*/devcontainer.json and docker/compose.yaml
+# both bind here; devtools/devcontainer.sh creates the host directory first,
+# because docker would otherwise create it as root and the first compile would
+# die on a permission error that never mentions a mount.
+#
+# The 20G ceiling is sccache's own eviction bound, and it applies to the host
+# directory rather than docker's storage, so it is not what builder.gc prunes.
+ENV SCCACHE_DIR=/home/ubuntu/.sccache \
+    SCCACHE_CACHE_SIZE=20G \
     PATH=/opt/venv/bin:/usr/local/bin:${PATH}
 
 WORKDIR /workspace
@@ -278,6 +308,7 @@ WORKDIR /workspace
 RUN clang --version | head -1 && \
     cmake --version | head -1 && \
     ninja --version && \
+    sccache --version && \
     test -f /usr/lib/llvm-${LLVM_VERSION}/lib/libc++.modules.json && \
     test -f /usr/include/lapacke.h && \
     gfortran --version | head -1

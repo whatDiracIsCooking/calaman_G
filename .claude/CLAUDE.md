@@ -161,7 +161,7 @@ file is the map; reach for the skill when you act.
 
 | File | What it is |
 |---|---|
-| `docker/Dockerfile.base` | The vendor-neutral toolchain: clang-20 + libc++, CMake 4.2, Ninja, ccache, uv/Python, **and the CPU reference LAPACK**. No GPU SDK. |
+| `docker/Dockerfile.base` | The vendor-neutral toolchain: clang-20 + libc++, CMake 4.2, Ninja, sccache, uv/Python, **and the CPU reference LAPACK**. No GPU SDK. |
 | `docker/Dockerfile.cuda` | `base` + the CUDA toolkit, plus the libraries the toolkit does not carry: NCCL, cuTENSOR, nvCOMP (apt) and cuGraph (wheels, `/opt/rapids`). **The default backend**, and what the devcontainer and compose build. |
 | `docker/Dockerfile.hip` | `base` + ROCm, plus hipCOMP, which AMD packages nowhere — built from source into `/opt/rocm-ds`. No CUDA at all. |
 | `docker/Dockerfile.combined` | `cuda` + ROCm (~40GB). |
