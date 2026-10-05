@@ -477,6 +477,13 @@ add_custom_target(
   calaman_compile_time_tests COMMENT "Building the compile-time tests"
 )
 
+# Umbrella over every calaman_add_gpu_device_library() target, which registers
+# itself here -- what `cross-backend-check.sh --device-only` builds, so the list
+# of `.cu` libraries is read from the buildsystem rather than kept by hand.
+add_custom_target(
+  calaman_device_libraries COMMENT "Building the device-kernel libraries"
+)
+
 # ========================================================================
 # Enable testing
 # ========================================================================

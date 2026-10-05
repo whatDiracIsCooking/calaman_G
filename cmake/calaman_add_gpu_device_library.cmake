@@ -3,8 +3,7 @@
 #
 # A `.cu` here means "device pass", not "nvcc". Keeping device sources in their
 # own library is what keeps their language and `-x hip` flags off the host CXX
-# module compiles. The call sites are src/extension/init_state and
-# src/extension/random_normal.
+# module compiles. Each target joins the `calaman_device_libraries` umbrella.
 #
 # See cmake/README.md for the interface, what it deliberately omits, and what it
 # replaced; docs/architecture.md §17 for how a `.cu` is compiled under HIP.
@@ -25,6 +24,7 @@ macro(calaman_add_gpu_device_library)
   _calaman_require_args("calaman_add_gpu_device_library" _GDL NAME SOURCES)
 
   add_library(${_GDL_NAME} STATIC ${_GDL_SOURCES})
+  add_dependencies(calaman_device_libraries ${_GDL_NAME})
 
   if(_GDL_LINK_PRIVATE)
     target_link_libraries(${_GDL_NAME} PRIVATE ${_GDL_LINK_PRIVATE})

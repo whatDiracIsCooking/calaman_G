@@ -181,17 +181,15 @@ CROSS_CHECK_IMAGE=${CROSS_CHECK_IMAGE:-${PROJECT_NAME}:hip}
 CROSS_CHECK_BUILD_DIR=${CROSS_CHECK_BUILD_DIR:-build-cross-check}
 
 # The device-kernel libraries, one per line -- what --device-only builds when
-# you want the narrow check instead of the whole compile-time tier. These are
-# the targets holding .cu sources, i.e. every calaman_add_gpu_device_library()
-# call site.
+# you want the narrow check instead of the whole compile-time tier.
 #
-# EMPTY, because src/ has no .cu yet. --device-only refuses with a message
-# saying so rather than building nothing and reporting PASS; the default
-# (whole-tier) run is unaffected and is the one to use meanwhile. Add each
-# device library here as it lands -- an entry naming a target that does NOT
-# exist fails the whole --device-only run with ninja's `unknown target`, and
-# nothing checks this list automatically.
-CROSS_CHECK_DEVICE_TARGETS=${CROSS_CHECK_DEVICE_TARGETS:-""}
+# Defaults to the `calaman_device_libraries` umbrella (top-level
+# CMakeLists.txt), which every calaman_add_gpu_device_library() call joins, so a new `.cu`
+# library is covered without touching this list. Override it to narrow the
+# check to named targets; an entry naming a target that does NOT exist fails
+# the run with ninja's `unknown target`. Set it empty and --device-only refuses
+# rather than building nothing and reporting PASS.
+CROSS_CHECK_DEVICE_TARGETS=${CROSS_CHECK_DEVICE_TARGETS-calaman_device_libraries}
 
 # --- the ROCm runtime tier -------------------------------------------------
 #
