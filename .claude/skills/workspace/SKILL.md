@@ -24,7 +24,7 @@ Two names, outermost first — prefer the outermost that fits:
 
 | Name | Reach for it when |
 |---|---|
-| `carve_workspace` + the `SlicesFor` concept | the routine hands out two or more region pointers — the normal case |
+| `carve_workspace` + the `slices_for` concept | the routine hands out two or more region pointers — the normal case |
 | `WorkspaceLayout` | writing a `carve()` member (it's the parameter type), or a sizing-only query with no pointers to hand out (`horner_bufferSize`) |
 
 `WorkspaceBuilder` no longer exists (#139). If you find yourself writing a
@@ -43,7 +43,7 @@ the layout:
 ```cpp
 template<wwr::real_fp T>
 struct XSlices {
-  T *a = nullptr;          // every member default-initialized: SlicesFor
+  T *a = nullptr;          // every member default-initialized: slices_for
   int *info = nullptr;     // requires std::default_initializable
   T *eig_scratch = nullptr;
   int lwork_eig = 0;
@@ -136,8 +136,8 @@ Ask, in order:
 2. Do all `fixed()` calls precede all `scratch()` calls?
 3. Is null-base mode safe (no derived-pointer arithmetic without a guard)?
 4. Do the vendor lwork queries sit outside `carve()`?
-5. Does the struct satisfy `SlicesFor` (default-initializable, carve member)?
-   `static_assert(SlicesFor<XSlices<T>, ...>)` is cheap insurance, and the
+5. Does the struct satisfy `slices_for` (default-initializable, carve member)?
+   `static_assert(slices_for<XSlices<T>, ...>)` is cheap insurance, and the
    concept's name is the convention's greppable marker.
 
 Worked examples, simplest first: `src/horner/interface.cppm` (sizing-only),

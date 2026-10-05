@@ -1,5 +1,5 @@
 // Host-only suite for calaman.common's :workspace partition -- the
-// WorkspaceLayout byte arithmetic and the carve-once idiom (SlicesFor +
+// WorkspaceLayout byte arithmetic and the carve-once idiom (slices_for +
 // carve_workspace). Pure host logic, no device memory and no kernel, so it is
 // NOT labeled REQUIRES_GPU and runs on a card-less CI runner.
 
@@ -35,9 +35,9 @@ struct TestSlices {
 
 struct NotSlices {};
 
-static_assert(SlicesFor<TestSlices, int, int>);
-static_assert(!SlicesFor<TestSlices, int, int, int>); // carve() takes exactly (n, lwork)
-static_assert(!SlicesFor<NotSlices, int, int>);       // no carve() at all
+static_assert(slices_for<TestSlices, int, int>);
+static_assert(!slices_for<TestSlices, int, int, int>); // carve() takes exactly (n, lwork)
+static_assert(!slices_for<NotSlices, int, int>);       // no carve() at all
 
 TEST(CommonWorkspaceTests, LayoutFixedAccumulatesAndScratchMaxes) {
   WorkspaceLayout layout(nullptr);

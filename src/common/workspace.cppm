@@ -13,7 +13,7 @@
  * `alignment` (default 256, device allocators' base alignment) via :align_up.
  *
  * Two names -- prefer the first where a struct fits:
- *   - carve_workspace + the SlicesFor concept: a routine's slices struct owns
+ *   - carve_workspace + the slices_for concept: a routine's slices struct owns
  *     ONE carve() member describing its layout, and carve_workspace runs it
  *     over a null base to size (its *_bufferSize) or over the real base to
  *     carve, so the size query can never drift from the carving.
@@ -110,7 +110,7 @@ public:
 ///        carve(WorkspaceLayout&, args...) member that is the ONLY description
 ///        of its layout
 export template <typename S, typename... Args>
-concept SlicesFor = std::default_initializable<S> &&
+concept slices_for = std::default_initializable<S> &&
                     requires(S s, WorkspaceLayout &layout, const Args &...args) {
                       s.carve(layout, args...);
                     };
@@ -124,7 +124,7 @@ concept SlicesFor = std::default_initializable<S> &&
 /// @param d_work Workspace base, or null to size without carving
 /// @param out    Receives the carved slices; may be null (the sizing call)
 export template <typename S, typename... Args>
-  requires SlicesFor<S, Args...>
+  requires slices_for<S, Args...>
 std::size_t carve_workspace(void *const d_work, S *const out, const Args &...args) {
   WorkspaceLayout layout(d_work);
   S s{};
