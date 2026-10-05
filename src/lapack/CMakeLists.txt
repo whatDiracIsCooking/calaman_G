@@ -163,9 +163,17 @@ add_subdirectory(hetrs)
 # up.
 add_subdirectory(hetf2)
 
+# calaman.hetrs2 -- the level-3 Hermitian Bunch-Kaufman solve (LAPACK ?hetrs2):
+# the same solve as calaman.hetrs, but the interchanges batched to the ends so
+# the triangular solves are trsm calls (the second conjugate-transpose). A host
+# composition over its own ?syconv VALUE move and Hermitian D^-1 kernels;
+# complex only. It links only calaman.common and calaman.error_handling, both
+# one level up.
+add_subdirectory(hetrs2)
+
 # calaman.hesv -- the Hermitian indefinite solve driver (LAPACK ?hesv): factor
-# by calaman.hetf2, then solve with calaman.hetrs. It LINKS both (added above),
-# so it follows them here.
+# by calaman.hetf2, then solve with calaman.hetrs2 when workspace allows (else
+# calaman.hetrs). It LINKS all three (added above), so it follows them here.
 add_subdirectory(hesv)
 
 # calaman.lasrt -- sort a 1-D array (increasing or decreasing), the GPU

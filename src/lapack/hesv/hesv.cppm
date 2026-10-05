@@ -4,9 +4,10 @@
  *        matrix, LAPACK's ?hesv
  *
  * The driver: factor A by the Hermitian Bunch-Kaufman method (calaman.hetf2 --
- * ours, since the vendors ship no hetrf), then solve with the factor
- * (calaman.hetrs). COMPLEX ONLY (c/z): a real Hermitian matrix is symmetric, which
- * is calaman.sysv.
+ * ours, since the vendors ship no hetrf), then solve with the factor -- the
+ * level-3 calaman.hetrs2 when the workspace holds >= n elements (the reference
+ * ?hesv's lwork test), else the level-2 calaman.hetrs. COMPLEX ONLY (c/z): a real
+ * Hermitian matrix is symmetric, which is calaman.sysv.
  *
  * Unlike calaman.sysv, the factorization is ours rather than a vendor call, so
  * both halves run on the one BLAS handle and no solver handle is involved.
@@ -33,7 +34,8 @@ import wwr.runtime_api; // wwrStream_t, wwrMemcpy(Async), wwrStreamSynchronize
 import wwr.complex;     // wwrFloatComplex, wwrDoubleComplex
 import calaman.common;  // Uplo, complex_fp
 import calaman.hetf2;   // hetf2, hetf2_bufferSize -- the factorization
-import calaman.hetrs;   // hetrs -- the solve against the factor
+import calaman.hetrs;   // hetrs -- the level-2 solve against the factor
+import calaman.hetrs2;  // hetrs2 -- the level-3 solve (used when d_work >= n)
 
 export import calaman.error_handling; // Status -- the cross-domain return type
 
@@ -98,7 +100,13 @@ Status hesv(wwr::wwrblasHandle_t handle, const Uplo uplo, const int n, const int
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
-  CLM_TRY(hetrs<T>(handle, uplo, n, nrhs, d_A, lda, d_ipiv, d_B, ldb));
+  // The factorization is done, so d_work (>= 2n) is free: reuse it as the level-3
+  // solve's n-element E vector (the reference ?hesv's lwork >= n test).
+  if (lwork >= n) {
+    CLM_TRY(hetrs2<T>(handle, uplo, n, nrhs, d_A, lda, d_ipiv, d_B, ldb, d_work));
+  } else {
+    CLM_TRY(hetrs<T>(handle, uplo, n, nrhs, d_A, lda, d_ipiv, d_B, ldb));
+  }
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

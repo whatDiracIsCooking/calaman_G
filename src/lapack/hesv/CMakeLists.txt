@@ -16,7 +16,8 @@
 #   wwr.complex             the two complex element types (instantiation list)
 #   calaman.common          Uplo, complex_fp
 #   calaman.hetf2           the Hermitian Bunch-Kaufman factorization
-#   calaman.hetrs           the solve against the factor
+#   calaman.hetrs           the level-2 solve against the factor
+#   calaman.hetrs2          the level-3 solve (used when d_work >= n)
 #   calaman.error_handling  Status, the cross-domain return type (re-exported)
 calaman_add_cxx_module_library(
   NAME
@@ -30,6 +31,7 @@ calaman_add_cxx_module_library(
   calaman.common
   calaman.hetf2
   calaman.hetrs
+  calaman.hetrs2
   calaman.error_handling
   IMPORT_STD
 )
