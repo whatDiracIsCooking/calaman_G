@@ -39,7 +39,7 @@ struct FeastQuadrature {
  * Nodes and weights from np.polynomial.legendre.leggauss(4).
  */
 template<calaman::real_fp T>
-inline constexpr FeastQuadrature<T, 4> feast_quadrature_4 = {
+inline constexpr FeastQuadrature<T, 4> kFeastQuadrature4 = {
     .x =
         {
             T(-0.86113631159405257),
@@ -63,7 +63,7 @@ inline constexpr FeastQuadrature<T, 4> feast_quadrature_4 = {
  * reference values in Fig. 2 of Polizzi (arXiv:0901.2665).
  */
 template<calaman::real_fp T>
-inline constexpr FeastQuadrature<T, 8> feast_quadrature_8 = {
+inline constexpr FeastQuadrature<T, 8> kFeastQuadrature8 = {
     .x =
         {
             T(-0.96028985649753618),
@@ -93,9 +93,9 @@ template<calaman::real_fp T, std::size_t N>
   requires(N == 4 || N == 8)
 constexpr const FeastQuadrature<T, N> &feast_gauss_legendre() {
   if constexpr (N == 4) {
-    return feast_quadrature_4<T>;
+    return kFeastQuadrature4<T>;
   } else {
-    return feast_quadrature_8<T>;
+    return kFeastQuadrature8<T>;
   }
 }
 

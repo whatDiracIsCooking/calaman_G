@@ -40,7 +40,7 @@ public:
 // shared_device() below (every GPU suite does); a host-only-only binary neither
 // links this unit nor registers the environment. GoogleTest takes ownership of
 // the heap Environment -- its API has no non-owning overload, hence the raw new.
-[[maybe_unused]] const ::testing::Environment *const environment_registered =
+[[maybe_unused]] const ::testing::Environment *const kEnvironmentRegistered =
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     ::testing::AddGlobalTestEnvironment(new SharedDeviceEnvironment);
 
