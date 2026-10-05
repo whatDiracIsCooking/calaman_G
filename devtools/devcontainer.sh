@@ -339,6 +339,52 @@ export_host_gids() {
   done <<<"${ROCM_GROUPS:-}"
 }
 
+# Give every gid the container user holds a NAME inside the container.
+#
+# The --group-add values the hip and combined runArgs pass are numeric HOST
+# gids and have to be (export_host_gids above owns that story), so the
+# container user lands in a group its own /etc/group has no entry for: `render`
+# is gid 109 on this host, while docker/install-rocm.sh made the container's
+# own `render` 110. Nothing functional is wrong -- the gid is what the device
+# nodes grant on, and a name is only a label -- but every getgrgid() miss
+# surfaces as an error, and the one that greets you is the `groups` call in
+# Ubuntu's /etc/bash.bashrc sudo hint, on every interactive shell:
+#
+#   groups: cannot find name for group ID 109
+#
+# which reads like a broken container rather than a working one. So add the
+# missing entry as `host-<group>`, and NEVER by renumbering the container's own
+# `render` to match: that is the mismatch-chasing the json comments warn
+# against, and it is the bind-mounted nodes' HOST ownership that decides which
+# gid actually works.
+#
+# Cosmetic, so never fatal. `docker exec` rather than a devcontainer lifecycle
+# command because groupadd needs root and the remoteUser's sudo asks for a
+# password; a VS Code "Reopen in Container", which never calls this script,
+# keeps the warning.
+name_host_gids() {
+  command -v docker >/dev/null 2>&1 || return 0
+  local id gid name gids=()
+  # `|| true` for the same reason as apply_cpu_limits: a down daemon is not a
+  # reason to fail an `up` that has already done its work.
+  id=$(container_ids | head -1 || true)
+  [ -n "$id" ] || return 0
+  # `id -G` in there, rather than ROCM_GROUPS out here, so this covers whatever
+  # the active config actually passed -- and stays a no-op for the cuda
+  # variant, which passes no --group-add at all.
+  read -ra gids <<<"$(docker exec "$id" id -G 2>/dev/null || true)"
+  for gid in "${gids[@]}"; do
+    docker exec "$id" getent group "$gid" >/dev/null 2>&1 && continue
+    # The HOST's name for the gid, since that is what it means here; bare
+    # `host-<gid>` when the host has no entry for it either.
+    name=$(getent group "$gid" 2>/dev/null | cut -d: -f1 || true)
+    docker exec -u root "$id" groupadd -g "$gid" "host-${name:-$gid}" \
+      >/dev/null 2>&1 ||
+      echo "warning: gid $gid has no name inside the container, and groupadd" \
+        "could not add one -- harmless, but \`groups\` will complain" >&2
+  done
+}
+
 # Fail before `exec` does, naming the variant and the command that fixes it.
 #
 # `devcontainer exec` neither creates a container nor STARTS a stopped one. Run
@@ -461,6 +507,7 @@ case "${1:-}" in
     require_sccache_dir
     export_host_gids
     run_cli up --workspace-folder "$WORKSPACE" "${DC_CONFIG[@]}" "$@"
+    name_host_gids
     tag_variant_image
     apply_cpu_limits
     report_claude_pin
@@ -477,6 +524,9 @@ case "${1:-}" in
     export_host_gids
     run_cli up --workspace-folder "$WORKSPACE" \
       --remove-existing-container "${DC_CONFIG[@]}" "$@"
+    # Again on `rebuild`, not only `up`: a fresh container means a fresh
+    # /etc/group, so the entry has to be re-added rather than inherited.
+    name_host_gids
     tag_variant_image
     apply_cpu_limits
     report_claude_pin
