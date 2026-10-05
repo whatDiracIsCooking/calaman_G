@@ -20,6 +20,12 @@ compile_commands.json
 # diagnostic and disposable; never tracked.
 /.logs/
 
+# --- Compiler cache --------------------------------------------------------
+# The shared sccache store. Lives in the PRIMARY checkout and is bind-mounted
+# into every container (.devcontainer/*/devcontainer.json, docker/compose.yaml),
+# so every worktree reaches this one directory. See CMakeLists.txt.
+/.sccache/
+
 # --- Python ----------------------------------------------------------------
 __pycache__/
 *.pyc

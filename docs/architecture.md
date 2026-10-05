@@ -198,3 +198,64 @@ constexpr`, they must be present in every TU that instantiates `kZero<complex>`,
 so `constants.h` includes `complex.h` unconditionally — which is why the
 `:constants` partition now carries the `wwr.device` / `wwr_backend` dependency
 `:fp_types` already does.
+
+## 7. The compiler cache is sccache, because ccache cannot cache a module
+
+**Measured 2026-10-05**, clang 20.1.8 + libc++, ccache 4.9.1 vs sccache 0.18.0,
+on the shape CMake actually emits for a `.cppm`:
+
+```
+clang++ -std=gnu++23 -stdlib=libc++ @<...>.modmap -c interface.cppm -o interface.cppm.o
+```
+
+The modmap is a response file carrying `-x c++-module`, one `-fmodule-file=` per
+imported module, and `-fmodule-output=`, so **one invocation writes two
+outputs**: the object and the BMI.
+
+| | ccache 4.9.1 | sccache 0.18.0 |
+|---|---|---|
+| that invocation | `Uncacheable calls: 2/2 (100%)` | cold miss, then a **hit** — with both outputs deleted first, the `.pcm` was restored at its full size |
+| `clang++ --precompile m.cppm -o m.pcm` | uncacheable | uncacheable (`Non-compilation calls`) |
+| a consumer TU (`-fmodule-file=`), a plain `.cpp` | hits | hits |
+
+`src/` is 89 `.cppm` against 38 `.cu`, and `test/` is 65 `.cpp`, so a cache that
+refuses the module-interface compile refuses the majority of this tree's
+expensive work. That is the whole reason for the choice; nothing else about
+ccache was wrong.
+
+**What this replaced.** `Dockerfile.base` installed `ccache` and set
+`CCACHE_DIR`, and nothing else: no `CMAKE_<LANG>_COMPILER_LAUNCHER` anywhere, no
+`/usr/lib/ccache` on `PATH`, and no `.ccache` bind or volume in any
+`devcontainer.json` or in `compose.yaml`. It cached nothing, in any front end,
+ever — while `devbox/SKILL.md` and `config.sh` both described it as what made
+a second build fast.
+
+**Why `find_program`, not a preset.** The launcher is wired in `CMakeLists.txt`
+behind `CALAMAN_COMPILER_CACHE` (default ON) and degrades to a plain compile
+when `sccache` is absent. CI's hosted runners have no sccache, and a launcher pinned
+in the `base` preset would fail them at the first compile rather than simply not
+caching.
+
+**Why `SCCACHE_BASEDIRS` appears nowhere, and must not.** It looks like the fix
+for the one real limitation below, and it is a trap twice over. It is read once
+when the sccache daemon spawns and is sticky for that daemon's whole life, so
+whichever checkout did not spawn the daemon silently gets no benefit. And for
+modules it is actively wrong: a restored BMI keeps the absolute path it was
+built under, so normalising keys across checkouts mounted at different paths
+hands one tree another's BMI and buys a broken build, not a hit.
+
+**The limitation, stated plainly.** One store is shared by every checkout — it
+is the primary checkout's `.sccache`, bound into each container at the image's
+fixed `SCCACHE_DIR` (`/home/ubuntu/.sccache`) so it is reachable however the
+workspace is mounted. But **hits** only cross trees mounted at the *same*
+absolute path:
+
+| front end | workspace mount | store | hits |
+|---|---|---|---|
+| `docker/compose.yaml`, any worktree | always `/workspace` | shared | **shared** |
+| devcontainer, main checkout | its own host path | shared | within main |
+| devcontainer, `.claude/worktrees/<name>` | its own host path | shared | not with main |
+
+The last row is correct behaviour rather than a misconfiguration: a miss there
+is the cache declining to reuse a BMI that would not validate. Sharing the store
+still dedups everything each tree rebuilds on its own.

@@ -59,7 +59,7 @@ works from any cwd and any worktree. Each drives its own Dockerfile under
 
 | Config | Dockerfile | Toolchain |
 |---|---|---|
-| `.devcontainer/cuda/` | `Dockerfile.cuda` | clang-20 + libc++, CMake 4.2, Ninja, CUDA 13, ccache. Needs an NVIDIA GPU + the container toolkit. **The default.** |
+| `.devcontainer/cuda/` | `Dockerfile.cuda` | clang-20 + libc++, CMake 4.2, Ninja, CUDA 13, sccache. Needs an NVIDIA GPU + the container toolkit. **The default.** |
 | `.devcontainer/hip/` | `Dockerfile.hip` | the same toolchain with ROCm and no CUDA. Needs an AMD card. |
 | `.devcontainer/combined/` | `Dockerfile.combined` | both SDKs, ~40GB. |
 
@@ -72,8 +72,19 @@ says so.
 
 Neither variant has anything prebuilt for the C++ side: the WarpWraps submodule and
 GoogleTest are both built from source inside the container, so **the first build
-in a fresh container is long and the `ccache` volume is what makes the second one
-short.**
+in a fresh container is long and the shared `sccache` store is what makes the
+second one short.** That store is a bind mount, not a named volume, and it is
+the PRIMARY checkout's `.sccache` for every worktree —
+`devtools/devcontainer.sh up`/`rebuild` resolves it and creates it. It
+survives a `rebuild`, since nothing in the container's own filesystem holds it.
+
+What it shares is the **store**, not the **hits**: the devcontainer mounts each
+worktree at its own host path, and a restored BMI keeps the absolute path it was
+built under, so main and `.claude/worktrees/<name>` do not hit each other's
+entries. `docker/compose.yaml` mounts every service at `/workspace` instead, so
+hits DO cross worktrees there. Neither path sets `SCCACHE_BASEDIRS` — see
+`CMakeLists.txt`'s "Compiler cache" section for why that would break the build
+rather than widen the cache.
 
 Each config carries an **`initializeCommand` that builds its parent image**
 (`docker/build.sh base`, or `cuda` for the combined variant) before the

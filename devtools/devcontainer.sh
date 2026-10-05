@@ -257,6 +257,36 @@ require_git_dir() {
   export CALAMAN_GIT_DIR="$d"
 }
 
+# The sccache bind mount reads its host path from
+# ${localEnv:CALAMAN_SCCACHE_DIR} the same way, and for the same reason: no
+# machine-specific path in the tracked json.
+#
+# ONE STORE FOR EVERY CHECKOUT, and it is the PRIMARY one's. The common git dir
+# resolved above is <primary>/.git whether this runs from the main checkout or
+# from .claude/worktrees/<name>, so its dirname is the primary root in both
+# cases -- which is what makes every worktree name the same directory.
+#
+# WHY THE mkdir: docker does not refuse a bind whose source is missing, it
+# CREATES it, owned by root. The container runs as uid 1000, and the first
+# compile then dies with `failed to create directory /home/ubuntu/.sccache/
+# preprocessor: Permission denied` -- a message that never mentions a mount --
+# while clearing the leftover needs sudo. Making it here is what stops that.
+# (compose says the same thing declaratively, with create_host_path: false.)
+#
+# Note the store is shared but HITS are not, between trees mounted at different
+# absolute paths: a restored BMI keeps the path it was built under. That is
+# correct behaviour, not a misconfiguration -- see CMakeLists.txt's "Compiler
+# cache" section. Sharing the store still dedups what each tree rebuilds.
+require_sccache_dir() {
+  local d="${CALAMAN_SCCACHE_DIR:-$(dirname "$CALAMAN_GIT_DIR")/.sccache}"
+  if ! mkdir -p "$d" 2>/dev/null; then
+    echo "error: cannot create the sccache store at $d" >&2
+    echo "       set CALAMAN_SCCACHE_DIR to a writable directory." >&2
+    exit 1
+  fi
+  export CALAMAN_SCCACHE_DIR="$d"
+}
+
 # Resolve ROCM_GROUPS to numeric HOST gids and export one CALAMAN_<NAME>_GID
 # per group, which is what the `${localEnv:...}` references in the hip and
 # combined runArgs read.
@@ -428,6 +458,7 @@ case "${1:-}" in
   up)
     shift
     require_git_dir
+    require_sccache_dir
     export_host_gids
     run_cli up --workspace-folder "$WORKSPACE" "${DC_CONFIG[@]}" "$@"
     tag_variant_image
@@ -442,6 +473,7 @@ case "${1:-}" in
     # container's own filesystem does not.
     shift
     require_git_dir
+    require_sccache_dir
     export_host_gids
     run_cli up --workspace-folder "$WORKSPACE" \
       --remove-existing-container "${DC_CONFIG[@]}" "$@"

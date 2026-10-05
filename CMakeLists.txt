@@ -185,6 +185,38 @@ add_link_options($<$<COMPILE_LANGUAGE:CXX>:-stdlib=libc++>)
 add_link_options($<$<COMPILE_LANGUAGE:CXX>:-lc++abi>)
 
 # ========================================================================
+# Compiler cache
+# ========================================================================
+# sccache rather than ccache, for a measured reason: a module interface writes
+# TWO outputs from one invocation (the object and the BMI), and ccache 4.9
+# declares that whole shape uncacheable -- so it cannot cache a single .cppm in
+# this tree. sccache 0.18 knows -fmodule-output names a second output and
+# restores both. See docs/architecture.md section 7 for the measurement.
+#
+# Found here rather than pinned in a preset because it is OPTIONAL: CI's hosted
+# runners have no sccache, and a launcher baked into the `base` preset would
+# fail them at the first compile instead of simply not caching. Set at the top
+# level before add_subdirectory(deps), so WarpWraps and GoogleTest cache too.
+#
+# SCCACHE_BASEDIRS is deliberately set NOWHERE in this repo -- a restored BMI
+# keeps the absolute path it was built under, so normalising keys across
+# checkouts mounted at different paths buys a broken build rather than a hit.
+option(CALAMAN_COMPILER_CACHE "Use sccache as the compiler launcher when found"
+       ON
+)
+if(CALAMAN_COMPILER_CACHE)
+  find_program(CALAMAN_SCCACHE sccache)
+  if(CALAMAN_SCCACHE)
+    set(CMAKE_C_COMPILER_LAUNCHER "${CALAMAN_SCCACHE}")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CALAMAN_SCCACHE}")
+    set(CMAKE_CUDA_COMPILER_LAUNCHER "${CALAMAN_SCCACHE}")
+    message(STATUS "Compiler cache: ${CALAMAN_SCCACHE}")
+  else()
+    message(STATUS "Compiler cache: sccache not found; no compile is cached")
+  endif()
+endif()
+
+# ========================================================================
 # Find the backend's packages
 # ========================================================================
 # These are the same calls WarpWraps's own top-level CMakeLists.txt makes, and

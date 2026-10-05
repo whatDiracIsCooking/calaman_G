@@ -41,9 +41,42 @@ services:
     image: ${CALAMAN_IMAGE:-calaman:latest}
     volumes:
       - ..:/workspace
+      # The sccache store, as a bind of its own rather than something reached
+      # through /workspace: a worktree's own .sccache is not the shared one.
+      # The default IS the shared store when you run from the main checkout;
+      # from a worktree, point CALAMAN_SCCACHE_HOST_DIR at main's (env.example
+      # has the line).
+      #
+      # create_host_path: false is the point of the long syntax. Docker's
+      # default is to CREATE a missing bind source, owned by root -- and the
+      # service runs as HOST_UID, so the first compile dies with `failed to
+      # create directory /sccache/preprocessor: Permission denied`, leaving a
+      # directory only sudo can clear. False turns that into compose refusing
+      # to start and naming the path it wanted. (The devcontainer cannot say
+      # this in JSON, so devtools/devcontainer.sh mkdirs it instead.)
+      - type: bind
+        source: ${CALAMAN_SCCACHE_HOST_DIR:-../.sccache}
+        target: /sccache
+        bind:
+          create_host_path: false
     working_dir: /workspace
     user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
     environment:
+      # The store bound above, NOT the image's /home/ubuntu/.sccache: these
+      # services run as HOST_UID rather than ubuntu, so that home is not
+      # necessarily writable.
+      #
+      # Unlike the devcontainer -- which mounts each worktree at its own host
+      # path and so can share the store but not HITS -- every service here
+      # mounts the tree at the same /workspace. The paths baked into the
+      # command lines, the cache keys and the BMIs are identical whichever
+      # worktree you ran from, so one store gives real cross-worktree reuse.
+      #
+      # No SCCACHE_BASEDIRS, deliberately, and for the same reason as
+      # everywhere else in this repo: a restored BMI keeps the absolute path it
+      # was built under, so normalising keys across differing roots buys a
+      # broken build. /workspace is already identical everywhere.
+      - SCCACHE_DIR=/sccache
       - BUILD_PRESET=${BUILD_PRESET:-default}
       - BUILD_DIR=${BUILD_DIR:-build-compose}
       - RECONFIGURE=${RECONFIGURE:-}
@@ -79,9 +112,16 @@ services:
     image: ${CALAMAN_IMAGE:-calaman:latest}
     volumes:
       - ..:/workspace
+      # The shared sccache store; see the `build` service for the long syntax.
+      - type: bind
+        source: ${CALAMAN_SCCACHE_HOST_DIR:-../.sccache}
+        target: /sccache
+        bind:
+          create_host_path: false
     working_dir: /workspace
     user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
     environment:
+      - SCCACHE_DIR=/sccache  # the store bound above; see the build service
       - BUILD_PRESET=${BUILD_PRESET:-default}
       - BUILD_DIR=${BUILD_DIR:-build-compose}
       - CUDA_VISIBLE_DEVICES
@@ -135,9 +175,16 @@ services:
     image: ${CALAMAN_IMAGE:-calaman:latest}
     volumes:
       - ..:/workspace
+      # The shared sccache store; see the `build` service for the long syntax.
+      - type: bind
+        source: ${CALAMAN_SCCACHE_HOST_DIR:-../.sccache}
+        target: /sccache
+        bind:
+          create_host_path: false
     working_dir: /workspace
     user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
     environment:
+      - SCCACHE_DIR=/sccache  # the store bound above; see the build service
       - BUILD_PRESET=${BUILD_PRESET:-asan}
       - BUILD_DIR=${BUILD_DIR:-build-compose-asan}
       - CUDA_VISIBLE_DEVICES
@@ -193,9 +240,16 @@ services:
     image: ${CALAMAN_IMAGE:-calaman:latest}
     volumes:
       - ..:/workspace
+      # The shared sccache store; see the `build` service for the long syntax.
+      - type: bind
+        source: ${CALAMAN_SCCACHE_HOST_DIR:-../.sccache}
+        target: /sccache
+        bind:
+          create_host_path: false
     working_dir: /workspace
     user: "${HOST_UID:?Set HOST_UID via id -u}:${HOST_GID:?Set HOST_GID via id -g}"
     environment:
+      - SCCACHE_DIR=/sccache  # the store bound above; see the build service
       - BUILD_PRESET=${BUILD_PRESET:-compute-sanitizer}
       - BUILD_DIR=${BUILD_DIR:-build-compose-compute-sanitizer}
       - COMPUTE_SANITIZER_TOOL=${COMPUTE_SANITIZER_TOOL:-memcheck}
