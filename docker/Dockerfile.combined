@@ -73,5 +73,22 @@ RUN --mount=type=bind,source=docker/install-rocm-ds.sh,target=/tmp/install-rocm-
 # and both backends are findable in this image by design.
 ENV CMAKE_PREFIX_PATH=/opt/rocm-ds:${CMAKE_PREFIX_PATH}
 
+# Claude Code, PINNED -- the last root layer in this file on purpose: a version
+# bump re-runs only this and the two lines after it, never the SDK above it.
+# docker/install-claude-code.sh carries the rest (why not Dockerfile.base, and
+# which drift this ended). It is the fourth version to bump in more than one
+# place: the same ARG is declared by Dockerfile.cuda, .hip and .combined, so
+# bump it with `devtools/claude-version.sh --apply`, which rewrites all three
+# at once -- doctor.sh warns when they have drifted apart.
+#
+# ENV as well as ARG so the INTENDED version is readable from inside a running
+# container (`printenv CLAUDE_CODE_VERSION`), not merely inferable from the
+# binary: that is what lets doctor.sh tell "pinned and installed" apart from
+# "someone npm-installed over the top".
+ARG CLAUDE_CODE_VERSION=2.1.289
+ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
+RUN --mount=type=bind,source=docker/install-claude-code.sh,target=/tmp/install-claude-code.sh \
+    bash /tmp/install-claude-code.sh
+
 USER ubuntu
 RUN nvcc --version | grep release && hipconfig --version

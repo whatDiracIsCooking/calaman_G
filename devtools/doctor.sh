@@ -422,6 +422,58 @@ else
   fi
 fi
 
+# --- claude code pin (the agent the image ships) ---------------------------
+# The GPU Dockerfiles install Claude Code at an explicit ARG
+# CLAUDE_CODE_VERSION -- see docker/install-claude-code.sh for the drift that
+# replaced: a devcontainer FEATURE npm-installs an unpinned version, its layer
+# is a permanent cache hit, and `rebuild` recreates the container from the same
+# image, so an image can sit ~90 releases behind with nothing reporting it.
+# Three ways that can still go wrong, one check each. CLAUDE_PIN_FILES in
+# config.sh is the list of files carrying the pin; empty drops the section.
+CV="$TOP/devtools/claude-version.sh"
+if [ -n "${CLAUDE_PIN_FILES:-}" ] && [ -x "$CV" ]; then
+  echo "claude code pin"
+  cv=$("$CV" --porcelain 2>/dev/null)
+  cv_pinned=$(printf '%s\n' "$cv" | sed -n 's/^pinned //p')
+  cv_files=$(printf '%s\n' "$cv" | sed -n 's/^files //p')
+  cv_registry=$(printf '%s\n' "$cv" | sed -n 's/^registry //p')
+  cv_installed=$(printf '%s\n' "$cv" | sed -n 's/^installed //p')
+
+  # 1. the copies agree with each other.
+  if [ -z "$cv_pinned" ] || [ "$cv_pinned" = "-" ]; then
+    warn "the Claude Code pin disagrees across the Dockerfiles"
+    note "$cv_files"
+    note "fix: devtools/claude-version.sh --apply <version>"
+  # 2. and with the registry. Behind is a WARN, never a FAIL: a pin is a
+  #    deliberate choice, and the point is only that the gap is visible.
+  elif [ -z "$cv_registry" ]; then
+    ok "Claude Code pinned at $cv_pinned"
+    note "npm registry unreachable from here -- cannot say whether it is current"
+  elif [ "$cv_pinned" != "$cv_registry" ]; then
+    warn "Claude Code pin $cv_pinned is behind the registry ($cv_registry)"
+    note "bump: devtools/claude-version.sh --apply && docker/build.sh cuda"
+  else
+    ok "Claude Code pinned at $cv_pinned (current)"
+  fi
+
+  # 3. and, inside an image built from that pin, with what is on PATH.
+  #    CLAUDE_CODE_VERSION in the environment is the image's own ENV, so its
+  #    presence is what tells container from host.
+  if [ -n "${CLAUDE_CODE_VERSION:-}" ]; then
+    if [ "$cv_installed" != "$CLAUDE_CODE_VERSION" ]; then
+      warn "claude on PATH is ${cv_installed:-none}, this image pinned $CLAUDE_CODE_VERSION"
+      note "something npm-installed over the image's copy; rebuild the container"
+    elif [ -n "$cv_pinned" ] && [ "$CLAUDE_CODE_VERSION" != "$cv_pinned" ]; then
+      warn "this image was built at $CLAUDE_CODE_VERSION, the tree now pins $cv_pinned"
+      note "rebuild: devtools/devcontainer.sh rebuild"
+    else
+      ok "claude in here is the pinned $CLAUDE_CODE_VERSION"
+    fi
+  else
+    note "claude here is ${cv_installed:-not installed} (a host install, unrelated to the pin)"
+  fi
+fi
+
 # --- docker hygiene (report-only) -----------------------------------------
 # Worktree containers/volumes/images leak when a worktree is removed with plain
 # `git worktree remove` (bypassing worktree.sh rm), or via an agent's worktrees

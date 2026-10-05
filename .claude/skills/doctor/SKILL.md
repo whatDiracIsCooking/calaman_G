@@ -161,6 +161,22 @@ worktrees that no longer exist (a plain `git worktree remove`, or an agent's
 then `gc` to remove. The count comes from that same `--dry-run`, so the two
 always agree.
 
+**`[warn] Claude Code pin X is behind the registry (Y)`** — the GPU images
+install Claude Code at an explicit `ARG CLAUDE_CODE_VERSION`, and npm has moved
+on. Never a failure (a pin is a choice), but it is the only thing that reports
+the gap: `devtools/claude-version.sh --apply`, then rebuild the images you use.
+
+**`[warn] the Claude Code pin disagrees across the Dockerfiles`** — a bump
+reached some of the three GPU files and not all. `devtools/claude-version.sh
+--apply <version>` rewrites every one of them, which is the whole reason that
+script exists.
+
+**`[warn] claude on PATH is A, this image pinned B`** (only inside a container)
+— something `npm install -g`'d over the image's copy. Rebuild rather than
+patching in place; an install inside a container dies with it. The sibling
+warning *"this image was built at A, the tree now pins B"* means the opposite:
+the image is older than the checkout, so `devtools/devcontainer.sh rebuild`.
+
 ## What doctor.sh cannot see
 
 Five failures that look like something else entirely:

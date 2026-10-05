@@ -93,6 +93,30 @@ export DEVCONTAINER_CONFIG=.devcontainer/hip/devcontainer.json
 `doctor.sh` prints which config is active; a path that does not exist is a FAIL,
 and every container command refuses until it is fixed.
 
+### Bumping the Claude Code in the image
+
+The agent is **pinned** (`ARG CLAUDE_CODE_VERSION` in each GPU `Dockerfile`,
+installed by `docker/install-claude-code.sh` as the last layer), not installed
+by a devcontainer feature. So it moves only when you move it:
+
+```bash
+devtools/claude-version.sh                 # pinned / registry / installed here
+devtools/claude-version.sh --apply         # rewrite all three to the registry's latest
+devtools/claude-version.sh --apply 2.1.300 # or to one you name
+devtools/claude-version.sh --rebuild       # ...and rebuild the images already built here
+```
+
+Then `devtools/devcontainer.sh rebuild` for whichever variant you work in — the
+pin is in the image, so a `rebuild` without a re-`docker build` would recreate
+the container from the same image and change nothing. `up` and `rebuild` print
+a one-line warning when the pin is behind the registry or the three files
+disagree, and `doctor.sh` says the same thing on demand.
+
+**Do not `npm install -g @anthropic-ai/claude-code` inside a container.** It is
+lost on the next rebuild, and `doctor.sh` reports it as *"claude on PATH is A,
+this image pinned B"* — the same class of mistake as `apt-get install`ing the
+LAPACK headers in there.
+
 ### Bounding a container's CPU
 
 `CPUSET` (host cores) and `CPUS` (a core-count quota) come from

@@ -47,8 +47,17 @@
   // since nvcc targets an arch rather than the card present.
   "runArgs": ["--gpus", "all"],
 
+  // CLAUDE CODE IS NOT A FEATURE HERE, deliberately. The
+  // ghcr.io/anthropics/devcontainer-features/claude-code feature this used to
+  // declare npm-installs an UNPINNED @anthropic-ai/claude-code, and the
+  // lockfile beside this file pins the feature's DIGEST, not the version that
+  // feature installs -- so each image froze at whatever the registry had when
+  // its layer was first built, and `rebuild` (a new container from the same
+  // image) never moved it. docker/Dockerfile.cuda installs it at an explicit
+  // ARG CLAUDE_CODE_VERSION instead, as its last layer;
+  // docker/install-claude-code.sh has the whole story and
+  // devtools/claude-version.sh bumps the pin.
   "features": {
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
 

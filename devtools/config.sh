@@ -365,3 +365,25 @@ DOCTOR_GPU_VENDORS=${DOCTOR_GPU_VENDORS:-"nvidia amd"}
 #                 with a WARNING that is easy to scroll past.
 DOCTOR_REQUIRED_PATHS=${DOCTOR_REQUIRED_PATHS:-"deps/WarpWraps/CMakeLists.txt:the WarpWraps submodule -- nothing under src/ can compile without it
 /usr/include/lapacke.h:the CPU reference LAPACK oracle; tests that check numerical output against it are not built"}
+
+# --- the agent in the images -----------------------------------------------
+
+# Where the Claude Code version pin lives, one path per line, relative to the
+# repo root: every file carrying an `ARG CLAUDE_CODE_VERSION=` line. These are
+# the GPU Dockerfiles, each of which runs docker/install-claude-code.sh as its
+# last layer -- NOT Dockerfile.base, because a bump there would rebuild the
+# CUDA toolkit and the ~19GB ROCm install downstream of it.
+#
+# devtools/claude-version.sh reads, compares and rewrites exactly these, and
+# doctor.sh warns when they disagree or have fallen behind the npm registry.
+# Set it empty to drop both checks (a project that does not ship the agent in
+# its image); a path listed here that does not exist is an error rather than a
+# skip, because a Dockerfile renamed out of this list IS the drift.
+CLAUDE_PIN_FILES=${CLAUDE_PIN_FILES:-"docker/Dockerfile.cuda
+docker/Dockerfile.hip
+docker/Dockerfile.combined"}
+
+# The npm package those files install, and how long to wait on the registry
+# before giving up and reporting the pin alone.
+CLAUDE_NPM_PACKAGE=${CLAUDE_NPM_PACKAGE:-@anthropic-ai/claude-code}
+CLAUDE_REGISTRY_TIMEOUT=${CLAUDE_REGISTRY_TIMEOUT:-8}
