@@ -62,6 +62,11 @@ add_subdirectory(lascl)
 # the per-element family only for readability.
 add_subdirectory(lartg)
 
+# calaman.laruv -- LAPACK's uniform (0,1) generator, bit for bit, plus the
+# laruv_block header (calaman::laruv::header) that ?larnv calls, so it must
+# precede larnv. Links only calaman.common and calaman.error_handling.
+add_subdirectory(laruv)
+
 # calaman.lange -- the norm of a general matrix (LAPACK's ?lange), as a
 # two-stage reduction. calaman.reduce_columns (its reduction engine, which both
 # stages defer to) is added one level up, so its target exists when this device
