@@ -16,17 +16,17 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 
 | Partition | Contents |
 |---|---|
-| `:feast_quadrature` | Gauss–Legendre nodes and weights, `N = 4, 8` |
+| `:quadrature` | Gauss–Legendre nodes and weights, `N = 4, 8` |
 | `:compute_quadrature` | the contour `Z_e, w_e` for an interval, and the rational filter `ρ` it defines |
 | `:buffer_size` | the single-buffer workspace layout and its sizing |
 | `:contour_filter` | `ρ(A) Y`, as `Ne` shifted solves in batched BLAS calls |
 | `:rayleigh_ritz` | QR, projection, `syevd`, selection, residuals |
-| `:feast_solver` | the iteration |
+| `:driver` | the iteration |
 
-Only `feast_solver`, `feast_bufferSize`, `FeastOptions`, `FeastInfo`,
+Only `feast`, `feast_bufferSize`, `FeastOptions`, `FeastInfo`,
 `FeastStopReason` and `feast_rational_filter` are exported. The rest — the
 per-iteration steps, `FeastSlices`, the contour and quadrature tables — are
-module-internal: reachable from the header-only `feast_solver` template when an
+module-internal: reachable from the header-only `feast` template when an
 importer instantiates it, but not nameable by that importer.
 
 ## The idea
@@ -158,9 +158,9 @@ feast_bufferSize<double, 8>(cusolver, n, m0, &lwork);
 // ... allocate d_work; fill d_Q (n x m0) with random numbers ...
 
 FeastInfo<double> info{};
-feast_solver<double, 8>(cublas, cusolver, stream, wwr::WWRBLAS_FILL_MODE_LOWER,
-                        n, d_A, lda, Emin, Emax, m0,
-                        d_lambda, d_Q, d_work, lwork, {}, &info);
+feast<double, 8>(cublas, cusolver, stream, wwr::WWRBLAS_FILL_MODE_LOWER,
+                 n, d_A, lda, Emin, Emax, m0,
+                 d_lambda, d_Q, d_work, lwork, {}, &info);
 // d_lambda[0 .. info.m) are the eigenvalues in [Emin, Emax], ascending;
 // the leading info.m columns of d_Q are their eigenvectors.
 ```

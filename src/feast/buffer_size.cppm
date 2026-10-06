@@ -172,10 +172,10 @@ Status make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, 
 }
 
 /**
- * @brief Device workspace, in bytes, that feast_solver needs.
+ * @brief Device workspace, in bytes, that feast needs.
  *
  * @tparam T  Real floating-point type (float or double).
- * @tparam Ne Number of quadrature nodes (4 or 8); must match feast_solver's.
+ * @tparam Ne Number of quadrature nodes (4 or 8); must match feast's.
  * @param n           Matrix dimension.
  * @param m0          Subspace size, 1 <= m0 <= n.
  * @param lwork_bytes Out: bytes required.
