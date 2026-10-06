@@ -81,6 +81,10 @@ add_subdirectory(lartg)
 # precede larnv. Links only calaman.common and calaman.error_handling.
 add_subdirectory(laruv)
 
+# calaman.larnv -- a random vector from LAPACK's stream (?larnv), over the
+# laruv_block header, so it follows laruv.
+add_subdirectory(larnv)
+
 # calaman.lange -- the norm of a general matrix (LAPACK's ?lange), as a
 # two-stage reduction. calaman.reduce_columns (its reduction engine, which both
 # stages defer to) is added one level up, so its target exists when this device

@@ -10,8 +10,9 @@
  * bumps every seed limb by 2 for it and all later outputs) is reproduced by
  * re-running the tail from the first such index.
  *
- * calaman.laruv's kernel is one call of this; ?larnv's kernels can call it per
- * chunk. Reach it as "lapack/laruv/laruv.cuh" by linking the INTERFACE target
+ * calaman.laruv's kernel is one call of this; calaman.larnv's kernels call it
+ * per chunk, with the mod-2^48 seed helpers below (laruv_join, laruv_powmod,
+ * ...) to jump a seed ahead by whole calls. Reach it as "lapack/laruv/laruv.cuh" by linking the INTERFACE target
  * calaman::laruv::header. Device-only: include it from a .cu.
  *
  * Usage:
@@ -107,8 +108,9 @@ __device__ inline T laruv_draw(const int i, const int (&s)[4], int (&it)[4]) {
 /// Every thread of the block must call it (it synchronizes), with the same
 /// @p seed by value and blockDim.x >= @p n, 1 <= n <= kLaruvMaxN. Thread n-1
 /// writes @p seed_out after the block's last read of any seed it was given.
+/// Returns, in every thread, whether a draw rounded to 1 (the retry was taken).
 template<typename T>
-__device__ inline void laruv_block(const int (&seed)[4], const int n, T *const x,
+__device__ inline bool laruv_block(const int (&seed)[4], const int n, T *const x,
                                    int *const seed_out) {
   __shared__ int s_first_hit; // lowest index >= start whose draw rounded to 1
   const int i = static_cast<int>(threadIdx.x);
@@ -146,6 +148,50 @@ __device__ inline void laruv_block(const int (&seed)[4], const int n, T *const x
       seed_out[k] = it[k];
     }
   }
+  return bump > 0;
+}
+
+/// @brief The 48-bit value of four 12-bit limbs, high first (ISEED's layout)
+__device__ __forceinline__ unsigned long long laruv_join(const int (&s)[4]) {
+  return (static_cast<unsigned long long>(s[0]) << 36) |
+         (static_cast<unsigned long long>(s[1]) << 24) |
+         (static_cast<unsigned long long>(s[2]) << 12) | static_cast<unsigned long long>(s[3]);
+}
+
+/// @brief Split a 48-bit value into four 12-bit limbs, high first
+__device__ __forceinline__ void laruv_split(const unsigned long long v, int (&s)[4]) {
+  s[0] = static_cast<int>((v >> 36) & 4095);
+  s[1] = static_cast<int>((v >> 24) & 4095);
+  s[2] = static_cast<int>((v >> 12) & 4095);
+  s[3] = static_cast<int>(v & 4095);
+}
+
+/// @brief a * b mod 2^48; the low 64 bits of the wrapped product suffice
+__device__ __forceinline__ unsigned long long laruv_mulmod(const unsigned long long a,
+                                                           const unsigned long long b) {
+  return (a * b) & ((1ULL << 48) - 1);
+}
+
+/// @brief Multiplier row @p i as a 48-bit value
+///
+/// A ?laruv call of k draws with no retry leaves the seed times row k-1, so
+/// whole calls compose by multiplication: the jump-ahead ?larnv chunks use.
+__device__ __forceinline__ unsigned long long laruv_multiplier(const int i) {
+  const int(&mm)[4] = kLaruvMultipliers[i];
+  return laruv_join(mm);
+}
+
+/// @brief base^e mod 2^48 by binary exponentiation
+__device__ inline unsigned long long laruv_powmod(unsigned long long base, unsigned long long e) {
+  unsigned long long r = 1;
+  while (e != 0) {
+    if ((e & 1) != 0) {
+      r = laruv_mulmod(r, base);
+    }
+    base = laruv_mulmod(base, base);
+    e >>= 1;
+  }
+  return r;
 }
 
 } // namespace calaman::device
