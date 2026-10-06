@@ -8,9 +8,9 @@ LAPACK-named one, like `calaman.davidson` and `calaman.feast`.
 
 > **Status: skeleton.** The workspace layout, sizing and the solve interface are
 > pinned; `lanczos_solve` validates its arguments and returns
-> `WWRBLAS_STATUS_NOT_SUPPORTED`. The device kernels declared in
-> `lanczos_bridge.h`, Ritz extraction, the single-cycle solve and thick restart
-> land in follow-up issues (milestone "calaman.lanczos").
+> `WWRBLAS_STATUS_NOT_SUPPORTED`. The device kernels (`lanczos.cu`, declared in
+> `lanczos_bridge.h`) are in and tested; Ritz extraction, the single-cycle solve
+> and thick restart land in follow-up issues (milestone "calaman.lanczos").
 
 Real `float`/`double` only (`calaman::real_fp`). Hermitian/complex, block Lanczos
 and a tridiagonal eigensolver are out of scope.
@@ -32,8 +32,15 @@ vector). Each cycle runs `ncv` Lanczos steps: a matvec, `alpha_j = v_j^T w`,
 full reorthogonalization of `w` against the basis `V` by classical Gram–Schmidt
 applied twice (CGS2), `beta_j = ||w||`, and `v_{j+1} = w / beta_j`. The scalars
 stay on the device (pointer mode DEVICE); one status read per cycle is the only
-host sync. A `beta_j` under `eps * ||T||` is a breakdown, recorded in
-`device::LanczosStatus`.
+host sync. A `beta_j` under `eps * ||T_j||_F` (the leading `(j+1) x (j+1)` block
+of `T`, so the guard also sees a restart's arrowhead) is a breakdown, recorded in
+`device::LanczosStatus`: the first such step is kept, its coupling in `T` is
+written as zero, and no later step of the cycle divides.
+
+The step and arrowhead launchers between them write every entry of `T` a cycle
+uses — a fresh cycle's steps cover all of it, and after a restart the arrowhead
+covers columns/rows `0..k-1` and steps `k..ncv-1` the rest — so `T` is never
+memset.
 
 The projected matrix `T` (`ncv x ncv`) is diagonalised densely with `syevd`:
 WarpWraps has no tridiagonal eigensolver, and after a thick restart `T` is an
@@ -75,5 +82,6 @@ lanczos_solve<double>(blas, solver, stream, n, nev, ncv, LanczosWhich::smallest,
 | `buffer_size.cppm` | `:buffer_size` — slices, workspace layout, sizing |
 | `solve.cppm` | `:solve` — `lanczos_solve` |
 | `lanczos_bridge.h` | `device::LanczosStatus` and the kernel-launch declarations |
+| `lanczos.cu` | the device library: status reset, step write/normalise + breakdown guard, arrowhead |
 | `interface.cppm` | primary interface; re-exports the partitions |
 | `CMakeLists.txt` | build configuration |
