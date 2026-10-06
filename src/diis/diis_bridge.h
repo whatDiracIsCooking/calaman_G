@@ -18,15 +18,16 @@ namespace calaman::device {
 /// @brief Solve the bordered DIIS system for the @p m coefficients in one block
 ///
 /// Reads the upper triangle `gram[a*ld + c]` (a <= c < m) of the residual Gram,
-/// solves [B -1; -1^T 0][c; l] = [0; -1] by partial-pivot Gaussian elimination,
-/// and writes @p coeff (m elements). A pivot below @p pivot_floor marks the
-/// subspace singular: @p coeff becomes the unit selector at @p newest. Writes 1
+/// scales B by its largest diagonal, solves [B -1; -1^T 0][c; l] = [0; -1] by
+/// partial-pivot Gaussian elimination, and writes @p coeff (m elements). A
+/// pivot below @p pivot_tol (relative to that scale), or an all-zero B, marks
+/// the subspace singular: @p coeff becomes the unit selector at @p newest. Writes 1
 /// (singular) or 0 to @p singular_out unless it is null. Enqueued on @p stream.
 ///
 /// @tparam T Element type; instantiated for float, double
 /// @pre 1 <= m <= ld <= kDiisMaxHistory, 0 <= newest < m
 template<typename T>
 void diis_solve(wwr::wwrStream_t stream, int m, int ld, int newest, const T *gram, T *coeff,
-                int *singular_out, T pivot_floor);
+                int *singular_out, T pivot_tol);
 
 } // namespace calaman::device

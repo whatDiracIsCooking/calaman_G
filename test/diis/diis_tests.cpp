@@ -6,7 +6,8 @@
 // physical order, so agreement through and past wrap-around pins both the ring
 // bookkeeping and the incremental Gram. Further cases cover the < 2-pair no-op,
 // the singular fallback (including a newest column that is not the last
-// physical one), reset, argument validation, and a behavioural check that DIIS
+// physical one, with a rounding-residue pivot), the relative pivot scale
+// (uniformly tiny residuals must not flag singular), reset, argument validation, and a behavioural check that DIIS
 // accelerates a linear fixed-point iteration.
 //
 // REQUIRES_GPU (see CMakeLists.txt).
@@ -171,16 +172,16 @@ void expect_near_vector(const std::vector<T> &got, const std::vector<double> &wa
 // Push `pushes` random pairs into a cap-`cap` subspace and compare F* against the
 // host oracle after every push that extrapolates.
 template<typename T>
-void expect_matches_oracle(int len, int cap, int pushes, unsigned seed) {
+void expect_matches_oracle(int len, int cap, int pushes, unsigned seed, double e_scale = 0.1) {
   std::mt19937 rng(seed);
   DeviceDiis<T> dev(len, cap);
   HostDiis host{cap, {}, {}};
-  // Residuals are random O(0.1) vectors with len >> cap, so the Gram stays well
-  // conditioned and F* is O(|F|); the bound scales with that and the depth.
+  // Residuals are random O(e_scale) vectors with len >> cap, so the Gram stays
+  // well conditioned and F* is O(|F|); the bound scales with that and the depth.
   const double tol = static_cast<double>(kTolFactor<T> * eps<T>()) * cap * std::sqrt(len);
   for (int p = 0; p < pushes; ++p) {
     const auto f = random_vector<T>(rng, len);
-    const auto e = random_vector<T>(rng, len, 0.1);
+    const auto e = random_vector<T>(rng, len, e_scale);
     ASSERT_TRUE(dev.push(f, e).ok()) << "push " << p;
     host.push(f, e);
     EXPECT_EQ(dev.state.size, std::min(p + 1, cap));
@@ -261,6 +262,56 @@ TEST(DiisOracleTests, SingularFallbackSelectsNewestAfterWrap) {
   EXPECT_EQ(dev.state.head, 1);
   EXPECT_EQ(dev.singular_flag(), 1);
   EXPECT_EQ(dev.output(), f4);
+}
+
+// An absolute pivot floor flagged every push once residuals were small; the
+// relative test must see a well-conditioned subspace at any scale.
+TEST(DiisOracleTests, TinyResidualsMatchOracleDouble) {
+  expect_matches_oracle<double>(64, 6, 10, 12, 1e-9);
+}
+TEST(DiisOracleTests, TinyResidualsMatchOracleFloat) {
+  expect_matches_oracle<float>(64, 6, 10, 13, 1e-9);
+}
+
+// The newest pair duplicates column 1 after a wrap, with random (non-integer)
+// residuals of O(10) entries: the Gram entries for the duplicate come from
+// different gemv calls, so elimination leaves a rounding residue ~ eps |B|, far
+// above any absolute floor. The relative test must still flag it.
+template<typename T>
+void expect_duplicate_after_wrap_is_singular(unsigned seed) {
+  constexpr int kLen = 50;
+  std::mt19937 rng(seed);
+  DeviceDiis<T> dev(kLen, 3);
+  std::vector<std::vector<T>> es;
+  for (int p = 0; p < 3; ++p) {
+    es.push_back(random_vector<T>(rng, kLen, 10.0));
+    ASSERT_TRUE(dev.push(random_vector<T>(rng, kLen), es.back()).ok());
+    EXPECT_EQ(dev.singular_flag(), 0);
+  }
+  const auto f4 = random_vector<T>(rng, kLen);
+  ASSERT_TRUE(dev.push(f4, es[1]).ok());
+  EXPECT_EQ(dev.state.head, 1);
+  EXPECT_EQ(dev.singular_flag(), 1);
+  EXPECT_EQ(dev.output(), f4);
+}
+
+TEST(DiisOracleTests, RandomDuplicateAfterWrapIsSingularDouble) {
+  expect_duplicate_after_wrap_is_singular<double>(14);
+}
+TEST(DiisOracleTests, RandomDuplicateAfterWrapIsSingularFloat) {
+  expect_duplicate_after_wrap_is_singular<float>(15);
+}
+
+TEST(DiisOracleTests, ZeroResidualsFallBackToNewest) {
+  constexpr int kLen = 20;
+  std::mt19937 rng(16);
+  DeviceDiis<double> dev(kLen, 4);
+  const std::vector<double> zero(kLen, 0.0);
+  ASSERT_TRUE(dev.push(random_vector<double>(rng, kLen), zero).ok());
+  const auto f2 = random_vector<double>(rng, kLen);
+  ASSERT_TRUE(dev.push(f2, zero).ok());
+  EXPECT_EQ(dev.singular_flag(), 1);
+  EXPECT_EQ(dev.output(), f2);
 }
 
 TEST(DiisOracleTests, ResetRestartsTheSubspace) {

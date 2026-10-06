@@ -49,8 +49,14 @@ before it is read.
 
 **The solve.** With `size >= 2` the `(size+1)`-square bordered system is solved
 by a one-block kernel (`diis.cu`): it builds the system in shared memory and
-thread 0 runs partial-pivot Gaussian elimination. A pivot below `pivot_floor`
-(default `1e-14`) marks the subspace singular; the kernel then emits the unit
+thread 0 runs partial-pivot Gaussian elimination. The Gram block is first divided
+by its largest diagonal entry, which puts it on the Lagrange border's unit scale
+(better conditioned, and `c` is unchanged — only the multiplier rescales), so the
+singularity test is relative: a pivot below `pivot_tol` (default
+`kDiisPivotTol<T>` = `1024 eps`), or an all-zero Gram, marks the subspace
+singular. An absolute floor would miss a duplicated residual whose rounding
+residue scales with `|B|`, and would falsely flag every push once residuals are
+small late in convergence. On a singular subspace the kernel emits the unit
 selector at the newest physical column, so the extrapolation reproduces the
 plain newest `F`. The caller's optional `singular_device` flag records which
 case happened, on the device. `cap` is bounded by `kDiisMaxHistory` (64) so the

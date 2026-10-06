@@ -48,6 +48,11 @@ export namespace calaman {
 ///        kernel's (cap+1)^2 shared-memory system
 inline constexpr int kDiisMaxHistory = 64;
 
+/// @brief Default relative pivot tolerance of the DIIS solve: well above the
+///        rounding residue a duplicated residual leaves, for either precision
+template<typename T>
+inline constexpr T kDiisPivotTol = T{1024} * std::numeric_limits<T>::epsilon();
+
 /// @brief Host-side cursor of one DIIS subspace: vector length, history cap, and
 ///        the ring position. Pair it with one workspace for its whole life.
 struct DiisState {
@@ -131,13 +136,15 @@ std::size_t diis_bufferSize(const DiisState &state) {
 ///        to the newest F, 0 otherwise (also 0 with fewer than two pairs)
 /// @param d_work Workspace of @p work_bytes, the same buffer on every push
 /// @param work_bytes At least diis_bufferSize<T>(state)
-/// @param pivot_floor Pivot magnitude below which the subspace is singular
+/// @param pivot_tol Pivot magnitude, relative to the largest Gram diagonal,
+///        below which the subspace is singular
 /// @return Success, INVALID_VALUE on bad arguments, or the first failing call
 export template<real_fp T>
 Status diis_push_and_extrapolate(wwr::wwrblasHandle_t blas, wwr::wwrStream_t stream,
                                  DiisState &state, const T *cur_fock, const T *cur_residual,
                                  T *out_fock, int *singular_device, void *d_work,
-                                 const std::size_t work_bytes, const T pivot_floor = T{1e-14}) {
+                                 const std::size_t work_bytes,
+                                 const T pivot_tol = kDiisPivotTol<T>) {
   CLM_REQUIRE(state.len >= 1 && state.cap >= 1 && state.cap <= kDiisMaxHistory,
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(state.size >= 0 && state.size <= state.cap && state.head >= 0 &&
@@ -190,7 +197,7 @@ Status diis_push_and_extrapolate(wwr::wwrblasHandle_t blas, wwr::wwrStream_t str
   }
 
   if (size >= 2) {
-    device::diis_solve<T>(stream, size, cap, slot, s.gram, s.coeff, singular_device, pivot_floor);
+    device::diis_solve<T>(stream, size, cap, slot, s.gram, s.coeff, singular_device, pivot_tol);
     CLM_TRY(wwr::wwrGetLastError());
     // F* = F_hist c over physical columns 0..size-1; the sum is order-invariant,
     // so the ring's rotated column order needs no unrotation.
