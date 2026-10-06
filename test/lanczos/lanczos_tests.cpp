@@ -1,9 +1,12 @@
-// Suite for calaman.lanczos (skeleton stage). Two things are checked:
+// Suite for calaman.lanczos's host-checkable contract and its workspace:
 //
 //   * the argument-checking contract of lanczos_bufferSize / make_lanczos_slices
 //     / lanczos_solve -- nev < 1, ncv < 2*nev + 1, ncv > n, a null out-pointer,
 //     a null result or an empty matvec is rejected before any handle use, and a
 //     valid call reports NOT_SUPPORTED until the solve lands (host-only);
+//   * the :ritz selection -- positions per LanczosWhich, the nested-selection
+//     property, residual estimates and convergence flags on a hand-built
+//     snapshot, and each Ritz stage's argument checks (host-only);
 //   * the workspace sizing and carving -- the size query equals the extent the
 //     carve actually spans, and every region is non-null, 256-aligned, inside the
 //     buffer and disjoint from the others (REQUIRES_GPU: syevd_bufferSize needs a
@@ -121,6 +124,79 @@ TEST(LanczosArgCheckTests, OptionDefaults) {
   EXPECT_GT(options.max_restarts, 0);
   EXPECT_TRUE(options.fail_on_non_convergence);
   EXPECT_EQ(options.start_vector, nullptr);
+}
+
+// ── Ritz selection (host-only) ───────────────────────────────────────────────
+
+TEST(LanczosSelectTests, PositionsPerWhich) {
+  using V = std::vector<int>;
+  EXPECT_EQ(lanczos_select(LanczosWhich::smallest, 10, 3), (V{0, 1, 2}));
+  EXPECT_EQ(lanczos_select(LanczosWhich::largest, 10, 3), (V{7, 8, 9}));
+  EXPECT_EQ(lanczos_select(LanczosWhich::both_ends, 10, 3), (V{0, 8, 9})); // 2 top, 1 bottom
+  EXPECT_EQ(lanczos_select(LanczosWhich::both_ends, 10, 4), (V{0, 1, 8, 9}));
+  EXPECT_EQ(lanczos_select(LanczosWhich::both_ends, 10, 1), (V{9}));
+  EXPECT_EQ(lanczos_select(LanczosWhich::largest, 5, 5), (V{0, 1, 2, 3, 4}));
+  EXPECT_TRUE(lanczos_select(LanczosWhich::smallest, 10, 0).empty());
+  EXPECT_TRUE(lanczos_select(LanczosWhich::largest, 10, 11).empty());
+}
+
+TEST(LanczosSelectTests, LargerSelectionContainsSmaller) {
+  for (const LanczosWhich which :
+       {LanczosWhich::smallest, LanczosWhich::largest, LanczosWhich::both_ends}) {
+    for (int nev = 1; nev <= 12; ++nev) {
+      const std::vector<int> wanted = lanczos_select(which, 12, nev);
+      for (int k = nev; k <= 12; ++k) {
+        const std::vector<int> kept = lanczos_select(which, 12, k);
+        EXPECT_TRUE(std::ranges::includes(kept, wanted)) << nev << " in " << k;
+      }
+    }
+  }
+}
+
+TEST(LanczosSelectTests, ResidualEstimatesAndConvergence) {
+  LanczosRitz<double> ritz;
+  ritz.theta = {-3.0, -1.0, 0.0, 2.0, 5.0};
+  ritz.s_last_row = {1e-9, 0.5, -0.2, -1e-12, -0.3};
+  ritz.beta_m = -2.0;
+  ritz.t_norm = 5.0;
+
+  const auto sel = lanczos_ritz_select(ritz, LanczosWhich::both_ends, 4, 1e-6);
+  EXPECT_EQ(sel.index, (std::vector<int>{0, 1, 3, 4}));
+  EXPECT_EQ(sel.values, (std::vector<double>{-3.0, -1.0, 2.0, 5.0}));
+  EXPECT_EQ(sel.residuals, (std::vector<double>{2e-9, 1.0, 2e-12, 0.6}));
+  // threshold 1e-6 * max(|theta|, 5) = 5e-6 for every pair here.
+  EXPECT_EQ(sel.converged, (std::vector<bool>{true, false, true, false}));
+  EXPECT_EQ(sel.converged_count, 2);
+  EXPECT_FALSE(sel.all_converged());
+
+  const auto none = lanczos_ritz_select(ritz, LanczosWhich::smallest, 0, 1e-6);
+  EXPECT_TRUE(none.index.empty());
+  EXPECT_TRUE(none.all_converged()); // vacuously
+}
+
+TEST(LanczosSelectTests, RitzStagesRejectBadArguments) {
+  const LanczosSlices<double> s; // never dereferenced on the rejection path
+  EXPECT_EQ(lanczos_ritz_extract<double>(wwr::wwrsolverDnHandle_t{}, wwr::wwrStream_t{}, 5, s,
+                                         nullptr)
+                .code,
+            kInvalidValue);
+  LanczosRitz<double> ritz;
+  EXPECT_EQ(
+      lanczos_ritz_extract<double>(wwr::wwrsolverDnHandle_t{}, wwr::wwrStream_t{}, 0, s, &ritz)
+          .code,
+      kInvalidValue);
+  const wwr::wwrStream_t no_stream{};
+  EXPECT_EQ(lanczos_ritz_compact<double>(no_stream, 5, {1, 1}, s).code, kInvalidValue);
+  EXPECT_EQ(lanczos_ritz_compact<double>(no_stream, 5, {2, 1}, s).code, kInvalidValue);
+  EXPECT_EQ(lanczos_ritz_compact<double>(no_stream, 5, {-1}, s).code, kInvalidValue);
+  EXPECT_EQ(lanczos_ritz_compact<double>(no_stream, 5, {5}, s).code, kInvalidValue);
+  EXPECT_TRUE(lanczos_ritz_compact<double>(no_stream, 5, {0, 1, 2}, s).ok()); // already leading
+  double x = 0.0;
+  const wwr::wwrblasHandle_t no_blas{};
+  EXPECT_EQ(lanczos_ritz_vectors<double>(no_blas, 8, 5, 2, s, nullptr, 8).code, kInvalidValue);
+  EXPECT_EQ(lanczos_ritz_vectors<double>(no_blas, 8, 5, 2, s, &x, 7).code, kInvalidValue);
+  EXPECT_EQ(lanczos_ritz_vectors<double>(no_blas, 8, 5, 0, s, &x, 8).code, kInvalidValue);
+  EXPECT_EQ(lanczos_ritz_vectors<double>(no_blas, 8, 5, 6, s, &x, 8).code, kInvalidValue);
 }
 
 // ── sizing and carving (REQUIRES_GPU) ────────────────────────────────────────

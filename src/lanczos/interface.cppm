@@ -18,4 +18,5 @@ export module calaman.lanczos;
 
 export import :types;
 export import :buffer_size;
+export import :ritz;
 export import :solve;

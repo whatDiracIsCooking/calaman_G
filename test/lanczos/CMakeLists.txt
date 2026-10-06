@@ -1,11 +1,11 @@
 # Suite for calaman.lanczos: the argument-checking contract, the workspace
-# sizing/carving, and the device kernels behind lanczos_bridge.h. The
-# reference-LAPACK suites (and the guard on calaman::lapack_reference they
-# need) arrive with the solve.
+# sizing/carving, the device kernels behind lanczos_bridge.h, and the Ritz
+# extraction against the reference LAPACK.
 #
-# lanczos_kernel_tests.cpp #includes "lanczos/lanczos_bridge.h" to reach the
-# launchers: the src/ root comes through calaman::common, and wwr::backend
-# supplies the backend define runtime.h behind it reads.
+# lanczos_kernel_tests.cpp and lanczos_ritz_tests.cpp #include
+# "lanczos/lanczos_bridge.h" to reach the launchers: the src/ root comes through
+# calaman::common, and wwr::backend supplies the backend define runtime.h behind
+# it reads.
 calaman_add_gtest_executable(
   NAME
   lanczos_tests
@@ -27,12 +27,14 @@ calaman_add_gtest_executable(
 )
 
 # Pure host calls: a bad shape, a null out-pointer, a null result or an empty
-# matvec is rejected before any handle use, so this runs on a card-less runner.
+# matvec is rejected before any handle use, and the Ritz selection is host
+# math, so these run on a card-less runner.
 calaman_add_gtest_suite_tests(
   TARGET
   lanczos_tests
   SUITES
   LanczosArgCheckTests
+  LanczosSelectTests
 )
 
 # Sizing creates a solver handle (syevd_bufferSize), carving allocates the
@@ -44,5 +46,43 @@ calaman_add_gtest_suite_tests(
   SUITES
   LanczosBufferSizeTests
   LanczosKernelTests
+  REQUIRES_GPU
+)
+
+# The Ritz-extraction oracle is LAPACKE_?syevd (plus ?geqrf/?orgqr for the
+# orthonormal basis), via calaman::lapack_reference. Missing is a WARNING, not
+# an error, so only this binary is skipped where it is absent.
+if(NOT TARGET calaman::lapack_reference)
+  message(
+    STATUS "calaman::lapack_reference not found; skipping lanczos_ritz_tests"
+  )
+  return()
+endif()
+
+calaman_add_gtest_executable(
+  NAME
+  lanczos_ritz_tests
+  SOURCES
+  lanczos_ritz_tests.cpp
+  LINK
+  calaman::lanczos
+  calaman::common
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::shared::tolerance
+  calaman::test::utils::shared_device
+  calaman::lapack_reference
+  wwr::backend
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::extension::memory_buffer
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  lanczos_ritz_tests
+  SUITES
+  LanczosRitzReferenceTests
   REQUIRES_GPU
 )
