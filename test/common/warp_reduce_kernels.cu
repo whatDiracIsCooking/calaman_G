@@ -8,6 +8,8 @@
  */
 #include "warp_reduce_bridge.h"
 
+#include "mat2.h"
+
 #include "common/block_reduce.cuh" // AddOp, MaxNanOp
 #include "common/warp_reduce.cuh"
 
@@ -21,16 +23,11 @@ namespace calaman::test {
 
 namespace {
 
-/// @brief 2x2 matrix product mod kMat2Prime over the packed layout in the bridge
+/// @brief mat2_mul as a fold op
 struct Mat2Op {
   __device__ unsigned long long operator()(const unsigned long long x,
                                            const unsigned long long y) const {
-    const auto at = [](const unsigned long long v, const int i) { return (v >> (48 - 16 * i)) & 0xFFFF; };
-    const unsigned long long a = (at(x, 0) * at(y, 0) + at(x, 1) * at(y, 2)) % kMat2Prime;
-    const unsigned long long b = (at(x, 0) * at(y, 1) + at(x, 1) * at(y, 3)) % kMat2Prime;
-    const unsigned long long c = (at(x, 2) * at(y, 0) + at(x, 3) * at(y, 2)) % kMat2Prime;
-    const unsigned long long d = (at(x, 2) * at(y, 1) + at(x, 3) * at(y, 3)) % kMat2Prime;
-    return (a << 48) | (b << 32) | (c << 16) | d;
+    return mat2_mul(x, y);
   }
 };
 

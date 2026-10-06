@@ -23,14 +23,8 @@ int warp_reduce_sum(const float *host_in, unsigned int nactive, float *host_out)
 /// @brief warp_reduce under MaxNanOp
 int warp_reduce_max_nan(const float *host_in, unsigned int nactive, float *host_out);
 
-/// @brief warp_reduce under 2x2 matrix product mod kMat2Prime, the order probe
-///
-/// Each value packs a row-major [[a, b], [c, d]] as four 16-bit fields, a in
-/// the high bits. Associative but not commutative, so a lane-order slip shows.
+/// @brief warp_reduce under mat2_mul (mat2.h), the order probe
 int warp_reduce_mat2(const unsigned long long *host_in, unsigned int nactive,
                      unsigned long long *host_out);
-
-/// @brief The modulus warp_reduce_mat2 multiplies under: the largest 16-bit prime
-inline constexpr unsigned long long kMat2Prime = 65521;
 
 } // namespace calaman::test
