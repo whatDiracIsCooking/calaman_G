@@ -430,3 +430,6 @@ add_subdirectory(trttf)
 
 # calaman.tfttr -- RFP (tf) to full (tr) triangular storage; links tri_index.
 add_subdirectory(tfttr)
+
+# calaman.tpttf -- packed (tp) to RFP (tf) triangular storage; links tri_index.
+add_subdirectory(tpttf)
