@@ -410,7 +410,7 @@ option(CALAMAN_COMPUTE_SANITIZER
 )
 set(CALAMAN_COMPUTE_SANITIZER_TOOL
     "memcheck"
-    CACHE STRING "compute-sanitizer --tool: memcheck|racecheck|initcheck|synccheck"
+    CACHE STRING "compute-sanitizer --tool (memcheck, racecheck, ...)"
 )
 set_property(
   CACHE CALAMAN_COMPUTE_SANITIZER_TOOL PROPERTY STRINGS memcheck racecheck
@@ -438,10 +438,11 @@ if(CALAMAN_COMPUTE_SANITIZER)
       "${CALAMAN_COMPUTE_SANITIZER_TOOL}" --error-exitcode 1
       --require-cuda-init no
   )
-  # racecheck and synccheck judge a kernel's own barriers and shared memory, so
-  # they are scoped to ours (every one mangles `calaman` in). Unscoped, racecheck
-  # runs >15x slower in cuBLAS/cuSOLVER and synccheck flags cuBLAS's own Strsm.
-  # memcheck/initcheck stay unscoped: our bad argument faults in vendor code.
+  # racecheck and synccheck judge a kernel's own barriers and shared memory,
+  # so they are scoped to ours (every one mangles `calaman` in). Unscoped,
+  # racecheck runs >15x slower in cuBLAS/cuSOLVER and synccheck flags
+  # cuBLAS's own Strsm. memcheck/initcheck stay unscoped: a bad argument we
+  # pass faults inside the vendor's kernel.
   if(CALAMAN_COMPUTE_SANITIZER_TOOL MATCHES "^(racecheck|synccheck)$")
     list(APPEND CMAKE_TEST_LAUNCHER --kernel-name kns=calaman)
   endif()
