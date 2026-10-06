@@ -31,7 +31,7 @@ import wwr.blas;            // WWRBLAS_STATUS_*, WWRBLAS_FILL_MODE_*
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.rand;            // wwrrandState
 import wwr.wrappers.solver; // syevd_bufferSize
-import calaman.common;      // WorkspaceLayout, carve_workspace, slices_for, real_fp
+import calaman.common;      // WorkspaceLayout, member_ptr, carve_workspace, slices_for, real_fp
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
@@ -84,9 +84,8 @@ struct LanczosSlices {
     alpha = layout.fixed<T>(mz);
     beta = layout.fixed<T>(mz);
     rng = layout.fixed<wwr::wwrrandState>(nz);
-    status = layout.fixed<device::LanczosStatus>(1);
-    // Derived pointer: null in sizing mode, or it would be non-null garbage.
-    eig_info = status != nullptr ? &status->eig_info : nullptr;
+    status = layout.fixed_struct<device::LanczosStatus>();
+    eig_info = member_ptr(status, &device::LanczosStatus::eig_info);
 
     eig_scratch = layout.scratch<T>(static_cast<std::size_t>(eig_len));
   }

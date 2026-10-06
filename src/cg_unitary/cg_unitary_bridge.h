@@ -40,6 +40,7 @@
 #include <runtime.h>
 
 #include <cstddef>
+#include <type_traits>
 
 namespace calaman {
 
@@ -50,6 +51,16 @@ namespace calaman {
 inline constexpr int kCgMaxSamples = 32;
 
 namespace device {
+
+/// @brief The line search's device-side ints, carved as one fixed_struct. Each
+///        member is a launcher's int out-parameter; the host reads one back.
+struct CgStatus {
+  int found;     ///< Table 1 root bracketed (cg_poly_smallest_positive_real_root)
+  int root_info; ///< Table 2 root search's info (cg_dft_root_args)
+  int num_args;  ///< Table 2 root-argument count (cg_dft_root_args)
+  int info;      ///< expm / orthogonalize info, discarded: their Status decides
+};
+static_assert(std::is_trivially_copyable_v<CgStatus> && std::is_standard_layout_v<CgStatus>);
 
 /// @brief Set v[0:n) to one in the element type (complex: (1, 0)).
 ///

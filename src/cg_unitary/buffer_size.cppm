@@ -22,7 +22,7 @@ export module calaman.cg_unitary:buffer_size;
 import std;
 import wwr.blas;            // WWRBLAS_STATUS_* (invalid-value / success returns)
 import wwr.solver;         // wwrsolverDnHandle_t, wwrsolverStatus_t, WWRSOLVER_STATUS_*
-import calaman.common;      // WorkspaceLayout, carve_workspace, usual_fp, ComplexToRealType, RealToComplexType
+import calaman.common;      // WorkspaceLayout, member_ptr, carve_workspace, usual_fp, ...
 import calaman.error_handling; // Status
 import calaman.expm;        // expm_bufferSize
 import :cost_function;
@@ -65,7 +65,11 @@ struct CgSlices {
   RealT *colsum = nullptr;      ///< matrix_norm1 scratch, n reals
   T *power_v = nullptr;         ///< spectral_radius warm-start vector, n
   T *power_work = nullptr;      ///< spectral_radius workspace, 2n
-  int *ints = nullptr;          ///< 4 ints: found, converged, num_args, info
+  device::CgStatus *status = nullptr; ///< the search's device ints, see CgStatus
+  int *found = nullptr;               ///< &status->found
+  int *root_info = nullptr;           ///< &status->root_info
+  int *num_args = nullptr;            ///< &status->num_args
+  int *info = nullptr;                ///< &status->info
 
   // ── aliased scratch ───────────────────────────────────────────────────
   void *scratch = nullptr; ///< expm workspace, or the cost functor's
@@ -102,7 +106,11 @@ struct CgSlices {
     colsum = layout.fixed<RealT>(dn);
     power_v = layout.fixed<T>(dn);
     power_work = layout.fixed<T>(2 * dn);
-    ints = layout.fixed<int>(4);
+    status = layout.fixed_struct<device::CgStatus>();
+    found = member_ptr(status, &device::CgStatus::found);
+    root_info = member_ptr(status, &device::CgStatus::root_info);
+    num_args = member_ptr(status, &device::CgStatus::num_args);
+    info = member_ptr(status, &device::CgStatus::info);
 
     // The exponential and the cost function never overlap in time.
     scratch_bytes = std::max(expm_bytes, cost_bytes);
