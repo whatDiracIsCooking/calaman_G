@@ -390,3 +390,7 @@ add_subdirectory(hseqr)
 # wwr::gemm back-transform and a wwr BLAS-1 normalization. Placed last: it links
 # all of the above, so every one must already be defined.
 add_subdirectory(geev)
+
+# ?syev -- the real symmetric eigensolver driver; links lansy, lascl, sterf and
+# steqr, so it follows them.
+add_subdirectory(syev)
