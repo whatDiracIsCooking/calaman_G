@@ -44,22 +44,6 @@ export import calaman.error_handling; // Status, PointerModeStatus
 // Module-internal cycle stages: not exported, reached by the restart loop.
 namespace calaman::detail {
 
-template<typename F>
-inline constexpr bool kIsStdFunction = false;
-template<typename S>
-inline constexpr bool kIsStdFunction<std::function<S>> = true;
-
-/// @brief Whether @p f is a null function pointer or an empty std::function --
-///        the two nullable callables; any other (a lambda, a functor) never is.
-template<typename F>
-constexpr bool lanczos_matvec_is_null(const F &f) {
-  if constexpr (std::is_pointer_v<F> || kIsStdFunction<F>) {
-    return f == nullptr;
-  } else {
-    return false;
-  }
-}
-
 /// @brief v = v / ||v||_2 in HOST pointer mode (one sync).
 /// @return @p bad_norm for a zero or non-finite norm.
 template<calaman::real_fp T>
@@ -278,8 +262,8 @@ export namespace calaman {
  * @param eigenvectors_out  Out: Ritz vectors, n x nev device (ld n), in the order
  *                          of result->eigenvalues, written on @p stream; null to skip.
  * @param result            Out (host): eigenvalues, counts, converged flag.
- * @return INVALID_VALUE for a rejected shape, a null @p result, a null @p matvec
- *         (null function pointer or empty std::function) or a zero start vector; INTERNAL_ERROR on non-convergence when
+ * @return INVALID_VALUE for a rejected shape, a null @p result or a zero start
+ *         vector; INTERNAL_ERROR on non-convergence when
  *         options.fail_on_non_convergence; else a propagated fault or success.
  */
 template<calaman::real_fp T, lanczos_matvec<T> Matvec>
@@ -289,7 +273,6 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
                      T *eigenvectors_out, LanczosResult<T> *result,
                      const LanczosOptions<T> &options = {}) {
   CLM_REQUIRE(result != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
-  CLM_REQUIRE(!detail::lanczos_matvec_is_null(matvec), wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(lanczos_shape_ok(n, nev, ncv), wwr::WWRBLAS_STATUS_INVALID_VALUE);
 
   result->converged = false;
