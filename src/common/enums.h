@@ -1,9 +1,9 @@
 /**
  * @file enums.h
  * @brief Scoped enums for the LAPACK-shaped selector arguments (Jobz, Uplo,
- *        Trans, Side, Diag, Direct, StoreV, Range, JobSvd, Region, SortDir), the
- *        diff_norm Norm selector and the ?lange MatrixNorm selector, as a header
- *        shareable by device .cu code and module GMFs alike
+ *        Trans, Side, Diag, Direct, StoreV, Pivot, Range, JobSvd, Region,
+ *        SortDir), the diff_norm Norm selector and the ?lange MatrixNorm
+ *        selector, as a header shareable by device .cu code and module GMFs
  *
  * A plain header, not a module unit, for the same reason constants.h and
  * align_up.h are: a scoped enum is a compile-time tag that both a device
@@ -95,6 +95,14 @@ enum class Direct : std::uint8_t {
 enum class StoreV : std::uint8_t {
   C, ///< Columnwise: H(i) is column i of V; H = I - V T V^T.
   R, ///< Rowwise: H(i) is row i of V; H = I - V^T T V.
+};
+
+/// @brief Which plane each rotation of a sequence acts in -- LAPACK's `?lasr`
+///        PIVOT. With z the last index of the rotated dimension:
+enum class Pivot : std::uint8_t {
+  V, ///< Variable: rotation k acts in the plane (k, k+1).
+  T, ///< Top: rotation k acts in the plane (1, k+1).
+  B, ///< Bottom: rotation k acts in the plane (k, z).
 };
 
 /// @brief Which eigenvalues a selective eigensolver computes (LAPACK `range`).

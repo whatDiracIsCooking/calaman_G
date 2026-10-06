@@ -74,6 +74,12 @@ add_subdirectory(lange)
 # calaman.common and calaman.error_handling (added one level up).
 add_subdirectory(lanst)
 
+# calaman.lasr -- apply a sequence of plane rotations (LAPACK's ?lasr), plus the
+# block-cooperative lasr_block header (calaman::lasr::header) that the ?steqr
+# kernel includes, so it must precede it. Links only calaman.common and
+# calaman.error_handling (added one level up).
+add_subdirectory(lasr)
+
 # The dense linear-algebra routines -- the geqp3 column-pivoted-QR call graph,
 # one directory and one module per LAPACK routine. Added in call-graph order so
 # each module's dependencies are declared before it: larfg/larf, then laqp2
