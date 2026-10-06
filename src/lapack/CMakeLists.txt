@@ -37,6 +37,11 @@ add_subdirectory(gebak)
 
 add_subdirectory(lacpy)
 
+# calaman.lacp2 is lacpy's real-to-complex twin (the same kernel with a
+# widening store). It shares no build edge with lacpy -- added next to it only
+# for readability.
+add_subdirectory(lacp2)
+
 # calaman.laset is lacpy's fill twin (set to constants rather than copy). It
 # shares no build edge with lacpy -- added next to it only for readability.
 add_subdirectory(laset)
