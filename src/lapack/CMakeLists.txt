@@ -402,3 +402,6 @@ add_subdirectory(tri_index)
 
 # calaman.tpttr -- packed (tp) to full (tr) triangular storage; links tri_index.
 add_subdirectory(tpttr)
+
+# calaman.trttp -- full (tr) to packed (tp) triangular storage; links tri_index.
+add_subdirectory(trttp)
