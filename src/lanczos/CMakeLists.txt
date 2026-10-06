@@ -22,13 +22,15 @@ calaman_add_gpu_device_library(
 #
 # LINK_PUBLIC is what the exported surface names: the stream (wwr.runtime_api),
 # the BLAS/solver handles and enums (wwr.blas, wwr.solver), wwrrandState
-# (wwr.rand), gemm (wwr.wrappers.blas), syevd (wwr.wrappers.solver),
-# ScopedPointerMode (wwr.extension.blas), real_fp and the workspace carving
-# (calaman.common), and Status (calaman.error_handling).
+# (wwr.rand), gemm/gemv/nrm2 (wwr.wrappers.blas), syevd
+# (wwr.wrappers.solver), ScopedPointerMode (wwr.extension.blas), the random
+# start (wwr.extension.init_state, wwr.extension.random_normal), real_fp and
+# the workspace carving (calaman.common), and Status (calaman.error_handling).
 #
 # LINK_PRIVATE wwr::backend and INCLUDE_DIRS_PRIVATE are for lanczos_bridge.h,
-# which :buffer_size and :ritz include in their GMF: a GMF cannot import, so
-# wwrStream_t arrives via runtime.h, whose backend define wwr::backend supplies.
+# which :buffer_size, :ritz and :solve include in their GMF: a GMF cannot
+# import, so wwrStream_t arrives via runtime.h, whose backend define
+# wwr::backend supplies.
 calaman_add_cxx_module_library(
   NAME
   calaman.lanczos
@@ -47,6 +49,8 @@ calaman_add_cxx_module_library(
   wwr::wrappers::blas
   wwr::wrappers::solver
   wwr::extension::blas
+  wwr::extension::init_state
+  wwr::extension::random_normal
   calaman::common
   calaman::error_handling
   LINK_PRIVATE

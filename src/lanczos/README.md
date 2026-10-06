@@ -6,12 +6,10 @@ operator known only through a single-vector matrix-vector-product callback.
 Not a LAPACK routine, so it is its own module rather than a partition of a
 LAPACK-named one, like `calaman.davidson` and `calaman.feast`.
 
-> **Status: in progress.** The workspace layout, sizing and the solve interface
-> are pinned; `lanczos_solve` validates its arguments and returns
-> `WWRBLAS_STATUS_NOT_SUPPORTED`. The device kernels (`lanczos.cu`, declared in
-> `lanczos_bridge.h`) and the Ritz extraction (`:ritz`) are in and tested; the
-> single-cycle solve and thick restart land in follow-up issues (milestone
-> "calaman.lanczos").
+> **Status: in progress.** `lanczos_solve` runs a **single cycle** of `ncv`
+> steps and reports `converged` only when that one cycle sufficed
+> (`restarts == 0`); `options.max_restarts` is not yet honoured. Thick restart
+> and breakdown recovery land in a follow-up issue (milestone "calaman.lanczos").
 
 Real `float`/`double` only (`calaman::real_fp`). Hermitian/complex, block Lanczos
 and a tridiagonal eigensolver are out of scope.
@@ -62,8 +60,34 @@ Selections nest: for `k >= nev`, the `k`-pair selection at one `LanczosWhich`
 contains the `nev`-pair one, so a restart can keep extra pairs and still test
 convergence on the wanted ones.
 
+### One cycle
+
+`:solve` runs a cycle as three module-internal stages (`calaman::detail`, not
+exported) so the restart loop can reuse them:
+
+| Stage | Does | Host syncs |
+|---|---|---|
+| `lanczos_start` | seeds `s.rng` from `options.seed`; `v_0` = the caller's `start_vector` or a `random_normal` draw, normalised (a zero or non-finite one is `INVALID_VALUE`) | 1 (the norm) |
+| `lanczos_extend` | resets the status block, then steps `first..ncv-1`: matvec, CGS2 (`gemv` `V^T w` then `w -= V h`, twice; `alpha_j` is the summed coefficient on `v_j`), `beta_j = nrm2(w)` in device pointer mode, `lanczos_step` | 0 |
+| `lanczos_cycle_ritz` | `lanczos_ritz_extract` on the cycle's active dimension | 1, or 2 after an early breakdown |
+
+The matvec callback always runs with the BLAS handle in **host** pointer mode;
+the caller's mode is restored on return. Every callback call counts in
+`LanczosResult::matvecs`.
+
+**Breakdown inside a cycle.** The status block is read only at the cycle's
+sync, so a breakdown at step `j < ncv - 1` still runs the remaining steps (on a
+frozen, undivided tail) and they are discarded: `V(:, 0:j+1)` spans an invariant
+subspace, its block `T(0:j+1, 0:j+1)` is decoupled, so it is repacked to ld
+`j + 1` and re-extracted. Its Ritz pairs are exact (estimate `beta_j` ≈ 0), so
+they converge. When that subspace holds fewer than `nev` pairs, the solve
+returns them and reports not converged. A breakdown at the last step is the
+`ncv == n` case: the whole space, every pair exact. Like any single-vector
+Lanczos, an eigenvector absent from the start vector is never found.
+
 Thick restart (Wu–Simon) keeps the `k` wanted Ritz vectors plus the residual
-direction, writes the arrowhead into `T`, and continues from step `k + 1`.
+direction, writes the arrowhead into `T`, and continues from step `k + 1` —
+`lanczos_extend` with `first = k`.
 
 ## Workspace
 
@@ -96,7 +120,7 @@ lanczos_solve<double>(blas, solver, stream, n, nev, ncv, LanczosWhich::smallest,
 | `types.cppm` | `:types` — options, result, end selection, matvec callback |
 | `buffer_size.cppm` | `:buffer_size` — slices, workspace layout, sizing |
 | `ritz.cppm` | `:ritz` — `syevd` on `T`, end selection, residual estimates, compaction, Ritz vectors |
-| `solve.cppm` | `:solve` — `lanczos_solve` |
+| `solve.cppm` | `:solve` — `lanczos_solve` and its cycle stages |
 | `lanczos_bridge.h` | `device::LanczosStatus` and the kernel-launch declarations |
 | `lanczos.cu` | the device library: status reset, step write/normalise + breakdown guard, arrowhead |
 | `interface.cppm` | primary interface; re-exports the partitions |
