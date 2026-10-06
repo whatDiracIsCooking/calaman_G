@@ -28,6 +28,7 @@ export module calaman.common:enums;
 // the purview so importers see them.
 export namespace calaman {
 
+using calaman::CompZ;
 using calaman::Diag;
 using calaman::Direct;
 using calaman::JobSvd;

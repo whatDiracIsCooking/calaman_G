@@ -1,8 +1,8 @@
 /**
  * @file enums.h
- * @brief Scoped enums for the LAPACK-shaped selector arguments (Jobz, Uplo,
- *        Trans, Side, Diag, Direct, StoreV, Pivot, Range, JobSvd, Region,
- *        SortDir), the diff_norm Norm selector and the ?lange MatrixNorm
+ * @brief Scoped enums for the LAPACK-shaped selector arguments (Jobz, CompZ,
+ *        Uplo, Trans, Side, Diag, Direct, StoreV, Pivot, Range, JobSvd,
+ *        Region, SortDir), the diff_norm Norm selector and the ?lange MatrixNorm
  *        selector, as a header shareable by device .cu code and module GMFs
  *
  * A plain header, not a module unit, for the same reason constants.h and
@@ -43,6 +43,14 @@ namespace calaman {
 enum class Jobz : std::uint8_t {
   N, ///< Eigen/singular values only; no vectors.
   V, ///< Compute eigen/singular values and vectors.
+};
+
+/// @brief Whether a tridiagonal eigensolver computes vectors, and from what
+///        (LAPACK `?steqr` COMPZ).
+enum class CompZ : std::uint8_t {
+  N, ///< Eigenvalues only; Z is not referenced.
+  V, ///< Z holds an orthogonal Q on entry; return Q times the eigenvectors.
+  I, ///< Z is initialised to the identity; return the tridiagonal's vectors.
 };
 
 /// @brief Which triangle of a symmetric/Hermitian matrix is referenced

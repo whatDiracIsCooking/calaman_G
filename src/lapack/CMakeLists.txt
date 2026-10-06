@@ -229,6 +229,11 @@ add_subdirectory(lapy2)
 # added above), so it follows them here.
 add_subdirectory(sterf)
 
+# calaman.steqr -- eigenpairs of a symmetric tridiagonal by implicit QL/QR
+# (LAPACK's ?steqr). One single-block kernel that #includes the per-thread
+# helpers of lanst, lartg, lasr and sym2x2, so it follows all four here.
+add_subdirectory(steqr)
+
 # calaman.lasy2 -- solve the order-(1..2) Sylvester equation
 # op(TL)*X + ISGN*X*op(TR) = SCALE*B, the GPU counterpart of LAPACK's ?lasy2. A
 # single single-thread device kernel (the whole solve is O(1), X at most 2x2),
