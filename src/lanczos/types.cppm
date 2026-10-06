@@ -52,7 +52,7 @@ template<calaman::real_fp T>
 struct LanczosResult {
   bool converged = false;
   int restarts = 0; ///< thick restarts performed
-  int matvecs = 0;  ///< operator applications (LanczosMatvecFn calls)
+  int matvecs = 0;  ///< operator applications (matvec calls)
   /// @brief The nev selected eigenvalues, ascending (host). Filled on every
   ///        completed run; accurate only when converged.
   std::vector<T> eigenvalues;
@@ -60,7 +60,9 @@ struct LanczosResult {
 
 /// @brief matvec(stream, x, y): y = A x for one device vector of n elements.
 ///        A must be symmetric; @p x and @p y never alias.
-template<calaman::real_fp T>
-using LanczosMatvecFn = std::function<Status(wwr::wwrStream_t stream, const T *x, T *y)>;
+template<typename F, typename T>
+concept lanczos_matvec = requires(const F &f, wwr::wwrStream_t stream, const T *x, T *y) {
+  { f(stream, x, y) } -> std::convertible_to<Status>;
+};
 
 } // namespace calaman

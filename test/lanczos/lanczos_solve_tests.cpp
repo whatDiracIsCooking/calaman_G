@@ -1,6 +1,6 @@
 // Reference suite for calaman.lanczos's lanczos_solve. The operator is a dense
 // A = Q diag(lambda) Q^T on the device, applied through a symv-backed
-// LanczosMatvecFn adapter; the oracle is LAPACKE_?syevd on the same A. Checked,
+// lanczos_matvec adapter; the oracle is LAPACKE_?syevd on the same A. Checked,
 // for smallest / largest / both_ends, float and double:
 //
 //   * the selected eigenvalues match the reference's to the shared tolerance;
@@ -59,7 +59,7 @@ constexpr int kInternalError = static_cast<int>(wwr::WWRBLAS_STATUS_INTERNAL_ERR
 /// y = A x for a dense symmetric n x n device matrix (lower triangle read).
 /// lanczos_solve calls the matvec in HOST pointer mode, so host scalars.
 template<typename T>
-LanczosMatvecFn<T> symv_matvec(wwr::wwrblasHandle_t blas, int n, const T *d_a) {
+auto symv_matvec(wwr::wwrblasHandle_t blas, int n, const T *d_a) {
   return [blas, n, d_a](wwr::wwrStream_t, const T *x, T *y) -> Status {
     const T one{1};
     const T zero{0};
