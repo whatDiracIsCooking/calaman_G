@@ -92,6 +92,7 @@ add_subdirectory(sytrs2)
 add_subdirectory(tpttr)
 add_subdirectory(trevc3)
 add_subdirectory(trexc)
+add_subdirectory(trttf)
 add_subdirectory(trttp)
 
 # The experimental/ tier's suites, gated on the same option as the modules

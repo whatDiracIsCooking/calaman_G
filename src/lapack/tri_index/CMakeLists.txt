@@ -1,6 +1,7 @@
 # calaman.tri_index -- the header-only device index maps for the triangular
-# storage formats (tri_index.cuh), shared by the storage-conversion kernels
-# (tpttr, trttp, ...). Not a module: a kernel reaches the maps by #include.
+# storage formats (tri_index.cuh): full, packed and RFP, shared by the
+# storage-conversion kernels (tpttr, trttp, trttf, ...). Not a module: a kernel
+# reaches the maps by #include.
 #
 # A consumer's device library links calaman::tri_index and includes
 # "lapack/tri_index/tri_index.cuh". INTERFACE carries the src/ root that
