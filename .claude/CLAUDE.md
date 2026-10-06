@@ -53,7 +53,7 @@ so report the tier you actually touched.
 | `src/`, `test/` | **live.** The modules above plus their suites; `add_subdirectory(src)` and `(test)` are enabled. `#add_subdirectory(example)` stays commented — `example/` is a `README.md` stub with no `CMakeLists.txt` yet (a directory with no `CMakeLists.txt` is a configure error). |
 | `experimental/` | **live but opt-in.** `add_subdirectory(experimental)` is gated behind `CALAMAN_BUILD_EXPERIMENTAL` (default **OFF**) and runs after `src/` so an experimental module may link a shipped one; ships `calaman.experimental.xor_delta` and `calaman.experimental.byte_transpose`. |
 | `CMakeLists.txt` | **live**: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, WarpWraps, and now `src/`, `test/`, and the gated `experimental/`. |
-| the `cmake/` target macros | **exercised** — `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` macros, and `calaman_add_gpu_device_library` all have call sites now. `calaman_add_interface_library` still has none (documented, not dead). |
+| the `cmake/` target macros | **exercised** — `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` macros, and `calaman_add_gpu_device_library` all have call sites now, and so does `calaman_add_interface_library` (`calaman.sym2x2`, the header-only device helpers in `src/lapack/sym2x2/`). |
 | `calaman_install.cmake` | dormant, but **no longer wrong-shaped**: it does one recursive sweep of the single `src/` tree now; the old per-backend `src/{cuda,hip,wrappers}` sweep inherited from WarpWraps is gone. |
 | the install tier | **dormant.** `CALAMAN_INSTALL` defaults OFF; `calaman_install_package()` is still expected to fail on the unexported `wwr.*` interface targets until the two-package problem (docs/architecture.md §2) is decided. `devtools/install-check.sh` and CI's `install-check` job have nothing to prove until then. |
 | the C++ test tiers | **live and asserting.** The numerical suites compare device results against the reference LAPACK to a shared tolerance (`test/shared/tolerance.cppm`); they are `REQUIRES_GPU`, so `ctest -LE gpu` excludes them. One host-only suite (`linalg_scaffold_tests`) asserts without a card. |
@@ -231,8 +231,8 @@ carries that cost instead.
   `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` /
   `calaman_add_test_executable` test macros, and
   `calaman_add_gpu_device_library` for a module's device-kernel `.cu` library.
-  `calaman_add_interface_library` is wired and documented with no call sites —
-  do not assume it is dead.
+  `calaman_add_interface_library` declares a header-only target (today only
+  `calaman.sym2x2`, the shared `__device__` ?lae2/?laev2/?lapy2 ports).
 - Target names use dots and are aliased to `::`; link lists name the `::`
   alias, and the installed package exports that same spelling
   (`cmake/README.md`, "One spelling").
