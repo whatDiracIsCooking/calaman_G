@@ -68,6 +68,12 @@ add_subdirectory(lartg)
 # lib uses it.
 add_subdirectory(lange)
 
+# calaman.lanst -- the norm of a symmetric tridiagonal (LAPACK's ?lanst), plus
+# the header-only per-thread lanst_max_abs (calaman::lanst::header) that the
+# ?sterf/?steqr kernels include, so it must precede both. Links only
+# calaman.common and calaman.error_handling (added one level up).
+add_subdirectory(lanst)
+
 # The dense linear-algebra routines -- the geqp3 column-pivoted-QR call graph,
 # one directory and one module per LAPACK routine. Added in call-graph order so
 # each module's dependencies are declared before it: larfg/larf, then laqp2
