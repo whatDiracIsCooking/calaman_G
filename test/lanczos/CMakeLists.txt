@@ -87,9 +87,10 @@ calaman_add_gtest_suite_tests(
   REQUIRES_GPU
 )
 
-# The single-cycle solve against LAPACKE_?syevd (plus ?geqrf/?orgqr for the
-# random orthogonal Q of A = Q diag(lambda) Q^T), through a symv-backed matvec
-# adapter: wwr::wrappers::blas supplies symv. Same lapack_reference guard.
+# The solve (one cycle, thick restarts, breakdown recovery) against
+# LAPACKE_?syevd (plus ?geqrf/?orgqr for the random orthogonal Q of
+# A = Q diag(lambda) Q^T), through a symv-backed matvec adapter:
+# wwr::wrappers::blas supplies symv. Same lapack_reference guard.
 calaman_add_gtest_executable(
   NAME
   lanczos_solve_tests

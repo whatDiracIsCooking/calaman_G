@@ -1,16 +1,19 @@
-// Reference suite for calaman.lanczos's single-cycle lanczos_solve. The operator
-// is a dense A = Q diag(lambda) Q^T on the device, applied through a
-// symv-backed LanczosMatvecFn adapter; the oracle is LAPACKE_?syevd on the same
-// A. Checked, for smallest / largest / both_ends, float and double:
+// Reference suite for calaman.lanczos's lanczos_solve. The operator is a dense
+// A = Q diag(lambda) Q^T on the device, applied through a symv-backed
+// LanczosMatvecFn adapter; the oracle is LAPACKE_?syevd on the same A. Checked,
+// for smallest / largest / both_ends, float and double:
 //
-//   * one cycle converges: converged, restarts == 0, matvecs == ncv;
 //   * the selected eigenvalues match the reference's to the shared tolerance;
-//   * the Ritz vectors: ||A X - X Theta||_F and ||X^T X - I||_F to it.
+//   * the Ritz vectors: ||A X - X Theta||_F and ||X^T X - I||_F to it;
+//   * well-separated outliers converge in one cycle (restarts == 0, matvecs ==
+//     ncv); a spectrum clustered at the wanted end needs thick restarts, each
+//     costing ncv - k matvecs (k = lanczos_restart_keep).
 //
-// Plus the edge cases: ncv == n (the Krylov space is all of R^n, so every Ritz
-// pair is exact), an invariant subspace found at step 0 (the early-breakdown
-// path: a diagonal A from e_0), a too-small invariant subspace reported as
-// non-converged, and a zero start vector rejected. REQUIRES_GPU.
+// Plus: ncv == n (every Ritz pair exact), max_restarts exhaustion under both
+// fail_on_non_convergence settings, the true-residual pass, breakdown recovery
+// (an invariant subspace from e_0, and one per distinct eigenvalue of a
+// low-rank-spectrum A), a repeated eigenvalue found once (the documented
+// single-vector limitation), and a zero start vector rejected. REQUIRES_GPU.
 
 #include <gtest/gtest.h>
 
@@ -216,29 +219,41 @@ std::pair<double, double> ritz_errors(const std::vector<T> &a, const std::vector
   return {std::sqrt(res), std::sqrt(orth)};
 }
 
-/// One converged single-cycle solve, checked against LAPACKE_?syevd on @p a.
+/// The reference eigenvalues lanczos_solve should return for @p which.
 template<typename T>
-void check_solve(const std::vector<T> &a, int n, int nev, int ncv, LanczosWhich which) {
-  SCOPED_TRACE(::testing::Message() << "which=" << name(which) << " n=" << n << " nev=" << nev
-                                    << " ncv=" << ncv << " sizeof(T)=" << sizeof(T));
+std::vector<T> reference_selection(const std::vector<T> &a, int n, int nev, LanczosWhich which) {
   std::vector<T> w(static_cast<std::size_t>(n));
   std::vector<T> a_copy = a;
-  ASSERT_EQ(ref_syevd(n, a_copy.data(), w.data()), 0);
+  EXPECT_EQ(ref_syevd(n, a_copy.data(), w.data()), 0);
   std::vector<T> expected;
   for (const int i : lanczos_select(which, n, nev)) {
     expected.push_back(w[static_cast<std::size_t>(i)]);
   }
+  return expected;
+}
 
-  Rig<T> rig(a, n, nev, ncv);
+template<typename T>
+LanczosOptions<T> tight_options() {
   LanczosOptions<T> options;
   options.tolerance = T(1000) * test::eps<T>();
+  return options;
+}
+
+/// One converged solve, checked against LAPACKE_?syevd on @p a; the result is
+/// returned for the caller's restart/matvec assertions.
+template<typename T>
+LanczosResult<T> solve_and_check(const std::vector<T> &a, int n, int nev, int ncv,
+                                 LanczosWhich which, const LanczosOptions<T> &options) {
+  const std::vector<T> expected = reference_selection(a, n, nev, which);
+  Rig<T> rig(a, n, nev, ncv);
   LanczosResult<T> result;
   const Status st = rig.solve(which, options, &result);
-  ASSERT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
+  EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
   EXPECT_TRUE(result.converged);
-  EXPECT_EQ(result.restarts, 0);
-  EXPECT_EQ(result.matvecs, ncv);
-  ASSERT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(nev));
+  if (result.eigenvalues.size() != static_cast<std::size_t>(nev)) {
+    ADD_FAILURE() << "eigenvalues: " << result.eigenvalues.size();
+    return result;
+  }
 
   const T tol = factorization_tol<T>(frobenius_norm(a), n, n);
   for (std::size_t i = 0; i < expected.size(); ++i) {
@@ -248,6 +263,17 @@ void check_solve(const std::vector<T> &a, int n, int nev, int ncv, LanczosWhich 
   const auto [res, orth] = ritz_errors(a, x, result.eigenvalues, n);
   EXPECT_LE(res, static_cast<double>(tol));
   EXPECT_LE(orth, static_cast<double>(factorization_tol<T>(T(1), n, n)));
+  return result;
+}
+
+/// One converged single-cycle solve: restarts == 0, matvecs == ncv.
+template<typename T>
+void check_solve(const std::vector<T> &a, int n, int nev, int ncv, LanczosWhich which) {
+  SCOPED_TRACE(::testing::Message() << "which=" << name(which) << " n=" << n << " nev=" << nev
+                                    << " ncv=" << ncv << " sizeof(T)=" << sizeof(T));
+  const auto result = solve_and_check<T>(a, n, nev, ncv, which, tight_options<T>());
+  EXPECT_EQ(result.restarts, 0);
+  EXPECT_EQ(result.matvecs, ncv);
 }
 
 template<typename T>
@@ -287,10 +313,106 @@ TEST(LanczosSolveReferenceTests, FullBasisIsExactFloat) {
   check_full_basis<float>();
 }
 
+// ── thick restart ────────────────────────────────────────────────────────────
+
+/// The wanted ends clustered: the extremes sit 0.02 apart over an evenly spaced
+/// bulk in [-1, 1], so one cycle of ncv = 16 cannot resolve them.
+std::vector<double> clustered_spectrum(int n) {
+  std::vector<double> lambda;
+  for (int i = 0; i < n; ++i) {
+    lambda.push_back(-1.0 + 2.0 * static_cast<double>(i) / static_cast<double>(n - 1));
+  }
+  return lambda;
+}
+
+/// Restarts forced: converged, restarts >= 2, and every restart cost ncv - k matvecs.
+template<typename T>
+void check_restarted(const std::vector<T> &a, int n, int nev, int ncv, LanczosWhich which) {
+  SCOPED_TRACE(::testing::Message() << "which=" << name(which) << " n=" << n << " nev=" << nev
+                                    << " ncv=" << ncv << " sizeof(T)=" << sizeof(T));
+  const auto result = solve_and_check<T>(a, n, nev, ncv, which, tight_options<T>());
+  EXPECT_GE(result.restarts, 2);
+  EXPECT_EQ(result.matvecs, ncv + result.restarts * (ncv - lanczos_restart_keep(nev, ncv)));
+}
+
+template<typename T>
+void check_clustered() {
+  constexpr int n = 100;
+  const auto a = from_spectrum<T>(clustered_spectrum(n), 31u);
+  check_restarted<T>(a, n, 3, 16, LanczosWhich::smallest);
+  check_restarted<T>(a, n, 3, 16, LanczosWhich::largest);
+  check_restarted<T>(a, n, 4, 16, LanczosWhich::both_ends);
+}
+
+TEST(LanczosSolveReferenceTests, ClusteredEndRestartsDouble) {
+  check_clustered<double>();
+}
+TEST(LanczosSolveReferenceTests, ClusteredEndRestartsFloat) {
+  check_clustered<float>();
+}
+
+// max_restarts bounds the work: too few to converge is INTERNAL_ERROR, or success
+// with converged == false; either way the nev eigenvalues are filled.
+TEST(LanczosSolveReferenceTests, MaxRestartsExhausted) {
+  constexpr int n = 100;
+  constexpr int nev = 3;
+  constexpr int ncv = 16;
+  const auto a = from_spectrum<double>(clustered_spectrum(n), 31u);
+  Rig<double> rig(a, n, nev, ncv);
+  auto options = tight_options<double>();
+  options.max_restarts = 1;
+  const int expected_matvecs = ncv + (ncv - lanczos_restart_keep(nev, ncv));
+
+  LanczosResult<double> result;
+  EXPECT_EQ(rig.solve(LanczosWhich::smallest, options, &result).code, kInternalError);
+  EXPECT_FALSE(result.converged);
+  EXPECT_EQ(result.restarts, 1);
+  EXPECT_EQ(result.matvecs, expected_matvecs);
+  EXPECT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(nev));
+
+  options.fail_on_non_convergence = false;
+  EXPECT_TRUE(rig.solve(LanczosWhich::smallest, options, &result).ok());
+  EXPECT_FALSE(result.converged);
+  EXPECT_EQ(result.restarts, 1);
+  EXPECT_EQ(result.matvecs, expected_matvecs);
+  EXPECT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(nev));
+
+  options.max_restarts = 0; // a single cycle
+  EXPECT_TRUE(rig.solve(LanczosWhich::smallest, options, &result).ok());
+  EXPECT_FALSE(result.converged);
+  EXPECT_EQ(result.restarts, 0);
+  EXPECT_EQ(result.matvecs, ncv);
+}
+
+// verify_residuals: the estimates pass, then nev more matvecs confirm them.
+template<typename T>
+void check_verified() {
+  constexpr int n = 100;
+  constexpr int nev = 3;
+  constexpr int ncv = 16;
+  const auto a = from_spectrum<T>(clustered_spectrum(n), 31u);
+  auto options = tight_options<T>();
+  const auto plain = solve_and_check<T>(a, n, nev, ncv, LanczosWhich::smallest, options);
+  options.verify_residuals = true;
+  const auto verified = solve_and_check<T>(a, n, nev, ncv, LanczosWhich::smallest, options);
+  // Same iteration up to the first check; a check that fails keeps restarting.
+  EXPECT_GE(verified.restarts, plain.restarts);
+  EXPECT_GE(verified.matvecs, plain.matvecs + nev);
+}
+
+TEST(LanczosSolveReferenceTests, TrueResidualPassDouble) {
+  check_verified<double>();
+}
+TEST(LanczosSolveReferenceTests, TrueResidualPassFloat) {
+  check_verified<float>();
+}
+
+// ── breakdown recovery ───────────────────────────────────────────────────────
+
 // A diagonal A started from e_0: A e_0 = lambda_0 e_0 exactly, so beta_0 = 0 and
-// step 0 breaks down. The active dimension is 1: lambda_0 is exact, and a
-// request for more pairs than the invariant subspace holds is not converged.
-TEST(LanczosSolveReferenceTests, EarlyBreakdownInvariantSubspace) {
+// step 0 breaks down. Recovery injects a fresh vector orthogonal to e_0 and runs
+// steps 1..ncv-1 again, so nev beyond the invariant subspace still converges.
+TEST(LanczosSolveReferenceTests, EarlyBreakdownRecovers) {
   constexpr int n = 16;
   constexpr int ncv = 8;
   const auto nz = static_cast<std::size_t>(n);
@@ -301,42 +423,127 @@ TEST(LanczosSolveReferenceTests, EarlyBreakdownInvariantSubspace) {
   std::vector<double> e0(nz, 0.0);
   e0[0] = 3.0; // need not be normalised
 
-  {
-    Rig<double> rig(a, n, 1, ncv);
+  for (const int nev : {1, 2}) {
+    SCOPED_TRACE(::testing::Message() << "nev=" << nev);
+    Rig<double> rig(a, n, nev, ncv);
     DeviceBuffer<double> d_start(nz, rig.handle);
     rig.upload(d_start.data(), e0);
-    LanczosOptions<double> options;
+    auto options = tight_options<double>();
     options.start_vector = d_start.data();
     LanczosResult<double> result;
     const Status st = rig.solve(LanczosWhich::smallest, options, &result);
     ASSERT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
     EXPECT_TRUE(result.converged);
-    EXPECT_EQ(result.matvecs, ncv); // the steps after the breakdown still run
-    ASSERT_EQ(result.eigenvalues.size(), 1u);
-    EXPECT_EQ(result.eigenvalues[0], -4.0);
-    const auto x = rig.download(rig.d_x.data(), nz);
-    EXPECT_EQ(std::abs(x[0]), 1.0);
-    for (std::size_t i = 1; i < nz; ++i) {
-      EXPECT_EQ(x[i], 0.0) << i;
+    // The frozen tail after the breakdown, then steps 1..ncv-1 again.
+    EXPECT_GE(result.matvecs, ncv + ncv - 1);
+    ASSERT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(nev));
+    const auto x = rig.download(rig.d_x.data(), nz * static_cast<std::size_t>(nev));
+    for (int c = 0; c < nev; ++c) {
+      const auto cz = static_cast<std::size_t>(c);
+      EXPECT_NEAR(result.eigenvalues[cz], -4.0 + c, 1e-12);
+      EXPECT_NEAR(std::abs(x[cz + cz * nz]), 1.0, 1e-12);
     }
   }
+}
 
-  {
-    Rig<double> rig(a, n, 2, ncv);
-    DeviceBuffer<double> d_start(nz, rig.handle);
-    rig.upload(d_start.data(), e0);
-    LanczosOptions<double> options;
-    options.start_vector = d_start.data();
-    LanczosResult<double> result;
-    EXPECT_EQ(rig.solve(LanczosWhich::smallest, options, &result).code, kInternalError);
-    EXPECT_FALSE(result.converged);
-    ASSERT_EQ(result.eigenvalues.size(), 1u); // the one pair the subspace holds
-    EXPECT_EQ(result.eigenvalues[0], -4.0);
-
-    options.fail_on_non_convergence = false;
-    EXPECT_TRUE(rig.solve(LanczosWhich::smallest, options, &result).ok());
-    EXPECT_FALSE(result.converged);
+/// A diagonal A (both triangles of a dense n x n) with @p lambda on the diagonal.
+template<typename T>
+std::vector<T> diagonal(const std::vector<double> &lambda) {
+  const std::size_t n = lambda.size();
+  std::vector<T> a(n * n, T(0));
+  for (std::size_t i = 0; i < n; ++i) {
+    a[i + i * n] = static_cast<T>(lambda[i]);
   }
+  return a;
+}
+
+/// Solve the diagonal @p lambda for its nev smallest pairs from @p start.
+template<typename T>
+LanczosResult<T> solve_diagonal_from(const std::vector<double> &lambda, const std::vector<T> &start,
+                                     int nev, int ncv) {
+  const int n = static_cast<int>(lambda.size());
+  Rig<T> rig(diagonal<T>(lambda), n, nev, ncv);
+  DeviceBuffer<T> d_start(start.size(), rig.handle);
+  rig.upload(d_start.data(), start);
+  auto options = tight_options<T>();
+  options.start_vector = d_start.data();
+  LanczosResult<T> result;
+  const Status st = rig.solve(LanczosWhich::smallest, options, &result);
+  EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
+  EXPECT_TRUE(result.converged);
+  return result;
+}
+
+// -2 twice, started from e_0: step 0 breaks down on span{e_0}, and the injected
+// vector carries an e_1 component, so recovery finds the second copy of -2 --
+// what syevd reports.
+template<typename T>
+void check_recovery_finds_copy() {
+  constexpr int n = 16;
+  std::vector<double> lambda = {-2.0, -2.0};
+  for (int i = 2; i < n; ++i) {
+    lambda.push_back(static_cast<double>(i));
+  }
+  std::vector<T> e0(static_cast<std::size_t>(n), T(0));
+  e0[0] = T(1);
+  const auto result = solve_diagonal_from<T>(lambda, e0, 2, 8);
+  EXPECT_GE(result.matvecs, 8 + 7);
+  ASSERT_EQ(result.eigenvalues.size(), 2u);
+  const auto expected = reference_selection(diagonal<T>(lambda), n, 2, LanczosWhich::smallest);
+  const T tol = T(1000) * test::eps<T>();
+  EXPECT_NEAR(result.eigenvalues[0], expected[0], tol);
+  EXPECT_NEAR(result.eigenvalues[1], expected[1], tol);
+}
+
+TEST(LanczosSolveReferenceTests, BreakdownRecoveryFindsCopyDouble) {
+  check_recovery_finds_copy<double>();
+}
+TEST(LanczosSolveReferenceTests, BreakdownRecoveryFindsCopyFloat) {
+  check_recovery_finds_copy<float>();
+}
+
+// ── the single-vector limitation ─────────────────────────────────────────────
+
+// -5 with multiplicity 3 at the wanted end, then -4.5, -4 over a bulk in [-1, 1].
+// A start vector meets a multiple eigenvalue's eigenspace along ONE direction
+// (its projection), so the Krylov space never holds a second copy. Modelled
+// exactly: A diagonal, the start vector zero on two of -5's three coordinates
+// (no rounding can seed them). syevd reports -5, -5, -5; the solve reports -5
+// once and the next distinct eigenvalues -- converged, not full multiplicity.
+template<typename T>
+void check_repeated() {
+  constexpr int n = 120;
+  constexpr int nev = 3;
+  std::vector<double> lambda = {-5.0, -5.0, -5.0, -4.5, -4.0};
+  const int bulk = n - static_cast<int>(lambda.size());
+  for (int i = 0; i < bulk; ++i) {
+    lambda.push_back(-1.0 + 2.0 * static_cast<double>(i) / static_cast<double>(bulk - 1));
+  }
+  std::mt19937 gen(9u);
+  std::uniform_real_distribution<double> dist(-1.0, 1.0);
+  std::vector<T> start(static_cast<std::size_t>(n));
+  for (T &x : start) {
+    x = static_cast<T>(dist(gen));
+  }
+  start[1] = T(0);
+  start[2] = T(0);
+
+  const auto result = solve_diagonal_from<T>(lambda, start, nev, 20);
+  ASSERT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(nev));
+  const auto reference = reference_selection(diagonal<T>(lambda), n, 5, LanczosWhich::smallest);
+  EXPECT_EQ(reference[1], T(-5)); // the oracle sees the full multiplicity
+  EXPECT_EQ(reference[2], T(-5));
+  const T tol = T(1000) * test::eps<T>() * T(5);
+  EXPECT_NEAR(result.eigenvalues[0], reference[0], tol);
+  EXPECT_NEAR(result.eigenvalues[1], reference[3], tol); // -4.5: the copies are skipped
+  EXPECT_NEAR(result.eigenvalues[2], reference[4], tol); // -4
+}
+
+TEST(LanczosSolveReferenceTests, RepeatedEigenvalueFoundOnceDouble) {
+  check_repeated<double>();
+}
+TEST(LanczosSolveReferenceTests, RepeatedEigenvalueFoundOnceFloat) {
+  check_repeated<float>();
 }
 
 TEST(LanczosSolveReferenceTests, RejectsZeroStartVector) {

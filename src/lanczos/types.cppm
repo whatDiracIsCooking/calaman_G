@@ -35,6 +35,10 @@ struct LanczosOptions {
   ///        (result still filled); false: success, and the caller reads
   ///        LanczosResult::converged. As DavidsonOptions.
   bool fail_on_non_convergence = true;
+  /// @brief true: once the estimates pass, also require each true residual
+  ///        ||A x_i - theta_i x_i||_2 under the same bound (nev more matvecs per
+  ///        check); a miss keeps restarting.
+  bool verify_residuals = false;
   /// @brief Seed for the generator states behind the random start vector and
   ///        breakdown-recovery vectors.
   std::uint64_t seed = 0x5eedULL;

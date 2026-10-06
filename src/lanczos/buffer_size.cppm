@@ -7,9 +7,10 @@
  * calaman::carve_workspace (null base sizes, real base carves), so the size query
  * and the carving cannot drift. Every region starts 256-byte aligned.
  *
- * The basis V (n x (ncv + 1)) dominates; the rest is O(ncv^2) plus one
- * generator state per row for the random start / breakdown-recovery vectors.
- * The syevd workspace is the single SCRATCH region.
+ * The basis V (n x (ncv + 1)) and the restart's staging block (n x k, k =
+ * lanczos_restart_keep) dominate; the rest is O(ncv^2) plus one generator
+ * state per row for the random start / breakdown-recovery vectors. The syevd
+ * workspace is the single SCRATCH region.
  *
  * Shape contract: nev >= 1, 2 * nev + 1 <= ncv <= n.
  */
@@ -35,6 +36,13 @@ export import calaman.error_handling; // Status -- the cross-domain return type
 
 export namespace calaman {
 
+/// @brief Ritz pairs a thick restart keeps: nev + (ncv - nev) / 2, so each later
+///        cycle adds about as many new steps as it keeps. nev <= k <= ncv - 1
+///        whenever lanczos_shape_ok.
+constexpr int lanczos_restart_keep(const int nev, const int ncv) noexcept {
+  return nev + (ncv - nev) / 2;
+}
+
 /// @brief Pointers into the solver's single device workspace buffer.
 ///
 /// Built once by make_lanczos_slices and passed to lanczos_solve, so the solve
@@ -42,6 +50,7 @@ export namespace calaman {
 template<calaman::real_fp T>
 struct LanczosSlices {
   T *v = nullptr;            ///< n x (ncv + 1): the Lanczos basis, ld n
+  T *keep = nullptr;         ///< n x k: V S_k, the kept Ritz vectors staged for a restart
   T *t = nullptr;            ///< ncv x ncv: the projected matrix T, ld ncv
   T *s = nullptr;            ///< ncv x ncv: T's eigenvectors (syevd output), ld ncv
   T *theta = nullptr;        ///< ncv: Ritz values, ascending
@@ -58,13 +67,16 @@ struct LanczosSlices {
   /// @brief Lay the slices out from @p layout -- the ONLY description of the
   ///        layout, run for sizing and carving alike. Every region is FIXED
   ///        except eig_scratch, carved last. @p eig_len is syevd's lwork at ncv.
-  void carve(WorkspaceLayout &layout, const int n, const int ncv, const int eig_len) {
+  void carve(WorkspaceLayout &layout, const int n, const int nev, const int ncv,
+             const int eig_len) {
     const std::size_t nz = static_cast<std::size_t>(n);
     const std::size_t mz = static_cast<std::size_t>(ncv);
+    const std::size_t kz = static_cast<std::size_t>(lanczos_restart_keep(nev, ncv));
 
     lwork_eig = eig_len;
 
     v = layout.fixed<T>(nz * (mz + 1));
+    keep = layout.fixed<T>(nz * kz);
     t = layout.fixed<T>(mz * mz);
     s = layout.fixed<T>(mz * mz);
     theta = layout.fixed<T>(mz);
@@ -106,7 +118,7 @@ Status make_lanczos_slices(wwr::wwrsolverDnHandle_t solver_handle, const int n, 
                                    wwr::WWRBLAS_FILL_MODE_LOWER, ncv, static_cast<T *>(nullptr),
                                    ncv, static_cast<T *>(nullptr), &lwork_eig));
 
-  const std::size_t bytes = carve_workspace(d_work, slices, n, ncv, lwork_eig);
+  const std::size_t bytes = carve_workspace(d_work, slices, n, nev, ncv, lwork_eig);
   if (lwork_bytes != nullptr) {
     *lwork_bytes = bytes;
   }
@@ -125,6 +137,6 @@ Status lanczos_bufferSize(wwr::wwrsolverDnHandle_t solver_handle, const int n, c
 } // namespace calaman
 
 namespace calaman {
-static_assert(slices_for<LanczosSlices<float>, int, int, int>);
-static_assert(slices_for<LanczosSlices<double>, int, int, int>);
+static_assert(slices_for<LanczosSlices<float>, int, int, int, int>);
+static_assert(slices_for<LanczosSlices<double>, int, int, int, int>);
 } // namespace calaman
