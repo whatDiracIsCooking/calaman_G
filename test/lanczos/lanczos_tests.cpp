@@ -63,6 +63,18 @@ TEST(LanczosArgCheckTests, ShapePredicate) {
   EXPECT_FALSE(lanczos_shape_ok(0, 1, 3));   // ncv > n, n empty
 }
 
+TEST(LanczosArgCheckTests, RestartKeepsBetweenNevAndNcvMinusOne) {
+  EXPECT_EQ(lanczos_restart_keep(1, 3), 2);
+  EXPECT_EQ(lanczos_restart_keep(3, 40), 21);
+  for (int nev = 1; nev <= 20; ++nev) {
+    for (int ncv = 2 * nev + 1; ncv <= 60; ++ncv) {
+      const int k = lanczos_restart_keep(nev, ncv);
+      EXPECT_GE(k, nev) << nev << ' ' << ncv;
+      EXPECT_LE(k, ncv - 1) << nev << ' ' << ncv;
+    }
+  }
+}
+
 TEST(LanczosArgCheckTests, BufferSizeRejectsBadShape) {
   const wwr::wwrsolverDnHandle_t no_handle{}; // never touched on the rejection path
   std::size_t lwork = 0;
@@ -113,6 +125,7 @@ TEST(LanczosArgCheckTests, OptionDefaults) {
   EXPECT_GT(options.tolerance, 0.0f);
   EXPECT_GT(options.max_restarts, 0);
   EXPECT_TRUE(options.fail_on_non_convergence);
+  EXPECT_FALSE(options.verify_residuals);
   EXPECT_EQ(options.start_vector, nullptr);
 }
 
@@ -255,6 +268,7 @@ void check_carve(int n, int nev, int ncv) {
   };
   std::vector<Region> regions = {
       {s.v, sizeof(T) * nz * (mz + 1)},
+      {s.keep, sizeof(T) * nz * static_cast<std::size_t>(lanczos_restart_keep(nev, ncv))},
       {s.t, sizeof(T) * mz * mz},
       {s.s, sizeof(T) * mz * mz},
       {s.theta, sizeof(T) * mz},
