@@ -34,6 +34,7 @@ using calaman::JobSvd;
 using calaman::Jobz;
 using calaman::MatrixNorm;
 using calaman::Norm;
+using calaman::Pivot;
 using calaman::Range;
 using calaman::Region;
 using calaman::Side;
