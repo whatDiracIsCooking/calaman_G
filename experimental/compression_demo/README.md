@@ -385,14 +385,33 @@ permutation, which is **incompressible**:
   sorting shrinks the values by 0.93 GB (1.16→0.23 GB) but the permutation adds
   1.23 GB — a net **+0.30 GB**, dropping 5.12× → **4.04×**.
 
+**Sorting loses in lossless fp64 too, with no downcast at all.** The same sort
+on the 2.56 GB nonzero fp64 stream (the permutation is the same 1.23–1.28 GB):
+
+| codec | C: fp64 in-place | D: sorted values | D: values + perm | **D ratio** | **D vs nonzero fp64** |
+|---|---|---|---|---|---|
+| LZ4 | **2.48×** | 1.44 GB | 2.73 GB | 2.17× | **0.94×** |
+| Snappy | **2.45×** | 1.50 GB | 2.79 GB | 2.12× | **0.92×** |
+| zstd | **2.56×** | 1.39 GB | 2.62 GB | 2.26× | **0.98×** |
+
+- Sorting shrinks the fp64 values only ~1.7× (2.31→1.39 GB zstd), against 4.9×
+  for fp32: the 29 extra low mantissa bits stay near-random however the values
+  are ordered, so sorting's gain is capped by the high bits alone.
+- **D vs nonzero fp64 < 1 on every codec**: sorted values plus the permutation
+  are *larger* than the uncompressed nonzero stream they encode. The headline
+  `D ratio` stays above 1 only because zero-stripping already did the work;
+  sorting then subtracts from it (2.56× → 2.26× zstd). `C` re-measures #123 and
+  reproduces it exactly.
+
 **Takeaway:** for a general lossless-position CDERI store, **don't pre-sort —
 just fp32-downcast.** Sorting only pays when the permutation is cheap (data
 already near-sorted, or a use that doesn't need the original order restored),
 which density-fitting integrals are not. The honest ranking on this tensor,
 within the fp32/lossless tiers: fp32-in-place (5.12×) > fp32-sorted (4.04×) >
-fp64 lossless zero-strip (2.56×). (A more aggressive fp16 tier beats all of
-these — `fp16 in-place, per-element` at 8.32× — but only where a ~5e-4 relative
-error is acceptable; see block-floating-point below.)
+fp64 lossless zero-strip (2.56×) > fp64-sorted (2.26×). (A more aggressive
+fp16 tier beats all of these — `fp16 in-place, per-element` at 8.32× — but
+only where a ~5e-4 relative error is acceptable; see block-floating-point
+below.)
 
 ### Block-floating-point on the sorted stream (`cderi_block_scale_demo.py`)
 
@@ -508,7 +527,7 @@ only to make an aggressively narrow downcast *safe*, never to scale fp32.
 | `compression_demo.py` | the lossless spike: numpy transforms + `_selfcheck` + ratio/scaling/split tables |
 | `cderi_demo.py` | the same transforms + codecs over a real multi-GB PySCF RI-fit CDERI `.h5` |
 | `cderi_nonzero_demo.py` | strip exact zeros, compress the dense stream + a presence bitmask; sparse-split vs in-place |
-| `cderi_fp32_sort_demo.py` | fp32 downcast of the nonzero stream, and whether pre-sorting pays once the permutation is stored (it doesn't) |
+| `cderi_fp32_sort_demo.py` | fp32 downcast of the nonzero stream, and whether pre-sorting pays once the permutation is stored (it doesn't, in fp32 or lossless fp64) |
 | `cderi_block_scale_demo.py` | per-region `2^k` (block-floating-point) scaling on the sorted stream — the accuracy lever: free side-channel, but walled by the permutation ceiling |
 | `lossy_downcast.py` | lossy fp32/fp16 downcast, global vs per-element (block-FP) scaling |
 | `bit_transpose_demo.py` | bit-plane vs byte-plane transpose + xor/transpose commutativity |
