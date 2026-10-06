@@ -20,15 +20,16 @@ and a tridiagonal eigensolver are out of scope.
 
 | Partition | Contents |
 |---|---|
-| `:types` | `LanczosWhich`, `LanczosOptions`, `LanczosResult`, `LanczosMatvecFn` |
+| `:types` | `LanczosWhich`, `LanczosOptions`, `LanczosResult`, the `lanczos_matvec` concept |
 | `:buffer_size` | `LanczosSlices`, `lanczos_shape_ok`, `lanczos_restart_keep`, `make_lanczos_slices` / `lanczos_bufferSize` |
 | `:ritz` | `LanczosRitz`, `LanczosRitzSelection`, `lanczos_select`, `lanczos_ritz_extract` / `_select` / `_compact` / `_vectors` |
 | `:solve` | `lanczos_solve` |
 
 ## The idea
 
-The operator enters as a callback (`LanczosMatvecFn`: `y = A x`, one device
-vector). Each cycle runs `ncv` Lanczos steps: a matvec, `alpha_j = v_j^T w`,
+The operator enters as a callable constrained by `lanczos_matvec` (`y = A x`,
+one device vector) — a template parameter, not a `std::function`, so a lambda is
+passed and inlined with no type erasure. Each cycle runs `ncv` Lanczos steps: a matvec, `alpha_j = v_j^T w`,
 full reorthogonalization of `w` against the basis `V` by classical Gram–Schmidt
 applied twice (CGS2), `beta_j = ||w||`, and `v_{j+1} = w / beta_j`. The scalars
 stay on the device (pointer mode DEVICE); one status read per cycle is the only

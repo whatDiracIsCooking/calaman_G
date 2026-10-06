@@ -2,7 +2,7 @@
 //
 //   * the argument-checking contract of lanczos_bufferSize / make_lanczos_slices
 //     / lanczos_solve -- nev < 1, ncv < 2*nev + 1, ncv > n, a null out-pointer,
-//     a null result or an empty matvec is rejected before any handle use
+//     a null result or a null matvec is rejected before any handle use
 //     (host-only; the solve itself is lanczos_solve_tests.cpp);
 //   * the :ritz selection -- positions per LanczosWhich, the nested-selection
 //     property, residual estimates and convergence flags on a hand-built
@@ -45,11 +45,22 @@ using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbor
 
 constexpr int kInvalidValue = static_cast<int>(wwr::WWRBLAS_STATUS_INVALID_VALUE);
 
-LanczosMatvecFn<double> identity_matvec() {
+auto identity_matvec() {
   return [](wwr::wwrStream_t, const double *, double *) -> Status {
     return wwr::WWRBLAS_STATUS_SUCCESS;
   };
 }
+
+using MatvecPtr = Status (*)(wwr::wwrStream_t, const double *, double *);
+using MatvecFunction = std::function<Status(wwr::wwrStream_t, const double *, double *)>;
+
+// The concept accepts lambdas, function pointers and std::function of the right
+// shape, and rejects the wrong arity or element type.
+static_assert(lanczos_matvec<decltype(identity_matvec()), double>);
+static_assert(lanczos_matvec<MatvecPtr, double>);
+static_assert(lanczos_matvec<MatvecFunction, double>);
+static_assert(!lanczos_matvec<decltype(identity_matvec()), float>);
+static_assert(!lanczos_matvec<Status (*)(wwr::wwrStream_t, const double *), double>);
 
 // ── argument checking (host-only; the handles are never dereferenced) ────────
 
@@ -103,7 +114,7 @@ TEST(LanczosArgCheckTests, BufferSizeRejectsNullOutPointer) {
   EXPECT_EQ(lanczos_bufferSize<double>(no_handle, 16, 2, 5, nullptr).code, kInvalidValue);
 }
 
-Status solve_with(int n, int nev, int ncv, const LanczosMatvecFn<double> &matvec,
+Status solve_with(int n, int nev, int ncv, const lanczos_matvec<double> auto &matvec,
                   LanczosResult<double> *result) {
   const LanczosSlices<double> s;
   return lanczos_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
@@ -117,7 +128,9 @@ TEST(LanczosArgCheckTests, SolveRejectsBadArguments) {
   EXPECT_EQ(solve_with(16, 4, 8, identity_matvec(), &result).code, kInvalidValue);
   EXPECT_EQ(solve_with(8, 4, 9, identity_matvec(), &result).code, kInvalidValue);
   EXPECT_EQ(solve_with(16, 2, 5, identity_matvec(), nullptr).code, kInvalidValue);
-  EXPECT_EQ(solve_with(16, 2, 5, LanczosMatvecFn<double>{}, &result).code, kInvalidValue);
+  // The nullable callables: a null function pointer and an empty std::function.
+  EXPECT_EQ(solve_with(16, 2, 5, MatvecPtr{nullptr}, &result).code, kInvalidValue);
+  EXPECT_EQ(solve_with(16, 2, 5, MatvecFunction{}, &result).code, kInvalidValue);
 }
 
 TEST(LanczosArgCheckTests, OptionDefaults) {
