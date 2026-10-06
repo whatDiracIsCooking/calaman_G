@@ -2,8 +2,8 @@
 //
 //   * the argument-checking contract of lanczos_bufferSize / make_lanczos_slices
 //     / lanczos_solve -- nev < 1, ncv < 2*nev + 1, ncv > n, a null out-pointer,
-//     a null result or an empty matvec is rejected before any handle use, and a
-//     valid call reports NOT_SUPPORTED until the solve lands (host-only);
+//     a null result or an empty matvec is rejected before any handle use
+//     (host-only; the solve itself is lanczos_solve_tests.cpp);
 //   * the :ritz selection -- positions per LanczosWhich, the nested-selection
 //     property, residual estimates and convergence flags on a hand-built
 //     snapshot, and each Ritz stage's argument checks (host-only);
@@ -44,7 +44,6 @@ template<typename T>
 using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbort, DeviceHandle>;
 
 constexpr int kInvalidValue = static_cast<int>(wwr::WWRBLAS_STATUS_INVALID_VALUE);
-constexpr int kNotSupported = static_cast<int>(wwr::WWRBLAS_STATUS_NOT_SUPPORTED);
 
 LanczosMatvecFn<double> identity_matvec() {
   return [](wwr::wwrStream_t, const double *, double *) -> Status {
@@ -107,15 +106,6 @@ TEST(LanczosArgCheckTests, SolveRejectsBadArguments) {
   EXPECT_EQ(solve_with(8, 4, 9, identity_matvec(), &result).code, kInvalidValue);
   EXPECT_EQ(solve_with(16, 2, 5, identity_matvec(), nullptr).code, kInvalidValue);
   EXPECT_EQ(solve_with(16, 2, 5, LanczosMatvecFn<double>{}, &result).code, kInvalidValue);
-}
-
-TEST(LanczosArgCheckTests, SolveIsNotSupportedYet) {
-  LanczosResult<double> result;
-  result.converged = true;
-  result.eigenvalues = {1.0};
-  EXPECT_EQ(solve_with(16, 2, 5, identity_matvec(), &result).code, kNotSupported);
-  EXPECT_FALSE(result.converged);
-  EXPECT_TRUE(result.eigenvalues.empty());
 }
 
 TEST(LanczosArgCheckTests, OptionDefaults) {

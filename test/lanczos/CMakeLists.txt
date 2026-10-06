@@ -1,6 +1,6 @@
 # Suite for calaman.lanczos: the argument-checking contract, the workspace
 # sizing/carving, the device kernels behind lanczos_bridge.h, and the Ritz
-# extraction against the reference LAPACK.
+# extraction and the solve against the reference LAPACK.
 #
 # lanczos_kernel_tests.cpp and lanczos_ritz_tests.cpp #include
 # "lanczos/lanczos_bridge.h" to reach the launchers: the src/ root comes through
@@ -84,5 +84,35 @@ calaman_add_gtest_suite_tests(
   lanczos_ritz_tests
   SUITES
   LanczosRitzReferenceTests
+  REQUIRES_GPU
+)
+
+# The single-cycle solve against LAPACKE_?syevd (plus ?geqrf/?orgqr for the
+# random orthogonal Q of A = Q diag(lambda) Q^T), through a symv-backed matvec
+# adapter: wwr::wrappers::blas supplies symv. Same lapack_reference guard.
+calaman_add_gtest_executable(
+  NAME
+  lanczos_solve_tests
+  SOURCES
+  lanczos_solve_tests.cpp
+  LINK
+  calaman::lanczos
+  calaman::test::shared::abort_policy
+  calaman::test::shared::device_handle
+  calaman::test::shared::tolerance
+  calaman::test::utils::shared_device
+  calaman::lapack_reference
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::wrappers::blas
+  wwr::extension::memory_buffer
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  lanczos_solve_tests
+  SUITES
+  LanczosSolveReferenceTests
   REQUIRES_GPU
 )
