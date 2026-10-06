@@ -95,6 +95,15 @@ public:
     return (base_ != nullptr) ? reinterpret_cast<T *>(base_ + fixed_) : nullptr;
   }
 
+  /// @brief Reserve a fixed region holding ONE S -- a device status block the
+  ///        host reads back in one copy; nullptr in sizing mode. Name its
+  ///        members through member_ptr, not offsets.
+  template <typename S>
+    requires std::is_trivially_copyable_v<S> && std::is_standard_layout_v<S>
+  [[nodiscard]] S *fixed_struct(const std::size_t alignment = 256) noexcept {
+    return fixed<S>(1, alignment);
+  }
+
   /// @brief The address the next fixed() would return, WITHOUT reserving it -- the
   ///        base of a sub-layout a caller carves separately (e.g. expm's pade
   ///        region). nullptr in sizing mode.
@@ -105,6 +114,20 @@ public:
   /// @brief Total bytes the layout spans: every fixed region plus the largest scratch.
   [[nodiscard]] std::size_t total() const noexcept { return fixed_ + scratch_; }
 };
+
+/// @brief &base->*member, or nullptr when @p base is -- a carve()'s pointer into
+///        a fixed_struct, null in sizing mode like the struct itself. Address
+///        arithmetic only: @p base may be a device pointer, nothing is read.
+export template <typename S, typename M>
+[[nodiscard]] M *member_ptr(S *const base, M S::*const member) noexcept {
+  return (base != nullptr) ? &(base->*member) : nullptr;
+}
+
+/// @brief member_ptr for an array member, decayed to its first element.
+export template <typename S, typename E, std::size_t N>
+[[nodiscard]] E *member_ptr(S *const base, E (S::*const member)[N]) noexcept {
+  return (base != nullptr) ? (base->*member) : nullptr;
+}
 
 /// @brief A slices struct that lays itself out: default-constructible, with a
 ///        carve(WorkspaceLayout&, args...) member that is the ONLY description

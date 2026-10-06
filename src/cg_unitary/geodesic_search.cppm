@@ -358,7 +358,7 @@ Status sample_derivative(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHan
   }
 
   const Status ex = expm<T>(cublas_handle, cusolver_handle, stream, n, s.tmp, n, s.rot, n, s.scratch,
-                            s.scratch_bytes, s.ints + 3);
+                            s.scratch_bytes, s.info);
   if (!ex.ok()) {
     return ex;
   }
@@ -521,14 +521,14 @@ Status geodesic_search_poly(wwr::wwrblasHandle_t cublas_handle,
 
   // Table 1 step 8: the first zero crossing, also on the device. The bracket's
   // upper bound is T_mu -- a root beyond it would be extrapolation past the fit.
-  device::cg_poly_smallest_positive_real_root<RealT>(stream, s.coeffs_real, P, t_mu, s.mu, s.ints);
+  device::cg_poly_smallest_positive_real_root<RealT>(stream, s.coeffs_real, P, t_mu, s.mu, s.found);
 
   RealT host_mu{0};
   int host_found = 0;
   wwr::wwrError_t e = wwr::wwrMemcpyAsync(&host_mu, s.mu, sizeof(RealT), wwr::wwrMemcpyDeviceToHost,
                                           stream);
   if (e == wwr::wwrSuccess) {
-    e = wwr::wwrMemcpyAsync(&host_found, s.ints, sizeof(int), wwr::wwrMemcpyDeviceToHost, stream);
+    e = wwr::wwrMemcpyAsync(&host_found, s.found, sizeof(int), wwr::wwrMemcpyDeviceToHost, stream);
   }
   if (e == wwr::wwrSuccess) {
     e = wwr::wwrStreamSynchronize(stream);
@@ -627,14 +627,14 @@ Status geodesic_search_dft(wwr::wwrblasHandle_t cublas_handle,
   // Step 11: the zero crossings of the reconstructed Fourier derivative, as
   // arguments theta = 2 pi mu / T_DFT -- found directly on the real trig
   // polynomial the centred coefficients define, no complex root solve.
-  device::cg_dft_root_args<RealT, CplxT>(stream, s.coeffs_cplx, num_dft, s.args, s.ints + 2,
-                                         s.ints + 1);
+  device::cg_dft_root_args<RealT, CplxT>(stream, s.coeffs_cplx, num_dft, s.args, s.num_args,
+                                         s.root_info);
 
   // Step 13's inputs: the sampled cost values.
   device::cg_real_parts<T, RealT>(stream, s.cost_dots, num_dft, RealT{1}, s.cost_vals);
 
   // Steps 12 and 13: choose among the candidates, anchored on the sampled cost.
-  device::cg_select_dft_step<RealT>(stream, s.args, s.ints + 2, s.cost_vals, num_dft, t_dft,
+  device::cg_select_dft_step<RealT>(stream, s.args, s.num_args, s.cost_vals, num_dft, t_dft,
                                     dir == CgDirection::Maximize ? 1 : 0, s.mu);
 
   RealT host_mu{0};
@@ -642,7 +642,7 @@ Status geodesic_search_dft(wwr::wwrblasHandle_t cublas_handle,
   wwr::wwrError_t e = wwr::wwrMemcpyAsync(&host_mu, s.mu, sizeof(RealT), wwr::wwrMemcpyDeviceToHost,
                                           stream);
   if (e == wwr::wwrSuccess) {
-    e = wwr::wwrMemcpyAsync(&host_num_args, s.ints + 2, sizeof(int), wwr::wwrMemcpyDeviceToHost,
+    e = wwr::wwrMemcpyAsync(&host_num_args, s.num_args, sizeof(int), wwr::wwrMemcpyDeviceToHost,
                             stream);
   }
   if (e == wwr::wwrSuccess) {

@@ -302,7 +302,7 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
     }
 
     status = expm<T>(cublas_handle, cusolver_handle, stream, n, s.tmp, n, s.rot, n, s.scratch,
-                     s.scratch_bytes, s.ints + 3);
+                     s.scratch_bytes, s.info);
     if (!status.ok()) {
       return publish(CgStopReason::NumericalFailure, status);
     }
@@ -335,7 +335,7 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
       if (orthogonalize_bufferSize<T>(cusolver_handle, n, n, &lwork_q).ok() &&
           static_cast<std::size_t>(lwork_q) * sizeof(T) <= s.scratch_bytes) {
         orthogonalize<T>(cusolver_handle, n, n, d_W, static_cast<T *>(s.scratch), lwork_q,
-                         s.ints + 3, s.ints + 3);
+                         s.info, s.info);
       }
     }
 

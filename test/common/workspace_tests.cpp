@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef> // offsetof
+
 import std;
 
 import calaman.common;
@@ -94,6 +96,39 @@ TEST(CommonWorkspaceTests, LayoutRegionsStartAligned) {
                         static_cast<const void *>(scratch)}) {
     EXPECT_EQ(reinterpret_cast<std::uintptr_t>(p) % kAlign, 0U);
   }
+}
+
+// A status block in the shape fixed_struct is for: ints plus an array member.
+struct TestStatus {
+  int info[3];
+  int count;
+  double residual;
+};
+
+TEST(CommonWorkspaceTests, FixedStructAndMemberPtrAreNullWhenSizing) {
+  WorkspaceLayout layout(nullptr);
+  TestStatus *const status = layout.fixed_struct<TestStatus>();
+  EXPECT_EQ(status, nullptr);
+  EXPECT_EQ(layout.total(), aligned(sizeof(TestStatus)));
+  EXPECT_EQ(member_ptr(status, &TestStatus::count), nullptr);
+  EXPECT_EQ(member_ptr(status, &TestStatus::info), nullptr);
+}
+
+TEST(CommonWorkspaceTests, MemberPtrMatchesOffsetof) {
+  alignas(kAlign) static std::byte buffer[2 * kAlign];
+  WorkspaceLayout layout(buffer);
+  (void)layout.fixed<char>(1);
+  TestStatus *const status = layout.fixed_struct<TestStatus>();
+  ASSERT_EQ(reinterpret_cast<std::byte *>(status), buffer + kAlign);
+
+  const auto at = [&](const void *p) {
+    return static_cast<std::size_t>(static_cast<const std::byte *>(p) -
+                                    reinterpret_cast<std::byte *>(status));
+  };
+  int *const info = member_ptr(status, &TestStatus::info); // the array overload decays
+  EXPECT_EQ(at(info), offsetof(TestStatus, info));
+  EXPECT_EQ(at(member_ptr(status, &TestStatus::count)), offsetof(TestStatus, count));
+  EXPECT_EQ(at(member_ptr(status, &TestStatus::residual)), offsetof(TestStatus, residual));
 }
 
 } // namespace

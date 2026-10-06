@@ -30,15 +30,13 @@ module;
 // (export import) supplies.
 #include "error_handling/error_macros.h"
 
-#include <cstddef>
-
 export module calaman.feast:buffer_size;
 
 import std;
 import wwr.blas;            // WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL_MODE_*
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEigMode_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.wrappers.solver; // syevd_bufferSize
-import calaman.common;      // align_up, WorkspaceLayout, carve_workspace, real_fp, RealToComplexType
+import calaman.common;      // align_up, WorkspaceLayout, member_ptr, carve_workspace, real_fp, ...
 import calaman.orthogonalize; // orthogonalize_bufferSize
 export import calaman.error_handling; // Status -- the cross-domain return type
 
@@ -121,13 +119,10 @@ struct FeastSlices {
     colsum = layout.fixed<T>(nz);
     norm_a = layout.fixed<T>(1);
 
-    std::byte *const status_base = layout.fixed<std::byte>(sizeof(device::FeastStatus<T>));
-    status = reinterpret_cast<device::FeastStatus<T> *>(status_base);
-    if (status_base != nullptr) {
-      lu_info = reinterpret_cast<int *>(status_base + offsetof(device::FeastStatus<T>, lu_info));
-      qr_info = reinterpret_cast<int *>(status_base + offsetof(device::FeastStatus<T>, qr_info));
-      eig_info = reinterpret_cast<int *>(status_base + offsetof(device::FeastStatus<T>, eig_info));
-    }
+    status = layout.fixed_struct<device::FeastStatus<T>>();
+    lu_info = member_ptr(status, &device::FeastStatus<T>::lu_info);
+    qr_info = member_ptr(status, &device::FeastStatus<T>::qr_info);
+    eig_info = member_ptr(status, &device::FeastStatus<T>::eig_info);
 
     // One SCRATCH region: orthogonalize's workspace, then syevd's. They are
     // never live together, so the block is sized to the larger and reused.

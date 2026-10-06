@@ -96,8 +96,11 @@ small `src/lapack/` modules (geev, orghr) and nnls.
 - **Null-base mode must be safe.** Over a null base every `fixed()`/
   `scratch()` returns nullptr while advancing offsets identically. Derived
   pointers — `ints + 1`, `base + offsetof(...)` — need a null guard or they
-  manufacture non-null garbage in sizing mode (see nnls's int block and
-  feast's `FeastStatus` field pointers).
+  manufacture non-null garbage in sizing mode (see nnls's int block). A
+  device status block is better as a named POD: carve it with
+  `layout.fixed_struct<S>()` and derive field pointers with
+  `member_ptr(status, &S::field)`, which is null-safe and decays array
+  members (feast's `FeastStatus`, cg_unitary's `CgStatus`).
 - **Conditional regions are fine** — carve them under the same flag the
   routine branches on, so the unused path costs nothing (davidson's
   `with_metric` block, geev's `wantvl`/`wantvr` matrices).
@@ -144,7 +147,7 @@ Worked examples, simplest first: `src/horner/interface.cppm` (sizing-only),
 `src/lapack/orghr/interface.cppm` (two regions), `src/nnls/nnls.cppm`
 (module-internal struct, derived pointers), `src/davidson/buffer_size.cppm`
 (conditional regions + shared scratch), `src/feast/buffer_size.cppm` (strides,
-`offsetof` fields), `src/lapack/geev/geev.cppm` (conditional + five scratch
+`fixed_struct` status + `member_ptr` fields), `src/lapack/geev/geev.cppm` (conditional + five scratch
 users + zero-length zone base), `src/expm/detail.cppm` + `buffer_size.cppm`
 (composed sub-layout). History: #137 (machinery + the two drift-prone
 migrations), #138 (adoption), #139 (WorkspaceBuilder deleted).
