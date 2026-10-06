@@ -74,6 +74,11 @@ add_subdirectory(lange)
 # calaman.common and calaman.error_handling (added one level up).
 add_subdirectory(lanst)
 
+# calaman.lansy -- the norm of a symmetric matrix from one triangle (LAPACK's
+# ?lansy), which ?syev scales by. Links only calaman.common and
+# calaman.error_handling (added one level up).
+add_subdirectory(lansy)
+
 # calaman.lasr -- apply a sequence of plane rotations (LAPACK's ?lasr), plus the
 # block-cooperative lasr_block header (calaman::lasr::header) that the ?steqr
 # kernel includes, so it must precede it. Links only calaman.common and
