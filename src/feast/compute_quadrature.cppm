@@ -49,7 +49,7 @@ export module calaman.feast:compute_quadrature;
 
 import std;
 import calaman.common;      // kPi, real_fp
-import :feast_quadrature;
+import :quadrature;
 
 namespace calaman {
 
@@ -65,7 +65,7 @@ namespace calaman {
 template<calaman::real_fp T, std::size_t N>
   requires(N == 4 || N == 8)
 device::FeastContour<T> make_feast_contour(const T Emin, const T Emax) {
-  const auto &gl = feast_gauss_legendre<T, N>();
+  const auto &gl = gauss_legendre<T, N>();
   const T r = (Emax - Emin) / T(2);
   const T center = (Emin + Emax) / T(2);
 

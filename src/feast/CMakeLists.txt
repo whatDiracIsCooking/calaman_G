@@ -60,12 +60,12 @@ calaman_add_cxx_module_library(
   PRIMARY_INTERFACE
   interface.cppm
   PARTITIONS
-  feast_quadrature.cppm
+  quadrature.cppm
   compute_quadrature.cppm
   buffer_size.cppm
   contour_filter.cppm
   rayleigh_ritz.cppm
-  feast_solver.cppm
+  driver.cppm
   LINK_PUBLIC
   wwr::runtime_api
   wwr::blas

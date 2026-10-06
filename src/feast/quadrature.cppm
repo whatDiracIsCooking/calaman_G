@@ -1,8 +1,8 @@
 /**
- * @file feast_quadrature.cppm
+ * @file quadrature.cppm
  * @brief Compile-time FEAST contour-integration quadrature constants
  *
- * The :feast_quadrature partition of calaman.feast. Stores the Gauss-Legendre
+ * The :quadrature partition of calaman.feast. Stores the Gauss-Legendre
  * nodes and weights the FEAST eigenvalue algorithm uses on the upper half of its
  * contour (Polizzi, arXiv:0901.2665).
  *
@@ -13,7 +13,7 @@
  * Module-internal: nothing here is exported.
  */
 
-export module calaman.feast:feast_quadrature;
+export module calaman.feast:quadrature;
 
 import std;
 import calaman.common;  // real_fp
@@ -91,7 +91,7 @@ inline constexpr FeastQuadrature<T, 8> kFeastQuadrature8 = {
 /// @brief The quadrature table for @p N nodes.
 template<calaman::real_fp T, std::size_t N>
   requires(N == 4 || N == 8)
-constexpr const FeastQuadrature<T, N> &feast_gauss_legendre() {
+constexpr const FeastQuadrature<T, N> &gauss_legendre() {
   if constexpr (N == 4) {
     return kFeastQuadrature4<T>;
   } else {

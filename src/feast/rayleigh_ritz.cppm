@@ -66,11 +66,10 @@ namespace calaman {
  * @param d_X  Out: n x m0, leading dimension n.
  */
 template<calaman::real_fp T>
-Status feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
-                           wwr::wwrsolverDnHandle_t cusolver_handle, wwr::wwrStream_t stream,
-                           const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
-                           const int lda, const int m0, const T Emin, const T Emax,
-                           const FeastSlices<T> &s, T *d_lambda, T *d_X) {
+Status rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
+                     wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
+                     const T *d_A, const int lda, const int m0, const T Emin, const T Emax,
+                     const FeastSlices<T> &s, T *d_lambda, T *d_X) {
   wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
   const wwr::extension::ScopedPointerMode mode{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
                                                PointerModeStatus{&pm_status}};
@@ -103,12 +102,12 @@ Status feast_rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle,
 }
 
 /**
- * @brief ||A||_1 into s.norm_a, the scale feast_residuals measures against.
+ * @brief ||A||_1 into s.norm_a, the scale residuals() measures against.
  *        Once per solve.
  */
 template<calaman::real_fp T>
-Status feast_matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
-                         const T *d_A, const int lda, const FeastSlices<T> &s) {
+Status matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
+                   const T *d_A, const int lda, const FeastSlices<T> &s) {
   device::feast_sym_norm1(stream, uplo == wwr::WWRBLAS_FILL_MODE_LOWER, n, d_A, lda, s.colsum,
                           s.norm_a);
   CLM_TRY(wwr::wwrGetLastError());
@@ -117,7 +116,7 @@ Status feast_matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t u
 
 /**
  * @brief The relative residual of each in-interval Ritz pair from the last
- *        feast_rayleigh_ritz, into s.residuals, and their maximum into s.status.
+ *        rayleigh_ritz, into s.residuals, and their maximum into s.status.
  *
  *   ||A x - lambda x||_1 / ((||A||_1 + |lambda|) ||x||_1)
  *
@@ -126,8 +125,8 @@ Status feast_matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t u
  * reads the same whatever the scale of A or of the interval.
  */
 template<calaman::real_fp T>
-Status feast_residuals(wwr::wwrStream_t stream, const int n, const int m0, const T *d_X,
-                       const T *d_lambda, const FeastSlices<T> &s) {
+Status residuals(wwr::wwrStream_t stream, const int n, const int m0, const T *d_X,
+                 const T *d_lambda, const FeastSlices<T> &s) {
   device::feast_residuals(stream, n, m0, d_X, s.a_ritz, d_lambda, s.norm_a, s.residuals, s.status);
   CLM_TRY(wwr::wwrGetLastError());
   return wwr::WWRBLAS_STATUS_SUCCESS;

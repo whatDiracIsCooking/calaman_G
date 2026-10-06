@@ -34,7 +34,7 @@ calaman_add_gtest_executable(
 )
 
 # The rational filter and the argument-checking contract are pure host calls --
-# feast_rational_filter() and feast_solver()'s rejection paths return before any
+# feast_rational_filter() and feast()'s rejection paths return before any
 # device work -- so they run on a card-less runner.
 calaman_add_gtest_suite_tests(
   TARGET

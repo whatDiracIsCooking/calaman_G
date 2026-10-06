@@ -1,8 +1,8 @@
 /**
- * @file feast_solver.cppm
+ * @file driver.cppm
  * @brief FEAST: the eigenpairs of a real symmetric matrix with eigenvalues in [Emin, Emax]
  *
- * The :feast_solver partition of calaman.feast.
+ * The :driver partition of calaman.feast.
  *
  * Polizzi, "Density-matrix-based algorithm for solving eigenvalue problems",
  * Phys. Rev. B 79 (2009) 115112, arXiv:0901.2665.
@@ -36,7 +36,7 @@ module;
 // (export import) supplies.
 #include "error_handling/error_macros.h"
 
-export module calaman.feast:feast_solver;
+export module calaman.feast:driver;
 
 import std;
 import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize, wwrMemcpyDeviceToHost, wwrSuccess
@@ -59,7 +59,7 @@ enum class FeastStopReason {
   NumericalFailure, ///< a factorization broke down, or a kernel failed
 };
 
-/// Tuning for feast_solver.
+/// Tuning for feast.
 template<calaman::real_fp T>
 struct FeastOptions {
   int max_iter = 20;
@@ -130,11 +130,11 @@ struct FeastInfo {
  */
 template<calaman::real_fp T, std::size_t Ne = 8>
   requires(Ne == 4 || Ne == 8)
-Status feast_solver(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
-                    wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
-                    const T *d_A, const int lda, const T Emin, const T Emax, const int m0,
-                    T *d_lambda, T *d_Q, void *d_work, const std::size_t lwork_bytes,
-                    const FeastOptions<T> &opts = {}, FeastInfo<T> *info = nullptr) {
+Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
+             wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
+             const int lda, const T Emin, const T Emax, const int m0, T *d_lambda, T *d_Q,
+             void *d_work, const std::size_t lwork_bytes, const FeastOptions<T> &opts = {},
+             FeastInfo<T> *info = nullptr) {
   FeastInfo<T> local{};
   const auto publish = [&](const FeastStopReason reason, const Status st) {
     local.reason = reason;
@@ -169,12 +169,12 @@ Status feast_solver(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t
   // ── once per solve: factor the resolvents, and ||A||_1 ──────────────────
   // NumericalFailure steps publish the reason before returning the step's own
   // Status, so they keep the check-and-publish shape rather than a bare CLM_TRY.
-  Status status = feast_factor_resolvents<T>(cublas_handle, stream, uplo, n, d_A, lda, contour, s);
+  Status status = factor_resolvents<T>(cublas_handle, stream, uplo, n, d_A, lda, contour, s);
   if (!status.ok()) {
     return publish(FeastStopReason::NumericalFailure, status);
   }
 
-  status = feast_matrix_norm<T>(stream, uplo, n, d_A, lda, s);
+  status = matrix_norm<T>(stream, uplo, n, d_A, lda, s);
   if (!status.ok()) {
     return publish(FeastStopReason::NumericalFailure, status);
   }
@@ -183,18 +183,18 @@ Status feast_solver(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t
   int m_prev = -1; // no count yet
 
   for (int k = 0; k < opts.max_iter; ++k) {
-    status = feast_apply_filter<T>(cublas_handle, stream, n, m0, d_Q, contour, s, s.basis);
+    status = apply_filter<T>(cublas_handle, stream, n, m0, d_Q, contour, s, s.basis);
     if (!status.ok()) {
       return publish(FeastStopReason::NumericalFailure, status);
     }
 
-    status = feast_rayleigh_ritz<T>(cublas_handle, cusolver_handle, stream, uplo, n, d_A, lda, m0,
-                                    Emin, Emax, s, d_lambda, d_Q);
+    status = rayleigh_ritz<T>(cublas_handle, cusolver_handle, stream, uplo, n, d_A, lda, m0, Emin,
+                              Emax, s, d_lambda, d_Q);
     if (!status.ok()) {
       return publish(FeastStopReason::NumericalFailure, status);
     }
 
-    status = feast_residuals<T>(stream, n, m0, d_Q, d_lambda, s);
+    status = residuals<T>(stream, n, m0, d_Q, d_lambda, s);
     if (!status.ok()) {
       return publish(FeastStopReason::NumericalFailure, status);
     }

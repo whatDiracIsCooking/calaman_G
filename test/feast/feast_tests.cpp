@@ -18,7 +18,7 @@
 // The numerical suites stage the matrices on the device and run the kernels +
 // batched BLAS + eigensolver, so they are REQUIRES_GPU (labeled `gpu`, excluded
 // by `ctest -LE gpu`); the filter and argument-checking cases are host-only
-// (feast_rational_filter and feast_solver's rejection paths return before any
+// (feast_rational_filter and feast's rejection paths return before any
 // device work).
 //
 // Guarded on calaman::lapack_reference (see CMakeLists.txt): the reference suite
@@ -223,9 +223,9 @@ FeastResult<T> run_feast(std::shared_ptr<DeviceHandle> handle, Handles &h, int n
   DeviceBuffer<T> d_lambda(m0, handle);
 
   FeastResult<T> r;
-  r.status = feast_solver<T, Ne>(h.blas, h.solver, handle->stream().get(),
-                                 wwr::WWRBLAS_FILL_MODE_LOWER, n, d_a.data(), n, Emin, Emax, m0,
-                                 d_lambda.data(), d_q.data(), d_work.data(), bytes, opts, &r.info);
+  r.status = feast<T, Ne>(h.blas, h.solver, handle->stream().get(), wwr::WWRBLAS_FILL_MODE_LOWER, n,
+                          d_a.data(), n, Emin, Emax, m0, d_lambda.data(), d_q.data(), d_work.data(),
+                          bytes, opts, &r.info);
   wwr::wwrStreamSynchronize(handle->stream().get());
   r.lambda = from_device(handle, d_lambda, m0);
   r.q = from_device(handle, d_q, static_cast<std::size_t>(n) * m0);
@@ -288,11 +288,10 @@ TEST(FeastArgCheckTests, RejectsBadArgumentsBeforeTouchingTheDevice) {
   wwr::wwrblasHandle_t null_blas{};
   wwr::wwrsolverDnHandle_t null_solver{};
 
-  auto call = [&](int nn, int mm0, int lda, double lo, double hi,
-                  wwr::wwrblasFillMode_t uplo) {
-    return feast_solver<double, 8>(null_blas, null_solver, wwr::wwrStream_t{}, uplo, nn, a.data(),
-                                   lda, lo, hi, mm0, lambda.data(), q.data(), work.data(),
-                                   work.size() * sizeof(double), {}, nullptr);
+  auto call = [&](int nn, int mm0, int lda, double lo, double hi, wwr::wwrblasFillMode_t uplo) {
+    return feast<double, 8>(null_blas, null_solver, wwr::wwrStream_t{}, uplo, nn, a.data(), lda, lo,
+                            hi, mm0, lambda.data(), q.data(), work.data(),
+                            work.size() * sizeof(double), {}, nullptr);
   };
   const auto lower = wwr::WWRBLAS_FILL_MODE_LOWER;
   EXPECT_EQ(call(0, m0, n, 1.0, 2.0, lower), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "n < 1";

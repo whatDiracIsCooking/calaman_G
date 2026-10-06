@@ -53,10 +53,10 @@ namespace calaman {
  * @param s       Workspace, from make_feast_slices with the same n and node count.
  */
 template<calaman::real_fp T>
-Status feast_factor_resolvents(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream,
-                               const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
-                               const int lda, const device::FeastContour<T> &contour,
-                               const FeastSlices<T> &s) {
+Status factor_resolvents(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream,
+                         const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
+                         const int lda, const device::FeastContour<T> &contour,
+                         const FeastSlices<T> &s) {
   using C = calaman::RealToComplexType<T>;
   const bool lower = (uplo == wwr::WWRBLAS_FILL_MODE_LOWER);
 
@@ -73,15 +73,15 @@ Status feast_factor_resolvents(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStrea
 }
 
 /**
- * @brief d_out = rho(A) d_Y, using the factors feast_factor_resolvents left in @p s.
+ * @brief d_out = rho(A) d_Y, using the factors factor_resolvents left in @p s.
  *
  * @param d_Y   n x m0, leading dimension n. Not modified.
  * @param d_out n x m0, leading dimension n. May not alias @p d_Y's blocks in @p s.
  */
 template<calaman::real_fp T>
-Status feast_apply_filter(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream, const int n,
-                          const int m0, const T *d_Y, const device::FeastContour<T> &contour,
-                          const FeastSlices<T> &s, T *d_out) {
+Status apply_filter(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream, const int n,
+                    const int m0, const T *d_Y, const device::FeastContour<T> &contour,
+                    const FeastSlices<T> &s, T *d_out) {
   using C = calaman::RealToComplexType<T>;
   const std::size_t nm = static_cast<std::size_t>(n) * static_cast<std::size_t>(m0);
 
