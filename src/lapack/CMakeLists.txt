@@ -203,6 +203,15 @@ add_subdirectory(lanv2)
 # and calaman.error_handling (added one level up).
 add_subdirectory(ladiv)
 
+# calaman.sym2x2 -- the header-only INTERFACE target carrying sym2x2.cuh, the
+# device ports of ?lae2/?laev2/?lapy2 that sterf/steqr include per-thread.
+# Added before calaman.lae2/laev2/lapy2 (their batched oracle wrappers, ladiv's
+# siblings), which link it.
+add_subdirectory(sym2x2)
+add_subdirectory(lae2)
+add_subdirectory(laev2)
+add_subdirectory(lapy2)
+
 # calaman.lasy2 -- solve the order-(1..2) Sylvester equation
 # op(TL)*X + ISGN*X*op(TR) = SCALE*B, the GPU counterpart of LAPACK's ?lasy2. A
 # single single-thread device kernel (the whole solve is O(1), X at most 2x2),
