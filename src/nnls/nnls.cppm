@@ -42,6 +42,7 @@ import wwr.wrappers.blas;   // gemv, trsv, nrm2
 import wwr.wrappers.solver; // ormqr, ormqr_bufferSize
 import calaman.common;      // WorkspaceLayout, carve_workspace
 import calaman.geqp3;       // geqp3, geqp3_work_size
+export import calaman.iterative; // IterationInfo, stop_reason, converged
 
 namespace calaman {
 
@@ -159,6 +160,7 @@ export enum class NnlsStopReason {
   MaxIterations,    ///< the outer iteration budget ran out
   NumericalFailure, ///< a BLAS/solver/geqp3 call failed, or the inner guard tripped
 };
+static_assert(stop_reason<NnlsStopReason>);
 
 /// @brief Tuning for nnls()
 export template<typename T>
@@ -173,10 +175,8 @@ struct NnlsOptions {
 
 /// @brief What nnls() did
 export template<typename T>
-struct NnlsInfo {
-  int iterations = 0;     ///< outer iterations completed
+struct NnlsInfo : IterationInfo<NnlsStopReason> {
   T residual_norm = T(0); ///< final ||b - Ax||_2
-  NnlsStopReason reason = NnlsStopReason::MaxIterations;
 };
 
 // ========================================================================

@@ -29,6 +29,8 @@
 
 #include <lapacke.h>
 
+#include "shared/expect_converged.h"
+
 import std;
 
 import wwr.blas;
@@ -345,7 +347,7 @@ void check_diagonal() {
   const auto r = run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0);
 
   ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
-  EXPECT_EQ(static_cast<int>(r.info.reason), static_cast<int>(FeastStopReason::Converged));
+  EXPECT_CONVERGED(r.info);
   ASSERT_EQ(r.info.m, count);
 
   const double norm_a = host_norm1(n, a);
@@ -390,7 +392,7 @@ void check_reference(int n, unsigned seed) {
   const auto r = run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0);
 
   ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
-  EXPECT_EQ(static_cast<int>(r.info.reason), static_cast<int>(FeastStopReason::Converged));
+  EXPECT_CONVERGED(r.info);
   ASSERT_EQ(r.info.m, count) << "count in [Emin, Emax]";
 
   const double norm_a = host_norm1(n, a);
@@ -435,7 +437,7 @@ void check_empty_interval() {
 
   ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
   EXPECT_EQ(r.info.m, 0);
-  EXPECT_EQ(static_cast<int>(r.info.reason), static_cast<int>(FeastStopReason::Converged));
+  EXPECT_CONVERGED(r.info);
   destroy_handles(h);
 }
 

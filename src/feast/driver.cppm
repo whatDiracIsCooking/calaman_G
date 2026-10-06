@@ -43,6 +43,7 @@ import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize
 import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, wwrblasFillMode_t
 import wwr.solver;          // wwrsolverDnHandle_t
 import calaman.common;  // real_fp
+export import calaman.iterative; // IterationInfo, stop_reason, converged
 import :buffer_size;
 import :compute_quadrature;
 import :contour_filter;
@@ -58,11 +59,12 @@ enum class FeastStopReason {
   SubspaceTooSmall, ///< every Ritz value fell inside the interval: m0 is too small
   NumericalFailure, ///< a factorization broke down, or a kernel failed
 };
+static_assert(stop_reason<FeastStopReason>);
 
 /// Tuning for feast.
 template<calaman::real_fp T>
 struct FeastOptions {
-  int max_iter = 20;
+  int max_iterations = 20;
 
   /**
    * Converged when every returned pair's relative residual
@@ -76,11 +78,9 @@ struct FeastOptions {
 
 /// What the solver did.
 template<calaman::real_fp T>
-struct FeastInfo {
-  int iterations = 0;    ///< iterations completed
+struct FeastInfo : IterationInfo<FeastStopReason> {
   int m = 0;             ///< eigenvalues found in [Emin, Emax]: the leading m of d_lambda, d_Q
   T max_residual = T(0); ///< largest relative residual among those m, at the last iteration
-  FeastStopReason reason = FeastStopReason::MaxIterations;
 };
 
 /**
@@ -182,7 +182,7 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
   device::FeastStatus<T> h{};
   int m_prev = -1; // no count yet
 
-  for (int k = 0; k < opts.max_iter; ++k) {
+  for (int k = 0; k < opts.max_iterations; ++k) {
     status = apply_filter<T>(cublas_handle, stream, n, m0, d_Q, contour, s, s.basis);
     if (!status.ok()) {
       return publish(FeastStopReason::NumericalFailure, status);

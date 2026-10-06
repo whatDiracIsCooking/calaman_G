@@ -150,7 +150,7 @@ the fields the others lack:
 - **Options** — only if real tuning knobs exist. `expm`'s `ExpmOptions` held one
   enum (`balance`); when balancing moved out of the routine (it is the orthogonal
   similarity `D exp(D^-1 A D) D^-1`, which composes *around* `expm`), the struct
-  had nothing left and was deleted. `feast`'s `FeastOptions` (`max_iter`, `tol`)
+  had nothing left and was deleted. `feast`'s `FeastOptions` (`max_iterations`, `tol`)
   is genuine.
 - **A prediction struct** — only where a cost-prediction entry point exists
   (`expm_plan`). Where the routine is also *deterministic*, that same struct is

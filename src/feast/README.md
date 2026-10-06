@@ -105,6 +105,11 @@ stream in one call.
 | `SubspaceTooSmall` | every Ritz value landed inside the interval after the first iteration — raise `m0` |
 | `NumericalFailure` | a factorization reported a breakdown, or a kernel failed |
 
+`FeastInfo` derives from `calaman.iterative`'s `IterationInfo`, so
+`converged(info)` reads `reason == Converged`. Non-convergence is an outcome,
+not an error (the project-wide rule, `src/iterative/README.md`): every row but
+`NumericalFailure` comes back with a successful `Status`.
+
 The residual is each pair's normwise backward error,
 `‖Ax − λx‖₁ / ((‖A‖₁ + |λ|) ‖x‖₁)`, so a tolerance on it means the same whatever
 the scale of `A`. Defaults: `1e-5` in float, `1e-12` in double.

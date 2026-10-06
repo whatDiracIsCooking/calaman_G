@@ -20,6 +20,11 @@ add_subdirectory(common)
 # is the motivating adopter, migrated separately).
 add_subdirectory(error_handling)
 
+# calaman.iterative -- IterationInfo/stop_reason/converged(), the outcome
+# report the iterative methods share. std only, so its placement is free; it
+# must precede nnls, feast and cg_unitary, which link it.
+add_subdirectory(iterative)
+
 add_subdirectory(complex_cast)
 
 add_subdirectory(set_element)
