@@ -1,6 +1,6 @@
 /**
  * @file solve.cppm
- * @brief The block-Davidson solve entry point, its options/result types and its
+ * @brief The block-Davidson solve entry point, its options/info types and its
  *        operator/preconditioner/metric callbacks
  *
  * The :solve partition of calaman.davidson.
@@ -23,11 +23,10 @@
  *     with_metric (make_davidson_slices); it is a usage error otherwise.
  *
  * Like calaman.feast, the solver owns neither the handles nor the stream (bind
- * them with wwrblasSetStream/wwrsolverDnSetStream and pass them in) and reports
- * the converged pairs through out-pointers -- eigenvectors into @p
- * eigenvectors_out, eigenvalues and the converged flag into @p result. A Status
- * failure means a genuine BLAS/solver/runtime fault; whether failing to converge
- * is ALSO surfaced as a non-success Status is DavidsonOptions::fail_on_non_convergence.
+ * them with wwrblasSetStream/wwrsolverDnSetStream and pass them in) and writes
+ * the Ritz pairs to caller device buffers, reporting the run in a DavidsonInfo.
+ * Non-convergence is an outcome (calaman.iterative): a failing Status means a
+ * BLAS/solver/runtime fault or a bad argument, never an exhausted budget.
  */
 
 module;
@@ -49,6 +48,7 @@ import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the solve
 import :buffer_size;        // DavidsonSlices
 import calaman.common;      // kOne, kZero, kNegativeOne, real_fp
 export import calaman.error_handling; // Status, PointerModeStatus
+export import calaman.iterative;      // IterationInfo, stop_reason, converged
 
 export namespace calaman {
 
@@ -66,24 +66,21 @@ struct DavidsonOptions {
   ///        with its residual, and a floor too close to the tolerance would drop
   ///        genuine (small) new directions as spurious linear dependence.
   T linear_dependence_floor = T{1e-12};
-  /// @brief Whether failing to converge (exhausting max_iterations, or the
-  ///        subspace stagnating with no independent correction left) is surfaced
-  ///        as a non-success Status. true (default): davidson_solve returns
-  ///        WWRBLAS_STATUS_INTERNAL_ERROR, with @p result still filled with the
-  ///        best-effort Ritz values for inspection. false: it returns success and
-  ///        the caller reads DavidsonResult::converged. Either way @p result is
-  ///        filled; this only chooses whether a CLM_TRY-style caller stops.
-  bool fail_on_non_convergence = true;
 };
 
-/// @brief Outcome of a davidson_solve call.
+/// @brief Why davidson_solve stopped.
+enum class DavidsonStopReason {
+  Converged,        ///< every root's residual norm met residual_tolerance
+  MaxIterations,    ///< the iteration budget ran out
+  Stagnated,        ///< no correction survived re-orthogonalization: the subspace stopped growing
+  NumericalFailure, ///< a BLAS/solver/runtime call or a callback failed (Status says which)
+};
+static_assert(stop_reason<DavidsonStopReason>);
+
+/// @brief What davidson_solve did: iterations are subspace expansions.
 template<calaman::real_fp T>
-struct DavidsonResult {
-  bool converged = false;
-  int iterations = 0;
-  /// @brief The n_roots lowest eigenvalues, ascending (host). Filled on every
-  ///        completed run (its accuracy is only guaranteed when converged).
-  std::vector<T> eigenvalues;
+struct DavidsonInfo : IterationInfo<DavidsonStopReason> {
+  T max_residual_norm = T{0}; ///< largest root residual norm at the last Rayleigh-Ritz
 };
 
 /// @brief sigma(stream, block_size, b, sigma_out): out[:, :block_size] =
@@ -128,26 +125,28 @@ export namespace calaman {
  * @param guess_count     n_roots <= guess_count <= max_subspace.
  * @param s               Workspace from make_davidson_slices; sized with_metric
  *                        iff @p metric is not DavidsonNoMetric.
- * @param eigenvectors_out  Out: converged Ritz vectors, n x n_roots device (ld n);
+ * @param eigenvalues_out  Out: the n_roots lowest Ritz values, ascending, device;
+ *                        written on every successful return, converged or not.
+ * @param eigenvectors_out  Out: their Ritz vectors, n x n_roots device (ld n);
  *                        also the per-iteration Ritz-vector scratch.
- * @param result          Out (host): eigenvalues, iteration count, converged flag.
+ * @param info            Out (host): iterations, stop reason, final residual.
  * @param metric          OPTIONAL; DavidsonNoMetric (default) selects the Euclidean
  *                        path, any other davidson_metric the generalized one.
- * @return success on a converged solve; WWRBLAS_STATUS_INTERNAL_ERROR on a
- *         non-converged one when options.fail_on_non_convergence (result still
- *         filled); INVALID_VALUE for a bad guess_count, or a metric with
- *         a workspace not sized with_metric; or a propagated BLAS/solver/runtime
- *         failure.
+ * @return success whenever the solve stops on its own (read info->reason);
+ *         INVALID_VALUE for a null out-pointer, a bad guess_count, or a metric
+ *         with a workspace not sized with_metric; else a propagated fault, with
+ *         info->reason NumericalFailure.
  */
 template<calaman::real_fp T, davidson_sigma<T> Sigma, davidson_preconditioner<T> Precondition,
          davidson_metric<T> Metric = DavidsonNoMetric>
 Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                       wwr::wwrStream_t stream, int n, int n_roots, int max_subspace, const T *guess,
                       int guess_count, const DavidsonSlices<T> &s, const Sigma &sigma,
-                      const Precondition &precondition, T *eigenvectors_out,
-                      DavidsonResult<T> *result, const DavidsonOptions<T> &options = {},
-                      const Metric &metric = {}) {
-  CLM_REQUIRE(result != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
+                      const Precondition &precondition, T *eigenvalues_out,
+                      T *eigenvectors_out, DavidsonInfo<T> *info,
+                      const DavidsonOptions<T> &options = {}, const Metric &metric = {}) {
+  CLM_REQUIRE(info != nullptr && eigenvalues_out != nullptr && eigenvectors_out != nullptr,
+              wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(guess_count >= n_roots && guess_count <= max_subspace,
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
   constexpr bool use_metric = !std::same_as<Metric, DavidsonNoMetric>;
@@ -170,9 +169,10 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
   std::vector<T> theta(static_cast<std::size_t>(n_roots));
   std::vector<T> residual_norms(static_cast<std::size_t>(n_roots));
 
-  result->converged = false;
-  result->iterations = 0;
-  result->eigenvalues.assign(static_cast<std::size_t>(n_roots), T{0});
+  // Every early (CLM_TRY) return from here on is a fault; each stop of the
+  // solve's own overwrites the reason.
+  *info = {};
+  info->reason = DavidsonStopReason::NumericalFailure;
 
   CLM_TRY(wwr::wwrMemcpyAsync(s.v, guess, n_bytes * static_cast<std::size_t>(guess_count),
                               wwr::wwrMemcpyDeviceToDevice, stream));
@@ -180,12 +180,19 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
   int dim = guess_count;
   int filled = 0; // columns of s.av already holding sigma(s.v[:, :filled])
 
-  const auto finish = [&](int iters) -> Status {
-    result->converged = false;
-    result->iterations = iters;
-    result->eigenvalues.assign(theta.begin(), theta.end());
-    return options.fail_on_non_convergence ? Status{wwr::WWRBLAS_STATUS_INTERNAL_ERROR}
-                                           : Status{wwr::WWRBLAS_STATUS_SUCCESS};
+  // The last Rayleigh-Ritz left the n_roots lowest Ritz values in s.ritz; with
+  // no iteration run there are none, so the output is zeroed.
+  const auto finish = [&](int iters, DavidsonStopReason reason) -> Status {
+    const std::size_t value_bytes = sizeof(T) * static_cast<std::size_t>(n_roots);
+    if (iters == 0) {
+      CLM_TRY(wwr::wwrMemsetAsync(eigenvalues_out, 0, value_bytes, stream));
+    } else {
+      CLM_TRY(wwr::wwrMemcpyAsync(eigenvalues_out, s.ritz, value_bytes,
+                                  wwr::wwrMemcpyDeviceToDevice, stream));
+    }
+    info->iterations = iters;
+    info->reason = reason;
+    return wwr::WWRBLAS_STATUS_SUCCESS;
   };
 
   // M-norm helper: sqrt(x^T M x) = sqrt(x . Mx), guarding a tiny negative from roundoff.
@@ -255,6 +262,7 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
       CLM_TRY(metric(stream, n_roots, s.residual, s.metric_scratch));
     }
     bool all_converged = true;
+    info->max_residual_norm = T{0};
     for (int i = 0; i < n_roots; ++i) {
       const std::size_t col = static_cast<std::size_t>(i) * nz;
       T norm{};
@@ -267,15 +275,13 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
         CLM_TRY((wwr::nrm2<T, int>(cublas_handle, n, s.residual + col, 1, &norm)));
       }
       residual_norms[static_cast<std::size_t>(i)] = norm;
+      info->max_residual_norm = std::max(info->max_residual_norm, norm);
       if (norm > options.residual_tolerance) {
         all_converged = false;
       }
     }
     if (all_converged) {
-      result->converged = true;
-      result->iterations = iter;
-      result->eigenvalues.assign(theta.begin(), theta.end());
-      return wwr::WWRBLAS_STATUS_SUCCESS;
+      return finish(iter, DavidsonStopReason::Converged);
     }
 
     // 5. Precondition the full block (locked roots' output is discarded below).
@@ -377,12 +383,12 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
 
     // Stagnation: no independent direction survived before every root converged.
     if (kept == 0) {
-      return finish(iter);
+      return finish(iter, DavidsonStopReason::Stagnated);
     }
     dim += kept;
   }
 
-  return finish(options.max_iterations);
+  return finish(std::max(options.max_iterations, 0), DavidsonStopReason::MaxIterations);
 }
 
 } // namespace calaman

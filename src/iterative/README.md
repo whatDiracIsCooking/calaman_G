@@ -43,10 +43,11 @@ constexpr bool converged(const IterationInfo<Reason> &i) noexcept;
 | `calaman.cg_unitary` | `CgInfo : IterationInfo<CgStopReason>` | `LineSearchFailed` |
 | `calaman.feast` | `FeastInfo : IterationInfo<FeastStopReason>` | `SubspaceTooSmall` |
 | `calaman.nnls` | `NnlsInfo : IterationInfo<NnlsStopReason>` | — |
+| `calaman.davidson` | `DavidsonInfo : IterationInfo<DavidsonStopReason>` | `Stagnated` |
+| `calaman.lanczos` | `LanczosInfo : IterationInfo<LanczosStopReason>` (`iterations` = thick restarts) | — |
 
 Each re-exports `calaman.iterative`, so importing the method is enough to call
-`converged(info)`. `davidson` and `lanczos` have not migrated yet: they still
-report through a `Result` with a `bool converged`.
+`converged(info)`.
 
 Tests assert convergence with `EXPECT_CONVERGED(info)` from
 `test/shared/expect_converged.h`, which prints `reason` and `iterations` on

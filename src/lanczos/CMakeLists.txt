@@ -25,7 +25,8 @@ calaman_add_gpu_device_library(
 # (wwr.rand), gemm/gemv/nrm2 (wwr.wrappers.blas), syevd
 # (wwr.wrappers.solver), ScopedPointerMode (wwr.extension.blas), the random
 # start (wwr.extension.init_state, wwr.extension.random_normal), real_fp and
-# the workspace carving (calaman.common), and Status (calaman.error_handling).
+# the workspace carving (calaman.common), Status (calaman.error_handling), and
+# IterationInfo, LanczosInfo's base (calaman.iterative, re-exported).
 #
 # LINK_PRIVATE wwr::backend and INCLUDE_DIRS_PRIVATE are for lanczos_bridge.h,
 # which :buffer_size, :ritz and :solve include in their GMF: a GMF cannot
@@ -53,6 +54,7 @@ calaman_add_cxx_module_library(
   wwr::extension::random_normal
   calaman::common
   calaman::error_handling
+  calaman::iterative
   LINK_PRIVATE
   wwr::backend
   INCLUDE_DIRS_PRIVATE

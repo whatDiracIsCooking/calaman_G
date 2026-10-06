@@ -37,7 +37,7 @@ import wwr.extension.init_state;    // init_state
 import wwr.extension.random_normal; // random_normal
 import :buffer_size;                // LanczosSlices, lanczos_shape_ok, lanczos_restart_keep
 import :ritz;                       // LanczosRitz, lanczos_ritz_*
-import :types;                      // LanczosWhich, LanczosOptions, LanczosResult, lanczos_matvec
+import :types;                      // LanczosWhich, LanczosOptions, LanczosInfo, lanczos_matvec
 import calaman.common;              // kOne, kZero, kNegativeOne, real_fp
 export import calaman.error_handling; // Status, PointerModeStatus
 
@@ -256,40 +256,43 @@ export namespace calaman {
 /**
  * @brief Converge the @p nev eigenpairs at the @p which end(s) of the spectrum of
  *        the symmetric operator behind @p matvec (called in HOST pointer mode),
- *        thick-restarting up to options.max_restarts times.
+ *        thick-restarting up to options.max_iterations times.
  *
  * @param n,nev,ncv         The shape @p s was carved for (make_lanczos_slices).
- * @param eigenvectors_out  Out: Ritz vectors, n x nev device (ld n), in the order
- *                          of result->eigenvalues, written on @p stream; null to skip.
- * @param result            Out (host): eigenvalues, counts, converged flag.
- * @return INVALID_VALUE for a rejected shape, a null @p result or a zero start
- *         vector; INTERNAL_ERROR on non-convergence when
- *         options.fail_on_non_convergence; else a propagated fault or success.
+ * @param eigenvalues_out   Out: the nev selected Ritz values, ascending, device;
+ *                          written on every successful return, converged or not.
+ * @param eigenvectors_out  Out: their Ritz vectors, n x nev device (ld n), in the
+ *                          same order; null to skip.
+ * @param info              Out (host): restarts, matvecs, stop reason.
+ * @return success whenever the solve stops on its own (read info->reason);
+ *         INVALID_VALUE for a rejected shape, a null @p info / @p eigenvalues_out
+ *         or a zero start vector; else a propagated fault, with info->reason
+ *         NumericalFailure.
  */
 template<calaman::real_fp T, lanczos_matvec<T> Matvec>
 Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t solver_handle,
                      wwr::wwrStream_t stream, const int n, const int nev, const int ncv,
                      const LanczosWhich which, const LanczosSlices<T> &s, const Matvec &matvec,
-                     T *eigenvectors_out, LanczosResult<T> *result,
+                     T *eigenvalues_out, T *eigenvectors_out, LanczosInfo *info,
                      const LanczosOptions<T> &options = {}) {
-  CLM_REQUIRE(result != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
+  CLM_REQUIRE(info != nullptr && eigenvalues_out != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(lanczos_shape_ok(n, nev, ncv), wwr::WWRBLAS_STATUS_INVALID_VALUE);
 
-  result->converged = false;
-  result->restarts = 0;
-  result->matvecs = 0;
-  result->eigenvalues.clear();
-
+  *info = {};
   const int k = lanczos_restart_keep(nev, ncv);
   CLM_TRY(detail::lanczos_start<T>(blas_handle, stream, n, s, options));
-  CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, 0, s, matvec, &result->matvecs));
+  // Every early (CLM_TRY) return from here on is a fault; the loop's own stop
+  // overwrites the reason.
+  info->reason = LanczosStopReason::NumericalFailure;
+  CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, 0, s, matvec, &info->matvecs));
 
   LanczosRitz<T> ritz;
   LanczosRitzSelection<T> sel;
   std::vector<int> cols(static_cast<std::size_t>(nev)); // the wanted pairs' columns of V(:, 0:k)
+  bool all_passed = false;
   for (;;) {
     CLM_TRY(detail::lanczos_cycle_ritz<T>(blas_handle, solver_handle, stream, n, ncv, s, matvec,
-                                          &result->matvecs, &ritz));
+                                          &info->matvecs, &ritz));
     // Selections nest, so the wanted pairs sit inside the kept ones; their
     // estimates must be read before the restart compacts S.
     sel = lanczos_ritz_select(ritz, which, nev, options.tolerance);
@@ -299,20 +302,18 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
     }
 
     CLM_TRY(detail::lanczos_restart_basis<T>(blas_handle, stream, n, ncv, kept, ritz.breakdown, s));
-    bool converged = sel.all_converged();
-    if (converged && options.verify_residuals) {
+    all_passed = sel.all_converged();
+    if (all_passed && options.verify_residuals) {
       CLM_TRY(detail::lanczos_true_residuals<T>(blas_handle, stream, n, ncv, cols, sel.values,
                                                 options.tolerance, ritz.t_norm, s, matvec,
-                                                &result->matvecs, &converged));
+                                                &info->matvecs, &all_passed));
     }
-    if (converged || result->restarts >= options.max_restarts) {
-      result->converged = converged;
+    if (all_passed || info->iterations >= options.max_iterations) {
       break;
     }
-    ++result->restarts;
-    CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, k, s, matvec, &result->matvecs));
+    ++info->iterations;
+    CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, k, s, matvec, &info->matvecs));
   }
-  result->eigenvalues = sel.values;
 
   if (eigenvectors_out != nullptr) {
     const auto nz = static_cast<std::size_t>(n);
@@ -322,9 +323,11 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
                                   wwr::wwrMemcpyDeviceToDevice, stream));
     }
   }
-  if (!result->converged && options.fail_on_non_convergence) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  // sel.values is host-local: the sync keeps it alive until the copy lands.
+  CLM_TRY(wwr::wwrMemcpyAsync(eigenvalues_out, sel.values.data(), sizeof(T) * sel.values.size(),
+                              wwr::wwrMemcpyHostToDevice, stream));
+  CLM_TRY(wwr::wwrStreamSynchronize(stream));
+  info->reason = all_passed ? LanczosStopReason::Converged : LanczosStopReason::MaxIterations;
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

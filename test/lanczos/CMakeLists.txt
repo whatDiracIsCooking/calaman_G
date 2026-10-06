@@ -99,6 +99,7 @@ calaman_add_gtest_executable(
   LINK
   calaman::lanczos
   calaman::test::shared::abort_policy
+  calaman::test::shared::expect_converged
   calaman::test::shared::device_handle
   calaman::test::shared::tolerance
   calaman::test::utils::shared_device

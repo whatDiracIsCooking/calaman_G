@@ -19,6 +19,7 @@ calaman_add_gtest_executable(
   LINK
   calaman::davidson
   calaman::test::shared::abort_policy
+  calaman::test::shared::expect_converged
   calaman::test::shared::device_handle
   calaman::test::utils::shared_device
   wwr::blas
