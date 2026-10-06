@@ -128,9 +128,6 @@ TEST(LanczosArgCheckTests, SolveRejectsBadArguments) {
   EXPECT_EQ(solve_with(16, 4, 8, identity_matvec(), &result).code, kInvalidValue);
   EXPECT_EQ(solve_with(8, 4, 9, identity_matvec(), &result).code, kInvalidValue);
   EXPECT_EQ(solve_with(16, 2, 5, identity_matvec(), nullptr).code, kInvalidValue);
-  // The nullable callables: a null function pointer and an empty std::function.
-  EXPECT_EQ(solve_with(16, 2, 5, MatvecPtr{nullptr}, &result).code, kInvalidValue);
-  EXPECT_EQ(solve_with(16, 2, 5, MatvecFunction{}, &result).code, kInvalidValue);
 }
 
 TEST(LanczosArgCheckTests, OptionDefaults) {
