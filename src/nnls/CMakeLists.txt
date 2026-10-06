@@ -22,7 +22,8 @@ calaman_add_gpu_device_library(
 # `extern template` in nnls.cppm), so an importer links the symbol and never
 # instantiates a body that names the .cu launchers (the calaman.lacpy pattern).
 # PUBLIC links are the modules whose types appear in the EXPORTED signatures
-# (the two handle types, the status); all the body alone names is PRIVATE.
+# (the two handle types, the status, and calaman.iterative's IterationInfo the
+# exported NnlsInfo derives from); all the body alone names is PRIVATE.
 # nnls.cppm's GMF includes nnls_bridge.h (INCLUDE_DIRS_PRIVATE, this dir), which
 # pulls runtime.h; a GMF cannot import, so wwrStream_t arrives by #include and
 # the backend define is read via LINK_PRIVATE wwr_backend.
@@ -43,6 +44,7 @@ calaman_add_cxx_module_library(
   LINK_PUBLIC
   wwr::blas
   wwr::solver
+  calaman::iterative
   LINK_PRIVATE
   wwr::wrappers::blas
   wwr::wrappers::solver

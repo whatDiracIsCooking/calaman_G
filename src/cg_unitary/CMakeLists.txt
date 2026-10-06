@@ -38,6 +38,7 @@ calaman_add_gpu_device_library(
 #   calaman.error_handling                   Status, PointerModeStatus
 #   calaman.expm                             expm, expm_bufferSize, matrix_norm1
 #   calaman.orthogonalize                    the optional reunitarization
+#   calaman.iterative                        IterationInfo, CgInfo's base
 # LINK_PRIVATE wwr_backend is for the runtime.h that cg_unitary_bridge.h pulls
 # into the global module fragment (a GMF cannot import); INCLUDE_DIRS_PRIVATE
 # is this dir, for the bridge header itself.
@@ -63,6 +64,7 @@ calaman_add_cxx_module_library(
   calaman::error_handling
   calaman::expm
   calaman::orthogonalize
+  calaman::iterative
   LINK_PRIVATE
   wwr::backend
   INCLUDE_DIRS_PRIVATE

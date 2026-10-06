@@ -43,6 +43,7 @@ import wwr.extension.blas;  // ScopedPointerMode
 import calaman.common;      // kOne, kZero, kNegativeOne, real_fp, usual_fp, ComplexToRealType
 import calaman.error_handling; // Status, PointerModeStatus
 import calaman.expm;        // expm, expm_bufferSize
+export import calaman.iterative; // IterationInfo, stop_reason, converged
 import calaman.orthogonalize; // orthogonalize, orthogonalize_bufferSize
 import :buffer_size;
 import :cost_function;
@@ -57,11 +58,12 @@ enum class CgStopReason {
   LineSearchFailed, ///< no step size found, even from the steepest direction
   NumericalFailure, ///< a BLAS, solver, or runtime call failed
 };
+static_assert(stop_reason<CgStopReason>);
 
 /// @brief Tuning for cg_unitary. The defaults follow the paper.
 template<typename R>
 struct CgOptions {
-  int max_iter = 300;
+  int max_iterations = 300;
 
   /**
    * Stop when <G, G> = 0.5 ||G||_F^2 falls below this.
@@ -95,13 +97,11 @@ struct CgOptions {
 
 /// @brief What the solver did.
 template<typename R>
-struct CgInfo {
-  int iterations = 0; ///< iterations completed
+struct CgInfo : IterationInfo<CgStopReason> {
   int resets = 0;     ///< times H was reset to the steepest direction
   int line_search_failures = 0;
   R gradient_norm_sq = R(0); ///< final <G, G>
   R last_step = R(0);        ///< final mu_k
-  CgStopReason reason = CgStopReason::MaxIterations;
 };
 
 /**
@@ -248,7 +248,7 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
   RealT gg = RealT{0.5} * g_norm * g_norm;
   local.gradient_norm_sq = gg;
 
-  for (int k = 0; k < opts.max_iter; ++k) {
+  for (int k = 0; k < opts.max_iterations; ++k) {
     // ── step 2: periodic reset to the steepest direction ──────────────────
     // k == 0 already did it above.
     if (k > 0 && (k % reset_period) == 0) {

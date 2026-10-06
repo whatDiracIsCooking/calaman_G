@@ -46,6 +46,7 @@ calaman_add_gpu_device_library(
 # orthonormalizer (calaman.orthogonalize), the ScopedPointerMode guard
 # Rayleigh-Ritz forces host mode with (wwr.extension.blas) and
 #   calaman.error_handling  Status, the cross-domain return type
+#   calaman.iterative       IterationInfo, FeastInfo's base (re-exported)
 # (every entry point returns it). wwr.complex is not listed: no partition names
 # the vendor complex type, and RealToComplexType's target is reachable
 # transitively through calaman.common.
@@ -76,6 +77,7 @@ calaman_add_cxx_module_library(
   calaman::common
   calaman::orthogonalize
   calaman::error_handling
+  calaman::iterative
   LINK_PRIVATE
   wwr::backend
   INCLUDE_DIRS_PRIVATE

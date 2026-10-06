@@ -24,6 +24,8 @@
 
 #include <gtest/gtest.h>
 
+#include "shared/expect_converged.h"
+
 import std;
 
 import wwr.blas;
@@ -204,7 +206,7 @@ void kkt_case(int m, int n, unsigned seed) {
 
   const auto out = solve<T>(handle, m, n, A, b);
   ASSERT_EQ(out.status, wwr::WWRBLAS_STATUS_SUCCESS) << "m=" << m << " n=" << n;
-  EXPECT_EQ(out.info.reason, NnlsStopReason::Converged) << "m=" << m << " n=" << n;
+  EXPECT_CONVERGED(out.info) << "m=" << m << " n=" << n;
   expect_kkt(m, n, A, b, out.x);
 }
 
@@ -259,7 +261,7 @@ void rank_deficient_case(int m, int n, int rank, unsigned seed) {
   }
   const auto out = solve<T>(handle, m, n, A, b);
   ASSERT_EQ(out.status, wwr::WWRBLAS_STATUS_SUCCESS) << "m=" << m << " n=" << n;
-  EXPECT_EQ(out.info.reason, NnlsStopReason::Converged);
+  EXPECT_CONVERGED(out.info);
   expect_kkt(m, n, A, b, out.x);
 }
 
@@ -291,7 +293,7 @@ void recovery_case(int m, int n, unsigned seed) {
 
   const auto out = solve<T>(handle, m, n, A, b);
   ASSERT_EQ(out.status, wwr::WWRBLAS_STATUS_SUCCESS);
-  EXPECT_EQ(out.info.reason, NnlsStopReason::Converged);
+  EXPECT_CONVERGED(out.info);
 
   const T xnorm = frobenius_norm(xstar);
   const T norm_a = frobenius_norm(A);
@@ -333,7 +335,7 @@ void zero_case(int m, int n, unsigned seed) {
 
   const auto out = solve<T>(handle, m, n, A, b);
   ASSERT_EQ(out.status, wwr::WWRBLAS_STATUS_SUCCESS);
-  EXPECT_EQ(out.info.reason, NnlsStopReason::Converged);
+  EXPECT_CONVERGED(out.info);
   EXPECT_EQ(out.info.iterations, 0);
 
   const T tol = T{16} * eps<T>() * frobenius_norm(A);

@@ -19,6 +19,8 @@
 
 #include <lapacke.h>
 
+#include "shared/expect_converged.h"
+
 import std;
 
 import wwr.blas;
@@ -261,7 +263,7 @@ void expect_brockett_maximizes(int n, unsigned seed, LineSearchMethod method) {
   const Status st = cg_unitary<T>(blas, solver, handle->stream().get(), n, d_W.data(), cost,
                                   CgDirection::Maximize, d_work.data(), lwork, opts, &info);
   ASSERT_TRUE(st.ok()) << "cg_unitary returned " << st.name();
-  EXPECT_NE(info.reason, CgStopReason::NumericalFailure);
+  EXPECT_CONVERGED(info);
 
   const std::vector<T> W_out = from_device(handle, d_W, static_cast<std::size_t>(n) * n);
   wwr::wwrblasDestroy(blas);

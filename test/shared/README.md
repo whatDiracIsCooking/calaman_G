@@ -10,6 +10,7 @@ tolerance the linalg oracle suites share.
 | `calaman.test.shared.abort_policy` | `calaman::test::AbortPolicy<T>` — print to stderr and abort |
 | `calaman.test.shared.device_handle` | `calaman::test::DeviceHandle` — one GPU's index, properties, default stream, default pool |
 | `calaman.test.shared.tolerance` | `eps<T>()`, `frobenius_norm`, `factorization_tol` — the shared `O(eps * ‖A‖ * min(m,n))` bound |
+| `calaman.test.shared.expect_converged` | `EXPECT_CONVERGED(info)` — a header, `"shared/expect_converged.h"`, since a macro cannot ride an import; prints `reason` and `iterations` on failure |
 
 ## Why they are not in `src/`
 

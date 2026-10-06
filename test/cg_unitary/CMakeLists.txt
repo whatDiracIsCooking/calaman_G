@@ -23,6 +23,7 @@ calaman_add_gtest_executable(
   LINK
   calaman::cg_unitary
   calaman::test::shared::abort_policy
+  calaman::test::shared::expect_converged
   calaman::test::shared::device_handle
   calaman::test::utils::shared_device
   calaman::test::shared::tolerance

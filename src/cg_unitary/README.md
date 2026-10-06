@@ -151,7 +151,9 @@ The leading dimension of `d_W` **must** be exactly `n`: the Frobenius reductions
 and the cost functor's device-mode dot both read the matrices as flat `n²`
 vectors. An `ok()` `Status` comes back whenever the iteration reached one of its
 own stopping conditions — including `MaxIterations` and `LineSearchFailed`, which
-are outcomes rather than errors. Read `info.reason` to tell them apart.
+are outcomes rather than errors. Read `converged(info)` or `info.reason` to
+tell them apart; `CgInfo` derives from `calaman.iterative`'s `IterationInfo`,
+which has the project-wide rule (`src/iterative/README.md`).
 
 ## Workspace
 

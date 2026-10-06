@@ -47,3 +47,18 @@ calaman_add_cxx_module_library(
   tolerance.cppm
   IMPORT_STD
 )
+
+# EXPECT_CONVERGED, a header (a macro cannot ride an import) included as
+# "shared/expect_converged.h" from the test/ root. GTest::gtest for the
+# AssertionResult it builds; calaman.iterative for the Info it reads.
+calaman_add_interface_library(
+  NAME
+  calaman.test.shared.expect_converged
+  LINK_PUBLIC
+  calaman::iterative
+  GTest::gtest
+)
+target_include_directories(
+  calaman.test.shared.expect_converged
+  INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/test>
+)
