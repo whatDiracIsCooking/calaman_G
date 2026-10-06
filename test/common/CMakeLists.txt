@@ -47,3 +47,32 @@ calaman_add_gtest_suite_tests(
   CommonWarpReduceTests
   REQUIRES_GPU
 )
+
+# GPU suite for common/block_reduce.cuh -- all three overloads, at one warp and
+# at four -- split device/host through block_reduce_bridge.h like warp_reduce's.
+calaman_add_gpu_device_library(
+  NAME
+  block_reduce_tests.device
+  SOURCES
+  block_reduce_kernels.cu
+  LINK_PRIVATE
+  wwr::device
+  calaman::common
+)
+
+calaman_add_gtest_executable(
+  NAME
+  block_reduce_tests
+  SOURCES
+  block_reduce_tests.cpp
+  LINK
+  block_reduce_tests.device
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  block_reduce_tests
+  SUITES
+  CommonBlockReduceTests
+  REQUIRES_GPU
+)

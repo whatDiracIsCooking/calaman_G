@@ -8,6 +8,7 @@
  * seeded with poison so a lane >= nactive leaking into the fold shows. Needs a
  * card (REQUIRES_GPU).
  */
+#include "mat2.h"
 #include "warp_reduce_bridge.h"
 
 #include <gtest/gtest.h>
@@ -17,29 +18,11 @@
 
 namespace {
 
-using calaman::test::kMat2Prime;
+using calaman::test::mat2_mul;
+using calaman::test::mat2_of;
 using calaman::test::warp_size;
 
 constexpr float kPoison = 1.0e30F;
-
-/// Host 2x2 product mod kMat2Prime, the oracle for the device Mat2Op.
-unsigned long long mat2_mul(const unsigned long long x, const unsigned long long y) {
-  const auto at = [](const unsigned long long v, const int i) { return (v >> (48 - 16 * i)) & 0xFFFF; };
-  const unsigned long long a = (at(x, 0) * at(y, 0) + at(x, 1) * at(y, 2)) % kMat2Prime;
-  const unsigned long long b = (at(x, 0) * at(y, 1) + at(x, 1) * at(y, 3)) % kMat2Prime;
-  const unsigned long long c = (at(x, 2) * at(y, 0) + at(x, 3) * at(y, 2)) % kMat2Prime;
-  const unsigned long long d = (at(x, 2) * at(y, 1) + at(x, 3) * at(y, 3)) % kMat2Prime;
-  return (a << 48) | (b << 32) | (c << 16) | d;
-}
-
-/// Lane i's matrix: distinct, small entries, so products stay well mixed.
-unsigned long long lane_matrix(const unsigned int i) {
-  const unsigned long long a = 1 + i;
-  const unsigned long long b = 3 * i + 2;
-  const unsigned long long c = 7 * i + 5;
-  const unsigned long long d = 11 * i + 1;
-  return (a << 48) | (b << 32) | (c << 16) | d;
-}
 
 /// in[i] = i + 1 for i < nactive, kPoison past it.
 std::vector<float> iota_with_poison(const unsigned int nactive) {
@@ -64,7 +47,7 @@ void expect_sum(const unsigned int nactive) {
 void expect_mat2(const unsigned int nactive) {
   std::vector<unsigned long long> in(warp_size(), 0);
   for (unsigned int i = 0; i < nactive; ++i) {
-    in[i] = lane_matrix(i);
+    in[i] = mat2_of(i);
   }
   unsigned long long expected = in[0];
   for (unsigned int i = 1; i < nactive; ++i) {

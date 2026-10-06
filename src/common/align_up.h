@@ -11,6 +11,7 @@
  * calaman.common see the same `calaman::` spellings as #includers.
  *
  * Backend-neutral by construction (CLAUDE.md): no cu-/hip-prefixed names appear.
+ * Both helpers are CLM_HOST_DEVICE (host_device.h), so kernels call them too.
  *
  * Consumers #include this by its root-relative path, "common/align_up.h".
  */
@@ -18,6 +19,8 @@
 #pragma once
 
 #include <concepts>
+
+#include "host_device.h"
 
 namespace calaman {
 
@@ -29,14 +32,14 @@ namespace calaman {
 ///        cover @p a. Assumes non-negative operands; undefined for @p b == 0,
 ///        and @p a + @p b may overflow near the top of T's range.
 template <std::integral T>
-constexpr T idivup(const T a, const T b) {
+CLM_HOST_DEVICE constexpr T idivup(const T a, const T b) {
     return (a + b - 1) / b;
 }
 
 /// @brief Round @p a up to the next multiple of @p b. Same domain as idivup:
 ///        non-negative operands, undefined for @p b == 0.
 template <std::integral T>
-constexpr T align_up(const T a, const T b) {
+CLM_HOST_DEVICE constexpr T align_up(const T a, const T b) {
     return idivup(a, b) * b;
 }
 
