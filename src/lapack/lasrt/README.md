@@ -63,6 +63,12 @@ out. This is LAPACK's `dlasrt` ported verbatim to 0-based inclusive ranges;
 pushing the larger sub-range first keeps the stack depth logarithmic, so 32
 frames admit every `int n`.
 
+The sort body itself is `lasrt_serial<T, Dir>(d, n)` in `lasrt.cuh`, a
+`__device__` function the kernel merely calls — so another kernel can run the
+same sort in-thread (`?sterf` sorts its eigenvalues this way, and only when its
+iteration converged). A downstream `.cu` includes `"lapack/lasrt/lasrt.cuh"` and
+its device library links `calaman::lasrt::header` (the `src/` root).
+
 A sorted array is a function of the input **multiset** and the direction alone,
 so this agrees with the reference `?lasrt` bit for bit regardless of which
 comparison sort either side runs — which is what lets the test compare with `==`
