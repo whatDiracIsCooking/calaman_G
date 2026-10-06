@@ -20,6 +20,7 @@
 # WorkspaceLayout/align_up carving (calaman.common), the ScopedPointerMode
 # guard the solve forces host mode with (wwr.extension.blas), and
 #   calaman.error_handling  Status, the cross-domain return type
+#   calaman.iterative       IterationInfo, DavidsonInfo's base (re-exported)
 # (every entry point returns it).
 calaman_add_cxx_module_library(
   NAME
@@ -38,5 +39,6 @@ calaman_add_cxx_module_library(
   wwr::extension::blas
   calaman::common
   calaman::error_handling
+  calaman::iterative
   IMPORT_STD
 )

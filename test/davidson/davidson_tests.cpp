@@ -11,7 +11,10 @@
 //   * the Euclidean solve against the reference LAPACK -- on a diagonally
 //     dominant symmetric operator driven through a gemv callback with a diagonal
 //     preconditioner, davidson_solve converges the lowest n_roots eigenvalues to
-//     LAPACKE_?syevd's, over float and double (REQUIRES_GPU).
+//     LAPACKE_?syevd's, over float and double (REQUIRES_GPU);
+//   * the non-converged stops -- a one-iteration budget (MaxIterations) and a
+//     zero preconditioner (Stagnated) both return success with the first
+//     iteration's Ritz values written (REQUIRES_GPU).
 //
 // Guarded on calaman::lapack_reference (see CMakeLists.txt): the reference suite
 // is the solver's natural oracle, and bundling the rest in the same binary keeps
@@ -23,6 +26,8 @@
 
 #include <cstddef>
 #include <cstdint>
+
+#include "shared/expect_converged.h"
 
 import std;
 
@@ -90,17 +95,34 @@ TEST(DavidsonArgCheckTests, RejectsNullOutPointer) {
   EXPECT_EQ(davidson_bufferSize<double>(no_handle, 16, 4, 8, false, nullptr).code, kInvalidValue);
 }
 
+// Never-dereferenced stand-ins for the solve's device out-pointers.
+double g_fake_values[4];
+double g_fake_vectors[64];
+
 TEST(DavidsonArgCheckTests, RejectsBadGuessCount) {
   // guess_count outside [n_roots, max_subspace] is rejected before any handle use.
   DavidsonSlices<double> s;
-  DavidsonResult<double> result;
+  DavidsonInfo<double> info;
   const auto solve = [&](int guess_count) {
     return davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
                                   wwr::wwrStream_t{}, 16, 4, 8, nullptr, guess_count, s, kNoopBlock,
-                                  kNoopPrecondition, nullptr, &result);
+                                  kNoopPrecondition, g_fake_values, g_fake_vectors, &info);
   };
   EXPECT_EQ(solve(3).code, kInvalidValue); // below n_roots
   EXPECT_EQ(solve(9).code, kInvalidValue); // above max_subspace
+}
+
+TEST(DavidsonArgCheckTests, RejectsNullSolveOutPointer) {
+  DavidsonSlices<double> s;
+  DavidsonInfo<double> info;
+  const auto solve = [&](double *values, double *vectors, DavidsonInfo<double> *out) {
+    return davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
+                                  wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4, s, kNoopBlock,
+                                  kNoopPrecondition, values, vectors, out);
+  };
+  EXPECT_EQ(solve(nullptr, g_fake_vectors, &info).code, kInvalidValue);
+  EXPECT_EQ(solve(g_fake_values, nullptr, &info).code, kInvalidValue);
+  EXPECT_EQ(solve(g_fake_values, g_fake_vectors, nullptr).code, kInvalidValue);
 }
 
 TEST(DavidsonArgCheckTests, RejectsMetricWithoutMetricWorkspace) {
@@ -109,10 +131,10 @@ TEST(DavidsonArgCheckTests, RejectsMetricWithoutMetricWorkspace) {
   // regions, so it is rejected before any handle use rather than silently
   // solving the wrong (Euclidean) problem.
   DavidsonSlices<double> s; // all-null: not sized with_metric
-  DavidsonResult<double> result;
-  const Status st = davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
-                                           wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4, s, kNoopBlock,
-                                           kNoopPrecondition, nullptr, &result, {}, kNoopBlock);
+  DavidsonInfo<double> info;
+  const Status st = davidson_solve<double>(
+      wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{}, wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4,
+      s, kNoopBlock, kNoopPrecondition, g_fake_values, g_fake_vectors, &info, {}, kNoopBlock);
   EXPECT_EQ(st.code, kInvalidValue);
 }
 
@@ -282,109 +304,199 @@ std::vector<T> reference_eigenvalues(int n, std::vector<T> a) {
   return w; // ascending
 }
 
+/// Host copy of a device buffer of @p count elements.
 template<typename T>
-void check_reference() {
-  constexpr int n = 48;
-  constexpr int n_roots = 4;
-  constexpr int max_subspace = 20;
-  const bool is_float = std::is_same_v<T, float>;
-  const T res_tol = is_float ? T{1e-4} : T{1e-8};
-  const double eig_tol = is_float ? 5e-3 : 1e-6;
+std::vector<T> to_host(std::shared_ptr<DeviceHandle> handle, const T *device, std::size_t count) {
+  std::vector<T> host(count);
+  EXPECT_EQ(wwr::wwrMemcpyAsync(host.data(), device, sizeof(T) * count, wwr::wwrMemcpyDeviceToHost,
+                                handle->stream().get()),
+            wwr::wwrSuccess);
+  EXPECT_EQ(wwr::wwrStreamSynchronize(handle->stream().get()), wwr::wwrSuccess);
+  return host;
+}
 
-  auto handle = shared_device();
+/// The Euclidean problem every solve below runs: A = diag_plus_perturbation,
+/// unit-vector guesses, a gemm sigma and the diagonal preconditioner (or, with
+/// zero_correction, one that returns a zero block, which forces stagnation).
+template<typename T>
+struct EuclideanProblem {
+  static constexpr int n = 48;
+  static constexpr int n_roots = 4;
+  static constexpr int max_subspace = 20;
+
+  std::shared_ptr<DeviceHandle> handle = shared_device();
   Handles h = make_handles(handle);
-
-  const auto a = diag_plus_perturbation<T>(n, 0.05, 20261004u);
-  const auto ref = reference_eigenvalues<T>(n, a);
-
-  std::vector<double> diagd(static_cast<std::size_t>(n));
-  for (int i = 0; i < n; ++i) {
-    diagd[static_cast<std::size_t>(i)] = static_cast<double>(a[static_cast<std::size_t>(i) * n + i]);
-  }
-
-  std::vector<T> guess_host(static_cast<std::size_t>(n) * n_roots, T{0});
-  for (int c = 0; c < n_roots; ++c) {
-    guess_host[static_cast<std::size_t>(c) * n + c] = T{1}; // orthonormal unit vectors
-  }
-
+  std::vector<T> a = diag_plus_perturbation<T>(n, 0.05, 20261004u);
   DeviceBuffer<T> d_a = to_device(handle, a);
-  DeviceBuffer<T> d_guess = to_device(handle, guess_host);
-  DeviceBuffer<T> d_vecs(static_cast<std::size_t>(n) * n_roots, handle);
-
-  std::size_t lwork = 0;
-  ASSERT_TRUE(davidson_bufferSize<T>(h.solver, n, n_roots, max_subspace, false, &lwork).ok());
-  DeviceBuffer<std::byte> work(lwork, handle);
+  DeviceBuffer<T> d_guess = to_device(handle, unit_guess());
+  DeviceBuffer<T> d_vals{static_cast<std::size_t>(n_roots), handle};
+  DeviceBuffer<T> d_vecs{static_cast<std::size_t>(n) * n_roots, handle};
+  DeviceBuffer<std::byte> work{workspace_bytes(), handle};
   DavidsonSlices<T> s;
-  ASSERT_TRUE(
-      make_davidson_slices<T>(h.solver, n, n_roots, max_subspace, false, work.data(), &s, &lwork)
-          .ok());
 
-  // sigma(B) = A B via a single gemm; the solver holds the handle in host
-  // pointer mode for the whole call, so host scalar pointers are correct here.
-  const auto sigma = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
-    const T one{1};
-    const T zero{0};
-    return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
-                             d_a.data(), n, b, n, &zero, out, n);
-  };
+  EuclideanProblem() {
+    std::size_t lwork = 0;
+    EXPECT_TRUE(
+        make_davidson_slices<T>(h.solver, n, n_roots, max_subspace, false, work.data(), &s, &lwork)
+            .ok());
+  }
+  ~EuclideanProblem() { destroy_handles(h); }
+  EuclideanProblem(const EuclideanProblem &) = delete;
+  EuclideanProblem &operator=(const EuclideanProblem &) = delete;
 
-  // Diagonal Davidson preconditioner correction = residual / (theta - diag),
-  // computed on the host (no kernel needed for a test), guarding the near-zero
-  // denominator when a Ritz value approaches its own diagonal entry.
-  const auto precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
-                                const T *residual, T *correction) -> Status {
-    const std::size_t cnt = static_cast<std::size_t>(n) * roots;
-    std::vector<T> rbuf(cnt);
-    std::vector<T> cbuf(cnt);
-    if (const Status st{wwr::wwrMemcpyAsync(rbuf.data(), residual, sizeof(T) * cnt,
-                                            wwr::wwrMemcpyDeviceToHost, stream)};
-        !st.ok()) {
-      return st;
+  static std::vector<T> unit_guess() {
+    std::vector<T> g(static_cast<std::size_t>(n) * n_roots, T{0});
+    for (int c = 0; c < n_roots; ++c) {
+      g[static_cast<std::size_t>(c) * n + c] = T{1}; // orthonormal unit vectors
     }
-    wwr::wwrStreamSynchronize(stream);
-    for (int i = 0; i < roots; ++i) {
-      for (int j = 0; j < n; ++j) {
-        T denom = theta[i] - static_cast<T>(diagd[static_cast<std::size_t>(j)]);
-        if (std::abs(denom) < T{1e-3}) {
-          denom = denom < T{0} ? T{-1e-3} : T{1e-3};
+    return g;
+  }
+
+  std::size_t workspace_bytes() const {
+    std::size_t lwork = 0;
+    EXPECT_TRUE(davidson_bufferSize<T>(h.solver, n, n_roots, max_subspace, false, &lwork).ok());
+    return lwork;
+  }
+
+  Status solve(const DavidsonOptions<T> &options, DavidsonInfo<T> *info,
+               bool zero_correction = false) {
+    // sigma(B) = A B via a single gemm; the solver holds the handle in host
+    // pointer mode for the whole call, so host scalar pointers are correct here.
+    const auto sigma = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
+      const T one{1};
+      const T zero{0};
+      return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
+                               d_a.data(), n, b, n, &zero, out, n);
+    };
+
+    // Diagonal Davidson preconditioner correction = residual / (theta - diag),
+    // computed on the host (no kernel needed for a test), guarding the near-zero
+    // denominator when a Ritz value approaches its own diagonal entry.
+    const auto precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
+                                  const T *residual, T *correction) -> Status {
+      const std::size_t cnt = static_cast<std::size_t>(n) * roots;
+      if (zero_correction) {
+        return wwr::wwrMemsetAsync(correction, 0, sizeof(T) * cnt, stream);
+      }
+      std::vector<T> rbuf(cnt);
+      std::vector<T> cbuf(cnt);
+      if (const Status st{wwr::wwrMemcpyAsync(rbuf.data(), residual, sizeof(T) * cnt,
+                                              wwr::wwrMemcpyDeviceToHost, stream)};
+          !st.ok()) {
+        return st;
+      }
+      wwr::wwrStreamSynchronize(stream);
+      for (int i = 0; i < roots; ++i) {
+        for (int j = 0; j < n; ++j) {
+          T denom = theta[i] - a[static_cast<std::size_t>(j) * n + j];
+          if (std::abs(denom) < T{1e-3}) {
+            denom = denom < T{0} ? T{-1e-3} : T{1e-3};
+          }
+          cbuf[static_cast<std::size_t>(i) * n + j] =
+              rbuf[static_cast<std::size_t>(i) * n + j] / denom;
         }
-        cbuf[static_cast<std::size_t>(i) * n + j] =
-            rbuf[static_cast<std::size_t>(i) * n + j] / denom;
+      }
+      const Status st{wwr::wwrMemcpyAsync(correction, cbuf.data(), sizeof(T) * cnt,
+                                          wwr::wwrMemcpyHostToDevice, stream)};
+      wwr::wwrStreamSynchronize(stream);
+      return st;
+    };
+
+    return davidson_solve<T>(h.blas, h.solver, handle->stream().get(), n, n_roots, max_subspace,
+                             d_guess.data(), n_roots, s, sigma, precondition, d_vals.data(),
+                             d_vecs.data(), info, options);
+  }
+
+  std::vector<T> eigenvalues() { return to_host(handle, d_vals.data(), n_roots); }
+
+  /// Ritz values of the first iteration: the unit-vector guess spans the first
+  /// n_roots coordinates, so they are the eigenvalues of A's leading block.
+  std::vector<T> leading_block_eigenvalues() const {
+    std::vector<T> block(static_cast<std::size_t>(n_roots) * n_roots);
+    for (int j = 0; j < n_roots; ++j) {
+      for (int i = 0; i < n_roots; ++i) {
+        block[static_cast<std::size_t>(j) * n_roots + i] = a[static_cast<std::size_t>(j) * n + i];
       }
     }
-    const Status st{wwr::wwrMemcpyAsync(correction, cbuf.data(), sizeof(T) * cnt,
-                                        wwr::wwrMemcpyHostToDevice, stream)};
-    wwr::wwrStreamSynchronize(stream);
-    return st;
-  };
+    return reference_eigenvalues<T>(n_roots, block);
+  }
+};
+
+template<typename T>
+void check_reference() {
+  const bool is_float = std::is_same_v<T, float>;
+  EuclideanProblem<T> p;
+  const auto ref = reference_eigenvalues<T>(p.n, p.a);
+  const double eig_tol = is_float ? 5e-3 : 1e-6;
 
   DavidsonOptions<T> options;
-  options.residual_tolerance = res_tol;
+  options.residual_tolerance = is_float ? T{1e-4} : T{1e-8};
   options.max_iterations = 300;
-
-  DavidsonResult<T> result;
-  const Status st = davidson_solve<T>(h.blas, h.solver, handle->stream().get(), n, n_roots,
-                                      max_subspace, d_guess.data(), n_roots, s, sigma, precondition,
-                                      d_vecs.data(), &result, options);
+  DavidsonInfo<T> info;
+  const Status st = p.solve(options, &info);
 
   EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
-  EXPECT_TRUE(result.converged);
-  ASSERT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(n_roots));
-  for (int i = 0; i < n_roots; ++i) {
+  EXPECT_CONVERGED(info);
+  EXPECT_LE(info.max_residual_norm, options.residual_tolerance);
+  const auto vals = p.eigenvalues();
+  for (int i = 0; i < p.n_roots; ++i) {
     // ascending, and matching the reference's lowest n_roots.
-    EXPECT_NEAR(static_cast<double>(result.eigenvalues[static_cast<std::size_t>(i)]),
+    EXPECT_NEAR(static_cast<double>(vals[static_cast<std::size_t>(i)]),
                 static_cast<double>(ref[static_cast<std::size_t>(i)]), eig_tol);
     if (i > 0) {
-      EXPECT_LE(result.eigenvalues[static_cast<std::size_t>(i - 1)],
-                result.eigenvalues[static_cast<std::size_t>(i)] + static_cast<T>(eig_tol));
+      EXPECT_LE(vals[static_cast<std::size_t>(i - 1)],
+                vals[static_cast<std::size_t>(i)] + static_cast<T>(eig_tol));
     }
   }
-
-  destroy_handles(h);
 }
 
 TEST(DavidsonReferenceTests, LowestEigenpairsDouble) { check_reference<double>(); }
 TEST(DavidsonReferenceTests, LowestEigenpairsFloat) { check_reference<float>(); }
+
+/// The two non-converged stops: each is success, with the reason set and the
+/// first iteration's Ritz values (A's leading block) still written.
+template<typename T>
+void check_first_iteration_stop(int max_iterations, bool zero_correction,
+                                DavidsonStopReason expected) {
+  EuclideanProblem<T> p;
+  DavidsonOptions<T> options;
+  options.max_iterations = max_iterations;
+  DavidsonInfo<T> info;
+  const Status st = p.solve(options, &info, zero_correction);
+
+  EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
+  EXPECT_FALSE(converged(info));
+  EXPECT_EQ(static_cast<int>(info.reason), static_cast<int>(expected));
+  EXPECT_EQ(info.iterations, 1);
+  EXPECT_GT(info.max_residual_norm, options.residual_tolerance);
+  const auto vals = p.eigenvalues();
+  const auto ref = p.leading_block_eigenvalues();
+  const double tol = std::is_same_v<T, float> ? 1e-5 : 1e-12;
+  for (std::size_t i = 0; i < ref.size(); ++i) {
+    EXPECT_NEAR(static_cast<double>(vals[i]), static_cast<double>(ref[i]), tol) << i;
+  }
+}
+
+TEST(DavidsonReferenceTests, MaxIterationsIsSuccess) {
+  check_first_iteration_stop<double>(1, false, DavidsonStopReason::MaxIterations);
+  check_first_iteration_stop<float>(1, false, DavidsonStopReason::MaxIterations);
+}
+
+TEST(DavidsonReferenceTests, ZeroCorrectionStagnates) {
+  check_first_iteration_stop<double>(100, true, DavidsonStopReason::Stagnated);
+  check_first_iteration_stop<float>(100, true, DavidsonStopReason::Stagnated);
+}
+
+TEST(DavidsonReferenceTests, ZeroBudgetZeroesEigenvalues) {
+  EuclideanProblem<double> p;
+  DavidsonOptions<double> options;
+  options.max_iterations = 0;
+  DavidsonInfo<double> info;
+  ASSERT_TRUE(p.solve(options, &info).ok());
+  EXPECT_EQ(static_cast<int>(info.reason), static_cast<int>(DavidsonStopReason::MaxIterations));
+  EXPECT_EQ(info.iterations, 0);
+  EXPECT_EQ(p.eigenvalues(), std::vector<double>(p.n_roots, 0.0));
+}
 
 // ── generalized (metric) solve vs the reference LAPACK (REQUIRES_GPU) ─────────
 //
@@ -470,6 +582,7 @@ void check_reference_metric() {
     guess_host[static_cast<std::size_t>(c) * n + c] = T{1};
   }
   DeviceBuffer<T> d_guess = to_device(handle, guess_host);
+  DeviceBuffer<T> d_vals(static_cast<std::size_t>(n_roots), handle);
   DeviceBuffer<T> d_vecs(static_cast<std::size_t>(n) * n_roots, handle);
 
   std::size_t lwork = 0;
@@ -523,17 +636,17 @@ void check_reference_metric() {
   options.residual_tolerance = res_tol;
   options.max_iterations = 400;
 
-  DavidsonResult<T> result;
+  DavidsonInfo<T> info;
   const Status st =
       davidson_solve<T>(h.blas, h.solver, handle->stream().get(), n, n_roots, max_subspace,
-                        d_guess.data(), n_roots, s, sigma, precondition, d_vecs.data(), &result,
-                        options, metric);
+                        d_guess.data(), n_roots, s, sigma, precondition, d_vals.data(),
+                        d_vecs.data(), &info, options, metric);
 
   EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
-  EXPECT_TRUE(result.converged);
-  ASSERT_EQ(result.eigenvalues.size(), static_cast<std::size_t>(n_roots));
+  EXPECT_CONVERGED(info);
+  const auto vals = to_host(handle, d_vals.data(), n_roots);
   for (int i = 0; i < n_roots; ++i) {
-    EXPECT_NEAR(static_cast<double>(result.eigenvalues[static_cast<std::size_t>(i)]),
+    EXPECT_NEAR(static_cast<double>(vals[static_cast<std::size_t>(i)]),
                 ref[static_cast<std::size_t>(i)], eig_tol);
   }
 

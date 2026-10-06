@@ -1,6 +1,6 @@
 /**
  * @file types.cppm
- * @brief The Lanczos solver's options, result, end selection and matvec callback
+ * @brief The Lanczos solver's options, info, end selection and matvec callback
  *
  * The :types partition of calaman.lanczos: the value types every other partition
  * names, kept apart from :solve so the Ritz-extraction stage can import them
@@ -13,6 +13,7 @@ import std;
 import wwr.runtime_api; // wwrStream_t
 import calaman.common;  // real_fp
 export import calaman.error_handling; // Status -- the callback's return type
+export import calaman.iterative;      // IterationInfo, stop_reason, converged
 
 export namespace calaman {
 
@@ -30,11 +31,7 @@ struct LanczosOptions {
   ///        is at or below tolerance * max(|theta_i|, ||T||).
   T tolerance = T{1e-8};
   /// @brief Thick restarts before giving up (0: a single cycle of ncv steps).
-  int max_restarts = 100;
-  /// @brief true: a non-converged solve returns WWRBLAS_STATUS_INTERNAL_ERROR
-  ///        (result still filled); false: success, and the caller reads
-  ///        LanczosResult::converged. As DavidsonOptions.
-  bool fail_on_non_convergence = true;
+  int max_iterations = 100;
   /// @brief true: once the estimates pass, also require each true residual
   ///        ||A x_i - theta_i x_i||_2 under the same bound (nev more matvecs per
   ///        check); a miss keeps restarting.
@@ -47,15 +44,17 @@ struct LanczosOptions {
   const T *start_vector = nullptr;
 };
 
-/// @brief Outcome of a lanczos_solve call.
-template<calaman::real_fp T>
-struct LanczosResult {
-  bool converged = false;
-  int restarts = 0; ///< thick restarts performed
-  int matvecs = 0;  ///< operator applications (matvec calls)
-  /// @brief The nev selected eigenvalues, ascending (host). Filled on every
-  ///        completed run; accurate only when converged.
-  std::vector<T> eigenvalues;
+/// @brief Why lanczos_solve stopped. A breakdown is recovered, not a stop.
+enum class LanczosStopReason {
+  Converged,        ///< every wanted pair's estimate (and true residual, if verified) passed
+  MaxIterations,    ///< max_iterations thick restarts ran out
+  NumericalFailure, ///< a BLAS/solver/runtime call or the matvec failed (Status says which)
+};
+static_assert(stop_reason<LanczosStopReason>);
+
+/// @brief What lanczos_solve did: iterations are thick restarts performed.
+struct LanczosInfo : IterationInfo<LanczosStopReason> {
+  int matvecs = 0; ///< operator applications (matvec calls)
 };
 
 /// @brief matvec(stream, x, y): y = A x for one device vector of n elements.

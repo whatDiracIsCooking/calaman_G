@@ -114,27 +114,29 @@ TEST(LanczosArgCheckTests, BufferSizeRejectsNullOutPointer) {
   EXPECT_EQ(lanczos_bufferSize<double>(no_handle, 16, 2, 5, nullptr).code, kInvalidValue);
 }
 
+double g_fake_values[4]; // a never-dereferenced stand-in for the device output
+
 Status solve_with(int n, int nev, int ncv, const lanczos_matvec<double> auto &matvec,
-                  LanczosResult<double> *result) {
+                  LanczosInfo *info, double *values = g_fake_values) {
   const LanczosSlices<double> s;
   return lanczos_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
                                wwr::wwrStream_t{}, n, nev, ncv, LanczosWhich::smallest, s, matvec,
-                               nullptr, result);
+                               values, nullptr, info);
 }
 
 TEST(LanczosArgCheckTests, SolveRejectsBadArguments) {
-  LanczosResult<double> result;
-  EXPECT_EQ(solve_with(16, 0, 3, identity_matvec(), &result).code, kInvalidValue);
-  EXPECT_EQ(solve_with(16, 4, 8, identity_matvec(), &result).code, kInvalidValue);
-  EXPECT_EQ(solve_with(8, 4, 9, identity_matvec(), &result).code, kInvalidValue);
+  LanczosInfo info;
+  EXPECT_EQ(solve_with(16, 0, 3, identity_matvec(), &info).code, kInvalidValue);
+  EXPECT_EQ(solve_with(16, 4, 8, identity_matvec(), &info).code, kInvalidValue);
+  EXPECT_EQ(solve_with(8, 4, 9, identity_matvec(), &info).code, kInvalidValue);
   EXPECT_EQ(solve_with(16, 2, 5, identity_matvec(), nullptr).code, kInvalidValue);
+  EXPECT_EQ(solve_with(16, 2, 5, identity_matvec(), &info, nullptr).code, kInvalidValue);
 }
 
 TEST(LanczosArgCheckTests, OptionDefaults) {
   const LanczosOptions<float> options;
   EXPECT_GT(options.tolerance, 0.0f);
-  EXPECT_GT(options.max_restarts, 0);
-  EXPECT_TRUE(options.fail_on_non_convergence);
+  EXPECT_GT(options.max_iterations, 0);
   EXPECT_FALSE(options.verify_residuals);
   EXPECT_EQ(options.start_vector, nullptr);
 }

@@ -19,7 +19,7 @@ than a partition of a LAPACK-named one, like `calaman.feast` and `calaman.expm`.
 | Partition | Contents |
 |---|---|
 | `:buffer_size` | `DavidsonSlices`, the single-buffer workspace layout, `make_davidson_slices` / `davidson_bufferSize` |
-| `:solve` | `DavidsonOptions`, `DavidsonResult`, the three callback concepts + `DavidsonNoMetric`, `davidson_solve` |
+| `:solve` | `DavidsonOptions`, `DavidsonStopReason`, `DavidsonInfo`, the three callback concepts + `DavidsonNoMetric`, `davidson_solve` |
 
 ## The idea
 
@@ -37,7 +37,7 @@ a lambda is passed (and inlined) as-is, with no type erasure or allocation. The
 metric defaults to `DavidsonNoMetric`, which selects the Euclidean path at
 compile time.
 
-Per `solve` (once implemented):
+Per `solve`:
 
 1. **Subspace expansion.** The orthonormal guess seeds `V`; each iteration calls
    `sigma` once, on only the newly appended columns (`V`, `Sigma_V` grow in
@@ -54,6 +54,21 @@ Per `solve` (once implemented):
 5. **Re-orthogonalization.** Twice-modified Gram–Schmidt of the corrections
    against the retained `V`, then against each other; a candidate with no
    component outside the subspace is dropped.
+
+## Outcome
+
+`davidson_solve` follows `calaman.iterative`: it returns success whenever it
+stops on its own, and `DavidsonInfo::reason` says how —
+
+| `DavidsonStopReason` | When |
+|---|---|
+| `Converged` | every root's residual norm is at or below `residual_tolerance` |
+| `MaxIterations` | `max_iterations` subspace expansions ran out |
+| `Stagnated` | no correction survived re-orthogonalization, so the subspace cannot grow |
+| `NumericalFailure` | a BLAS/solver/runtime call or a callback failed; the `Status` says which |
+
+The eigenvalues land in a caller device buffer (`n_roots`, the feast `d_lambda`
+convention) on every successful return, converged or not.
 
 ## Workspace
 
@@ -79,12 +94,12 @@ davidson_bufferSize<double>(cusolver, n, n_roots, max_subspace, /*with_metric=*/
 DavidsonSlices<double> s;
 make_davidson_slices<double>(cusolver, n, n_roots, max_subspace, false, d_work, &s, &lwork);
 
-DavidsonResult<double> result;
+DavidsonInfo<double> info;
 davidson_solve<double>(cublas, cusolver, stream, n, n_roots, max_subspace,
                        d_guess, guess_count, s, sigma, precondition,
-                       d_eigenvectors, &result);
-// result.eigenvalues[0 .. n_roots) are the lowest eigenvalues, ascending,
-// and result.converged says whether they met residual_tolerance.
+                       d_eigenvalues, d_eigenvectors, &info);
+// d_eigenvalues[0 .. n_roots) are the lowest Ritz values, ascending (device),
+// and converged(info) says whether they met residual_tolerance.
 ```
 
 Both handles must already be set to `stream`.

@@ -7,7 +7,7 @@ Not a LAPACK routine, so it is its own module rather than a partition of a
 LAPACK-named one, like `calaman.davidson` and `calaman.feast`.
 
 > **Status: complete.** Thick restart (Wu–Simon), breakdown recovery, the
-> convergence loop under `max_restarts` / `fail_on_non_convergence`, and an
+> convergence loop under `max_iterations` (thick restarts), and an
 > opt-in true-residual pass. Single-vector: see the repeated-eigenvalue
 > limitation below.
 
@@ -20,7 +20,7 @@ and a tridiagonal eigensolver are out of scope.
 
 | Partition | Contents |
 |---|---|
-| `:types` | `LanczosWhich`, `LanczosOptions`, `LanczosResult`, the `lanczos_matvec` concept |
+| `:types` | `LanczosWhich`, `LanczosOptions`, `LanczosStopReason`, `LanczosInfo`, the `lanczos_matvec` concept |
 | `:buffer_size` | `LanczosSlices`, `lanczos_shape_ok`, `lanczos_restart_keep`, `make_lanczos_slices` / `lanczos_bufferSize` |
 | `:ritz` | `LanczosRitz`, `LanczosRitzSelection`, `lanczos_select`, `lanczos_ritz_extract` / `_select` / `_compact` / `_vectors` |
 | `:solve` | `lanczos_solve` |
@@ -75,7 +75,7 @@ exported) that the restart loop reuses:
 
 The matvec callback always runs with the BLAS handle in **host** pointer mode;
 the caller's mode is restored on return. Every callback call counts in
-`LanczosResult::matvecs`.
+`LanczosInfo::matvecs`.
 
 **Breakdown recovery.** The status block is read only at the cycle's sync, so
 a breakdown at step `j < ncv - 1` still runs the remaining steps (on a frozen,
@@ -103,11 +103,14 @@ columns/rows `0..k-1` (`theta_i` on the diagonal, `beta_m s_{m,i}` in row `k`).
 estimates `|beta_m s_{m,i}|` stay valid across restarts.
 
 The loop stops when every wanted estimate passes, or after
-`options.max_restarts` restarts (0: one cycle). `LanczosResult` reports
-`restarts` and `matvecs` (`ncv + restarts * (ncv - k)` without breakdowns or a
-residual check). A non-converged solve still fills `eigenvalues` and the
-vectors, and returns `INTERNAL_ERROR` only when `fail_on_non_convergence`
-(the `DavidsonOptions` contract).
+`options.max_iterations` restarts (0: one cycle). `LanczosInfo` derives from
+`calaman.iterative`'s `IterationInfo`: `iterations` counts thick restarts, and
+`matvecs` is `ncv + iterations * (ncv - k)` without breakdowns or a residual
+check. Non-convergence is an outcome, not an error: the solve returns success
+with `reason == MaxIterations`, and still writes the eigenvalues (a caller
+device buffer of `nev`, the feast `d_lambda` convention) and the vectors. A
+breakdown is recovered, never a stop, so the only other reason is
+`NumericalFailure`, which comes with the failing `Status`.
 
 **True-residual pass** (`options.verify_residuals`, default off). Once the
 estimates pass, each wanted `x_i` is checked by `||A x_i - theta_i x_i||_2`
@@ -148,9 +151,10 @@ lanczos_bufferSize<double>(solver, n, nev, ncv, &lwork);
 LanczosSlices<double> s;
 make_lanczos_slices<double>(solver, n, nev, ncv, d_work, &s, &lwork);
 
-LanczosResult<double> result;
+LanczosInfo info;
 lanczos_solve<double>(blas, solver, stream, n, nev, ncv, LanczosWhich::smallest, s,
-                      matvec, d_eigenvectors, &result);
+                      matvec, d_eigenvalues, d_eigenvectors, &info);
+// converged(info), or info.reason == LanczosStopReason::MaxIterations
 ```
 
 ## Files
