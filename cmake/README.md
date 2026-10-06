@@ -337,8 +337,8 @@ ctest --preset ci-hip     12 entries — same, the other backend
 **A label, not a `GTEST_SKIP`.** Nothing in `test/` gates on a device count,
 and nothing should: an excluded test is named in the ctest output, where a
 skipped one blends into a green run. It is the same mechanism as
-`no_sanitizer`, which the `asan` preset and both compose sanitizer services
-already exclude.
+`no_sanitizer`, which the `asan`, `hip-asan` and `compute-sanitizer` test
+presets and both compose sanitizer services already exclude.
 
 Two things to get right when adding one:
 

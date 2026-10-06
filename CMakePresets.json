@@ -50,15 +50,21 @@
       "inherits": "debug",
       "binaryDir": "${sourceDir}/build-asan",
       "cacheVariables": {
-        "CALAMAN_ENABLE_ASAN": "ON"
+        "CALAMAN_ENABLE_ASAN": "ON",
+        "CALAMAN_TEST_TIMEOUT_MULTIPLIER": "3"
       }
     },
     {
       "name": "compute-sanitizer",
       "displayName": "Compute Sanitizer Config",
-      "description": "Debug build for NVIDIA compute-sanitizer GPU memory/race checking",
+      "description": "Debug CUDA build whose ctest entries each run under NVIDIA compute-sanitizer (CALAMAN_COMPUTE_SANITIZER_TOOL, default memcheck; reconfigure with -D to switch tool without a rebuild). CUDA only: AMD has no counterpart, and a HIP configure refuses the option.",
       "inherits": "debug",
-      "binaryDir": "${sourceDir}/build-compute-sanitizer"
+      "binaryDir": "${sourceDir}/build-compute-sanitizer",
+      "cacheVariables": {
+        "CALAMAN_GPU_BACKEND": "CUDA",
+        "CALAMAN_COMPUTE_SANITIZER": "ON",
+        "CALAMAN_TEST_TIMEOUT_MULTIPLIER": "10"
+      }
     },
     {
       "name": "coverage",
@@ -78,6 +84,18 @@
       "inherits": "base",
       "cacheVariables": {
         "CALAMAN_GPU_BACKEND": "HIP"
+      }
+    },
+    {
+      "name": "hip-asan",
+      "binaryDir": "${sourceDir}/build-hip-asan",
+      "displayName": "HIP backend, ASAN",
+      "description": "The asan preset against ROCm/HIP: Debug + AddressSanitizer on host (CXX) code, device code left uninstrumented.",
+      "inherits": "hip",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CALAMAN_ENABLE_ASAN": "ON",
+        "CALAMAN_TEST_TIMEOUT_MULTIPLIER": "3"
       }
     },
     {
@@ -138,6 +156,10 @@
       "configurePreset": "hip"
     },
     {
+      "name": "hip-asan",
+      "configurePreset": "hip-asan"
+    },
+    {
       "name": "ci-cuda",
       "configurePreset": "ci-cuda"
     },
@@ -185,6 +207,22 @@
         "exclude": {
           "label": "no_sanitizer"
         }
+      },
+      "environment": {
+        "ASAN_OPTIONS": "protect_shadow_gap=0",
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/test/shared/lsan.supp:print_suppressions=0"
+      }
+    },
+    {
+      "name": "compute-sanitizer",
+      "configurePreset": "compute-sanitizer",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "no_sanitizer"
+        }
       }
     },
     {
@@ -192,6 +230,22 @@
       "configurePreset": "hip",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "hip-asan",
+      "configurePreset": "hip-asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "ASAN_OPTIONS": "protect_shadow_gap=0",
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/test/shared/lsan.supp:print_suppressions=0"
+      },
+      "filter": {
+        "exclude": {
+          "label": "no_sanitizer"
+        }
       }
     },
     {

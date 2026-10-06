@@ -1,0 +1,9 @@
+# LeakSanitizer suppressions for the asan / hip-asan test presets (LSAN_OPTIONS
+# in CMakePresets.json). Scoped to vendor runtimes only: a leak whose stack
+# reaches calaman or WarpWraps code is still reported.
+#
+# ROCm's HSA runtime frees its per-agent tables lazily and never at exit, so
+# every process that touches a device leaks the same ~6KB (ROCm 7.2.4,
+# gfx1200). The CUDA driver needs no entry today.
+leak:libhsa-runtime64.so
+leak:libamdhip64.so

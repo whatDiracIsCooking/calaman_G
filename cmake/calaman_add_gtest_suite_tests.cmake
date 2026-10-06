@@ -67,6 +67,11 @@ function(calaman_add_gtest_suite_tests)
   if(NOT _GST_TIMEOUT)
     set(_GST_TIMEOUT 120)
   endif()
+  if(CALAMAN_TEST_TIMEOUT_MULTIPLIER)
+    math(EXPR _GST_TIMEOUT
+         "${_GST_TIMEOUT} * ${CALAMAN_TEST_TIMEOUT_MULTIPLIER}"
+    )
+  endif()
   if(_GST_TYPED_SUITES AND NOT _GST_TYPES)
     message(
       FATAL_ERROR

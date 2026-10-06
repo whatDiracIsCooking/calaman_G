@@ -125,7 +125,7 @@ services:
       - BUILD_PRESET=${BUILD_PRESET:-default}
       - BUILD_DIR=${BUILD_DIR:-build-compose}
       - CUDA_VISIBLE_DEVICES
-      - TIMEOUT_MULTIPLIER=${TIMEOUT_MULTIPLIER:-1}
+      - TIMEOUT_MULTIPLIER=${TIMEOUT_MULTIPLIER:-}
       - TEST_FILTER=${TEST_FILTER:-}
       - PYTEST_ARGS=${PYTEST_ARGS:-}
       - SKIP_GTEST=${SKIP_GTEST:-}
@@ -140,6 +140,7 @@ services:
         ts=$$(date +%Y%m%d-%H%M%S)
         mkdir -p .log
         cmake --preset "$$preset" -B "$$build_dir" \
+          $${TIMEOUT_MULTIPLIER:+-DCALAMAN_TEST_TIMEOUT_MULTIPLIER=$$TIMEOUT_MULTIPLIER} \
           > >(tee .log/configure.$$ts.out.txt) \
           2> >(tee .log/configure.$$ts.err.txt >&2)
         cmake --build "$$build_dir" \
@@ -189,7 +190,7 @@ services:
       - BUILD_DIR=${BUILD_DIR:-build-compose-asan}
       - CUDA_VISIBLE_DEVICES
       - ASAN_OPTIONS=protect_shadow_gap=0
-      - TIMEOUT_MULTIPLIER=${TIMEOUT_MULTIPLIER:-1}
+      - TIMEOUT_MULTIPLIER=${TIMEOUT_MULTIPLIER:-}
       - TEST_FILTER=${TEST_FILTER:-}
       - PYTEST_ARGS=${PYTEST_ARGS:-}
       - SKIP_GTEST=${SKIP_GTEST:-}
@@ -204,6 +205,7 @@ services:
         ts=$$(date +%Y%m%d-%H%M%S)
         mkdir -p .log
         cmake --preset "$$preset" -B "$$build_dir" \
+          $${TIMEOUT_MULTIPLIER:+-DCALAMAN_TEST_TIMEOUT_MULTIPLIER=$$TIMEOUT_MULTIPLIER} \
           > >(tee .log/configure.$$ts.out.txt) \
           2> >(tee .log/configure.$$ts.err.txt >&2)
         cmake --build "$$build_dir" \
@@ -257,7 +259,7 @@ services:
       - PYTEST_ARGS=${PYTEST_ARGS:-}
       - SKIP_GTEST=${SKIP_GTEST:-}
       - SKIP_PYTEST=${SKIP_PYTEST:-}
-      - TIMEOUT_MULTIPLIER=10
+      - TIMEOUT_MULTIPLIER=${TIMEOUT_MULTIPLIER:-}  # preset default: 10
     command:
       - bash
       - -c
@@ -269,6 +271,8 @@ services:
         ts=$$(date +%Y%m%d-%H%M%S)
         mkdir -p .log
         cmake --preset "$$preset" -B "$$build_dir" \
+          $${TIMEOUT_MULTIPLIER:+-DCALAMAN_TEST_TIMEOUT_MULTIPLIER=$$TIMEOUT_MULTIPLIER} \
+          -DCALAMAN_COMPUTE_SANITIZER_TOOL="$$tool" \
           > >(tee .log/configure.$$ts.out.txt) \
           2> >(tee .log/configure.$$ts.err.txt >&2)
         cmake --build "$$build_dir" \
@@ -277,17 +281,14 @@ services:
         gtest_rc=0
         pytest_rc=0
         if [ -z "$$SKIP_GTEST" ]; then
-          # --target-processes all: compute-sanitizer does not follow children
-          # by default, and ctest launches each suite as its own process, so
-          # without it the tool would instrument ctest itself and nothing else.
+          # No compute-sanitizer prefix here: the compute-sanitizer preset sets
+          # CMAKE_TEST_LAUNCHER, so ctest already runs each suite under the
+          # tool (CALAMAN_COMPUTE_SANITIZER_TOOL, passed at configure above).
           # -LE no_sanitizer: the ctest analog of pytest's -m "not no_sanitizer"
           # below. A suite that deliberately provokes a CUDA error (e.g. a forced
-          # cudaMalloc OOM to prove the buffer stays coherent) counts as an error
-          # under memcheck, so --error-exitcode 1 would fail the whole run on a
-          # clean tree; the suite carries the no_sanitizer label to opt out here
+          # cudaMalloc OOM) counts as an error under memcheck, so it opts out here
           # while still running in every non-sanitized ctest.
-          compute-sanitizer --tool "$$tool" --error-exitcode 1 --target-processes all \
-            ctest --test-dir "$$build_dir" --output-on-failure -LE no_sanitizer \
+          ctest --test-dir "$$build_dir" --output-on-failure -LE no_sanitizer \
             $${TEST_FILTER:+-R "$$TEST_FILTER"} \
             --output-junit "$$PWD/.log/ctest.$$ts.xml" \
             > >(tee .log/compute-sanitizer-gtest.$$ts.out.txt) \
@@ -295,7 +296,9 @@ services:
           gtest_rc=$$?
         fi
         if [ -z "$$SKIP_PYTEST" ]; then
-          compute-sanitizer --tool "$$tool" --error-exitcode 1 \
+          # --require-cuda-init no: today's pytest suite never touches CUDA,
+          # which the tool otherwise counts as an error and exits non-zero.
+          compute-sanitizer --tool "$$tool" --error-exitcode 1 --require-cuda-init no \
             python3 -m pytest -m "not no_sanitizer" -rs $$PYTEST_ARGS -v \
             --junitxml=.log/pytest.$$ts.xml \
             > >(tee .log/compute-sanitizer-pytest.$$ts.out.txt) \
