@@ -47,6 +47,10 @@ add_subdirectory(lacp2)
 # must precede lat2. Links only calaman.common and calaman.error_handling.
 add_subdirectory(lag2)
 
+# calaman.lat2 -- triangular matrix, double to single (?lat2?): lag2's element
+# conversion (calaman::lag2::header) over one triangle, so it follows lag2.
+add_subdirectory(lat2)
+
 # calaman.laset is lacpy's fill twin (set to constants rather than copy). It
 # shares no build edge with lacpy -- added next to it only for readability.
 add_subdirectory(laset)
