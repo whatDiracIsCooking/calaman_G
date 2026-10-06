@@ -21,7 +21,7 @@ namespace {
 template<typename T>
 __global__ void diis_solve_kernel(const int m, const int ld, const int newest,
                                   const T *__restrict__ gram, T *__restrict__ coeff,
-                                  int *__restrict__ singular_out, const T pivot_floor) {
+                                  int *__restrict__ singular_out, const T pivot_tol) {
   // One untyped declaration for every T: a templated `extern __shared__ T[]`
   // redeclares one symbol with conflicting types. double alignment covers float.
   extern __shared__ double smem_storage[];
@@ -30,8 +30,19 @@ __global__ void diis_solve_kernel(const int m, const int ld, const int newest,
   T *const rhs = b + (dim * dim); // dim
   const int tid = static_cast<int>(threadIdx.x);
 
-  // b[i][j] = <e_i, e_j> (i, j < m; only the upper triangle of gram is valid),
-  // the Lagrange border -1, b[m][m] = 0; rhs = (0, ..., 0, -1).
+  // Normalize B by its largest diagonal so it shares the border's unit scale:
+  // the pivot test becomes relative and c is unchanged (only l rescales). All
+  // zero (or NaN) means there is nothing to extrapolate from.
+  T scale = T{0};
+  for (int i = 0; i < m; ++i) {
+    const T d = gram[(static_cast<std::size_t>(i) * ld) + i];
+    scale = d > scale ? d : scale;
+  }
+  const bool degenerate = !(scale > T{0});
+  const T inv_scale = degenerate ? T{1} : T{1} / scale;
+
+  // b[i][j] = <e_i, e_j> / scale (i, j < m; only the upper triangle of gram is
+  // valid), the Lagrange border -1, b[m][m] = 0; rhs = (0, ..., 0, -1).
   for (int idx = tid; idx < dim * dim; idx += static_cast<int>(blockDim.x)) {
     const int i = idx / dim;
     const int j = idx % dim;
@@ -39,7 +50,7 @@ __global__ void diis_solve_kernel(const int m, const int ld, const int newest,
     if (i < m && j < m) {
       const int a = i <= j ? i : j;
       const int c = i <= j ? j : i;
-      v = gram[(static_cast<std::size_t>(a) * ld) + c];
+      v = gram[(static_cast<std::size_t>(a) * ld) + c] * inv_scale;
     } else if (i == m && j == m) {
       v = T{0};
     } else {
@@ -56,8 +67,8 @@ __global__ void diis_solve_kernel(const int m, const int ld, const int newest,
     return;
   }
 
-  bool singular = false;
-  for (int col = 0; col < dim; ++col) {
+  bool singular = degenerate;
+  for (int col = 0; col < dim && !singular; ++col) {
     int pivot = col;
     T best = wwr::fabs(b[(col * dim) + col]);
     for (int r = col + 1; r < dim; ++r) {
@@ -67,7 +78,7 @@ __global__ void diis_solve_kernel(const int m, const int ld, const int newest,
         pivot = r;
       }
     }
-    if (best < pivot_floor) {
+    if (!(best >= pivot_tol)) { // also catches a NaN pivot
       singular = true;
       break;
     }
@@ -111,11 +122,11 @@ __global__ void diis_solve_kernel(const int m, const int ld, const int newest,
 
 template<typename T>
 void diis_solve(const wwr::wwrStream_t stream, const int m, const int ld, const int newest,
-                const T *const gram, T *const coeff, int *const singular_out, const T pivot_floor) {
+                const T *const gram, T *const coeff, int *const singular_out, const T pivot_tol) {
   const auto dim = static_cast<std::size_t>(m) + 1;
   const std::size_t smem_bytes = (dim * dim + dim) * sizeof(T);
   diis_solve_kernel<T><<<1, WWR_WARP_SIZE, smem_bytes, stream>>>(m, ld, newest, gram, coeff,
-                                                                  singular_out, pivot_floor);
+                                                                  singular_out, pivot_tol);
 }
 
 template void diis_solve<float>(wwr::wwrStream_t, int, int, int, const float *, float *, int *,
