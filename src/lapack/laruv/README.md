@@ -30,8 +30,11 @@ re-running the tail of the block from the first index that hit.
 ## Shape
 
 - `laruv.cuh` — the multiplier table (`__constant__`), `laruv_draw` (one
-  output) and `laruv_block` (the block-cooperative call). Linked as the
-  INTERFACE target `calaman::laruv::header`, for `?larnv`'s kernels.
+  output), `laruv_block` (the block-cooperative call, which reports whether
+  the retry was taken) and the mod-2^48 seed helpers (`laruv_join`/`split`,
+  `laruv_mulmod`, `laruv_powmod`, `laruv_multiplier`) that jump a seed ahead
+  by whole calls. Linked as the INTERFACE target `calaman::laruv::header`, for
+  `calaman.larnv`'s kernels.
 - `laruv.cu` — one block of 128 threads calling `laruv_block`.
 - `laruv_bridge.h`, `interface.cppm`, `instantiations.cpp` — the usual
   module / `.cu` split (`calaman.lacpy`'s shape).
