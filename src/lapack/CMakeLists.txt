@@ -218,6 +218,12 @@ add_subdirectory(lae2)
 add_subdirectory(laev2)
 add_subdirectory(lapy2)
 
+# calaman.sterf -- eigenvalues of a symmetric tridiagonal (LAPACK's ?sterf), one
+# single-thread kernel over the sterf.cuh device core. That header links
+# calaman::sym2x2, calaman::lanst::header and calaman::lasrt::header (all
+# added above), so it follows them here.
+add_subdirectory(sterf)
+
 # calaman.lasy2 -- solve the order-(1..2) Sylvester equation
 # op(TL)*X + ISGN*X*op(TR) = SCALE*B, the GPU counterpart of LAPACK's ?lasy2. A
 # single single-thread device kernel (the whole solve is O(1), X at most 2x2),

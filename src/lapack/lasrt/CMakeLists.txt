@@ -2,6 +2,18 @@
 # device, the GPU counterpart of LAPACK's ?lasrt. A shipped src/ module: written
 # once against WarpWraps's `wwr*` names and built for either backend.
 
+# The in-thread sort header's own target (lasrt.cuh's lasrt_serial, which
+# ?sterf's kernel calls): an INTERFACE library carrying only the src/ root, so a
+# downstream .cu reaches "lapack/lasrt/lasrt.cuh" and the "common/enums.h" it
+# includes root-relative -- calaman::lanst::header's shape.
+add_library(calaman.lasrt.header INTERFACE)
+add_library(calaman::lasrt::header ALIAS calaman.lasrt.header)
+target_include_directories(
+  calaman.lasrt.header
+  INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+            $<INSTALL_INTERFACE:${CALAMAN_INSTALL_INCLUDEDIR}>
+)
+
 # The device-kernel library. The sort is one hand-launched single-thread kernel
 # (quicksort reverting to insertion sort, an explicit stack), so it links the
 # pieces directly rather than riding wwr.extension.parallel_for: wwr.device
