@@ -86,6 +86,12 @@ add_subdirectory(feast)
 # its placement is free; grouped after feast as the other subspace eigensolver.
 add_subdirectory(davidson)
 
+# calaman.lanczos -- thick-restart Lanczos for the extreme eigenpairs of a
+# symmetric operator given as a single-vector matvec callback. Links only
+# common and error_handling from src/, so its placement is free; grouped with
+# davidson as the other callback-driven eigensolver.
+add_subdirectory(lanczos)
+
 # calaman.cg_unitary -- Riemannian conjugate gradient on the unitary group
 # U(n). A host driver over wrapped BLAS, calaman.expm (the geodesic step) and
 # calaman.orthogonalize (optional reunitarization), plus its own line-search
