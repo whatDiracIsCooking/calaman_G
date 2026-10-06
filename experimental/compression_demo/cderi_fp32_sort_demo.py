@@ -16,12 +16,17 @@ cost of the two side-channels it forces us to store:
   * the sort permutation -- an arbitrary order over ~320M elements needs
     ~n*log2(n) bits (~1.1-1.3 GB as uint32) and is essentially INCOMPRESSIBLE.
 
-So three numbers matter, all end-to-end vs the original fp64 bytes (lossy only
-in the fp32 cast):
+So four numbers matter, all end-to-end vs the original fp64 bytes (lossy only
+in the fp32 cast; the fp64 rows are lossless):
 
   A  fp32 in-place  : compress(fp32 nz)        + mask              [no perm]
   B  fp32 sorted    : compress(fp32 sort(nz))  + perm + mask
-  (ref) #123 fp64 lossless zero-strip+mask: 2.56x zstd, no fp32, no sort.
+  C  fp64 in-place  : compress(fp64 nz)        + mask   (#123, re-measured)
+  D  fp64 sorted    : compress(fp64 sort(nz))  + perm + mask
+
+D vs C answers whether sorting pays with no downcast at all; D is also reported
+against the uncompressed nonzero fp64 stream, where a ratio < 1 means sorting
+plus the permutation costs more than storing the values raw.
 
     uv run --with numpy --with cramjam --with h5py \
         experimental/compression_demo/cderi_fp32_sort_demo.py [path/to/cderi.h5]
@@ -126,7 +131,20 @@ def main() -> None:
     _recon = np.empty_like(nz32_sorted)
     _recon[order] = nz32_sorted
     assert np.array_equal(_recon, nz32)
-    del order, _recon, nz
+    del _recon
+
+    # Lossless fp64: the same sort, no downcast. Compressed sizes only, so the
+    # 2.56 GB fp64 streams can be freed before the fp32 tables run.
+    nz64_bytes = nz.nbytes
+    nz64_sorted = nz[order]
+    val64 = {}  # codec -> (unsorted_bytes, unsorted_stage, sorted_bytes, stage)
+    for codec in CODECS:
+        t = time.monotonic()
+        u_bytes, u_stage = best_compressed(nz.view(np.uint64), codec)
+        s_bytes, s_stage = best_compressed(nz64_sorted.view(np.uint64), codec)
+        val64[codec] = (u_bytes, u_stage, s_bytes, s_stage)
+        sys.stderr.write(f"  {codec} fp64 values in {time.monotonic() - t:.1f}s\n")
+    del order, nz, nz64_sorted
 
     print(f"\nDataset: {h5.name}  ({system})")
     print(f"  {n} values, {nnz} nonzero ({nnz / n * 100:.2f}%); "
@@ -189,6 +207,29 @@ def main() -> None:
               f"{REF_LOSSLESS[codec][1]:>11.2f}x")
     print("\n('#123 strip' = fp64 lossless zero-strip+mask, the no-fp32/no-sort "
           "baseline.)")
+
+    # --- 4. lossless fp64: does sorting pay with no downcast? ---------------
+    print("\n4. LOSSLESS fp64 (no downcast). C = fp64 in-place (values+mask);")
+    print("   D = fp64 sorted (values+perm+mask). 'D vs nz' is D against the")
+    print(f"   uncompressed nonzero fp64 stream ({_gb(nz64_bytes)}, no mask);")
+    print("   < 1.00x means sorting + permutation outweighs storing the values raw.\n")
+    hdr = (f"{'codec':<8}"
+           f"{'C values':>26}{'C ratio':>9}"
+           f"{'D values':>26}{'D perm':>9}{'D total':>9}{'D ratio':>9}"
+           f"{'D vs nz':>9}")
+    print(hdr)
+    print("-" * len(hdr))
+    for codec in CODECS:
+        u_bytes, u_stage, s_bytes, s_stage = val64[codec]
+        mc = mask_comp[codec]
+        c_total = u_bytes + mc
+        d_values = s_bytes + perm_comp[codec]
+        d_total = d_values + mc
+        print(f"{codec:<8}"
+              f"{f'{_gb(u_bytes)} ({u_stage})':>26}{orig_bytes / c_total:>8.2f}x"
+              f"{f'{_gb(s_bytes)} ({s_stage})':>26}{_gb(perm_comp[codec]):>9}"
+              f"{_gb(d_total):>9}{orig_bytes / d_total:>8.2f}x"
+              f"{nz64_bytes / d_values:>8.2f}x")
 
 
 if __name__ == "__main__":
