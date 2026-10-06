@@ -13,11 +13,11 @@
  *   mode), so for JOBZ = N the unreferenced triangle is scaled too.
  * - The rescale of w is calaman.lascl(sigma -> 1): one multiply by 1/sigma,
  *   the ?scal the reference does, without a BLAS handle.
+ * - Vendor ?orgtr writes A's lda padding rows, so for JOBZ = V with lda > n it
+ *   and steqr run on a packed n-by-n copy in @p work, lacpy'd back into A.
  * - SYNCHRONIZES once to read the norm, and again only when scaling, to read
  *   INFO; otherwise the tail is enqueued on the solver's stream.
- * - Allocation-free apart from calaman.lansy's own scratch; @p work is one
- *   buffer of syev_bufferSize<T>() bytes.
- *
+ * - Allocation-free apart from calaman.lansy's own scratch.
  * Usage:
  *   import calaman.syev;
  *   const std::size_t bytes = calaman::syev_bufferSize<double>(solver, Jobz::V, Uplo::L, n, lda);
@@ -38,6 +38,7 @@ import wwr.wrappers.solver; // sytrd / orgtr + their bufferSize queries
 import calaman.common;      // Jobz, Uplo, MatrixNorm, WorkspaceLayout, carve_workspace
 import calaman.lansy;       // max-abs norm for the scaling decision
 import calaman.lascl;       // scale A, rescale w
+import calaman.lacpy;       // A <-> the packed eigenvector copy when lda > n
 import calaman.sterf;       // eigenvalues of the tridiagonal (JOBZ = N)
 import calaman.steqr;       // eigenpairs of the tridiagonal (JOBZ = V)
 
@@ -61,6 +62,7 @@ struct SyevSlices {
   T *anrm = nullptr;      ///< lansy's max-abs result
   T *e = nullptr;         ///< tridiagonal off-diagonal (n)
   T *tau = nullptr;       ///< ?sytrd reflector scalars (n), read by ?orgtr
+  T *z = nullptr;         ///< packed n-by-n eigenvectors; JOBZ = V with lda > n only
   int *vinfo = nullptr;   ///< vendor devInfo, kept apart from the caller's INFO
   T *sytrd_work = nullptr;
   T *orgtr_work = nullptr;
@@ -69,13 +71,16 @@ struct SyevSlices {
   int orgtr_lwork = 0;
   std::size_t steqr_bytes = 0;
 
-  void carve(WorkspaceLayout &layout, const bool wantz, const int n, const int sytrd_len,
-             const int orgtr_len, const std::size_t steqr_len) {
+  void carve(WorkspaceLayout &layout, const bool wantz, const bool packed, const int n,
+             const int sytrd_len, const int orgtr_len, const std::size_t steqr_len) {
     const std::size_t nsz = static_cast<std::size_t>(n < 1 ? 1 : n);
     anrm = layout.fixed<T>(1);
     e = layout.fixed<T>(nsz);
     tau = layout.fixed<T>(nsz);
     vinfo = layout.fixed<int>(1);
+    if (wantz && packed) {
+      z = layout.fixed<T>(nsz * nsz);
+    }
     sytrd_work = layout.scratch<T>(static_cast<std::size_t>(sytrd_len));
     sytrd_lwork = sytrd_len;
     if (wantz) {
@@ -87,7 +92,7 @@ struct SyevSlices {
   }
 };
 
-static_assert(slices_for<SyevSlices<double>, bool, int, int, int, std::size_t>);
+static_assert(slices_for<SyevSlices<double>, bool, bool, int, int, int, std::size_t>);
 
 /// @brief Query the vendor lwork lengths, then size (@p base null) or carve
 ///        the workspace; returns the bytes the layout spans
@@ -95,6 +100,8 @@ template<typename T>
 std::size_t map_workspace(wwr::wwrsolverDnHandle_t solver, void *base, const Jobz jobz,
                           const Uplo uplo, const int n, const int lda, SyevSlices<T> *out) {
   const bool wantz = jobz == Jobz::V;
+  const bool packed = lda > n;
+  const int ldz = packed ? std::max(1, n) : lda;
   int sytrd_len = 1;
   int orgtr_len = 1;
   if (n > 0) {
@@ -105,21 +112,21 @@ std::size_t map_workspace(wwr::wwrsolverDnHandle_t solver, void *base, const Job
       sytrd_len = std::max(1, lw);
     }
     lw = 0;
-    if (wantz && wwr::orgtr_bufferSize<T>(solver, fill_mode(uplo), n, dummy, lda, dummy, &lw) ==
+    if (wantz && wwr::orgtr_bufferSize<T>(solver, fill_mode(uplo), n, dummy, ldz, dummy, &lw) ==
                      wwr::WWRSOLVER_STATUS_SUCCESS) {
       orgtr_len = std::max(1, lw);
     }
   }
   const std::size_t steqr_len = wantz ? steqr_bufferSize<T>(CompZ::V, n) : std::size_t{0};
-  return carve_workspace(base, out, wantz, n, sytrd_len, orgtr_len, steqr_len);
+  return carve_workspace(base, out, wantz, packed, n, sytrd_len, orgtr_len, steqr_len);
 }
 
 } // namespace syev_detail
 
 /// @brief Device workspace syev() needs, in bytes
 ///
-/// Covers the norm scalar, e, tau, the vendor devInfo and the scratch zone
-/// ?sytrd / ?orgtr / steqr share. Pass the same @p solver and @p lda to syev().
+/// Covers the norm scalar, e, tau, the vendor devInfo, the packed n-by-n
+/// eigenvectors (Jobz::V, lda > n) and the scratch ?sytrd / ?orgtr / steqr share. Pass the same @p solver and @p lda to syev().
 export template<calaman::real_fp T>
 std::size_t syev_bufferSize(wwr::wwrsolverDnHandle_t solver, const Jobz jobz, const Uplo uplo,
                             const int n, const int lda) {
@@ -200,12 +207,20 @@ Status syev(wwr::wwrsolverDnHandle_t solver, const Jobz jobz, const Uplo uplo, c
   if (!wantz) {
     CLM_TRY(sterf<T>(stream, n, w, ws.e, info));
   } else {
+    T *const z = ws.z != nullptr ? ws.z : a;
+    const int ldz = ws.z != nullptr ? n : lda;
+    if (z != a) {
+      CLM_TRY(lacpy<T>(stream, Region::A, un, un, a, ulda, z, un));
+    }
     const auto st =
-        wwr::orgtr<T>(solver, fill, n, a, lda, ws.tau, ws.orgtr_work, ws.orgtr_lwork, ws.vinfo);
+        wwr::orgtr<T>(solver, fill, n, z, ldz, ws.tau, ws.orgtr_work, ws.orgtr_lwork, ws.vinfo);
     if (st != wwr::WWRSOLVER_STATUS_SUCCESS) {
       return st;
     }
-    CLM_TRY(steqr<T>(stream, CompZ::V, n, w, ws.e, a, lda, ws.steqr_work, ws.steqr_bytes, info));
+    CLM_TRY(steqr<T>(stream, CompZ::V, n, w, ws.e, z, ldz, ws.steqr_work, ws.steqr_bytes, info));
+    if (z != a) {
+      CLM_TRY(lacpy<T>(stream, Region::A, un, un, z, un, a, ulda));
+    }
   }
 
   // ==== Undo the scaling on the converged eigenvalues (IMAX of ?syev). ====
