@@ -208,7 +208,7 @@ BUILD_ONLY=1 dc build
 | Env Var | Effect |
 |---------|--------|
 | `CALAMAN_IMAGE` | Docker image to use (default: `calaman:latest`) |
-| `BUILD_PRESET` | Select cmake preset: `default` (Release), `debug`, `asan` (default: `default`) |
+| `BUILD_PRESET` | Select cmake preset: `default` (Release), `debug`, `asan`, `compute-sanitizer` (default: `default`) |
 | `CLEAN=1` | Remove compiled objects before building |
 | `RECONFIGURE=1` | Wipe cmake cache and reconfigure from scratch |
 | `REBUILD=1` | Both clean and reconfigure (nuclear) |
@@ -254,7 +254,7 @@ SKIP_GTEST=1 PYTEST_ARGS='-k smoke' dc test
 | `PYTEST_ARGS` | Extra arguments appended to the pytest invocation |
 | `SKIP_GTEST=1` | Skip the C++ suite |
 | `SKIP_PYTEST=1` | Skip the Python suite |
-| `TIMEOUT_MULTIPLIER` | Scale test timeouts (default: `1`) |
+| `TIMEOUT_MULTIPLIER` | Integer scale on test timeouts, forwarded as `-DCALAMAN_TEST_TIMEOUT_MULTIPLIER` (unset: the preset's value — `1`, or `10` for `compute-sanitizer`) |
 | `CUDA_VISIBLE_DEVICES` | Which GPU to run on. Passed through from your shell with no default — unset means every visible device. |
 
 ### pytest cannot run from a `.claude/worktrees/` checkout
@@ -300,6 +300,11 @@ COMPUTE_SANITIZER_TOOL=racecheck dc compute-sanitizer
 ```
 
 Uses the `compute-sanitizer` preset, built into `build-compose-compute-sanitizer/`.
+The preset itself wraps each ctest entry in the tool (`CMAKE_TEST_LAUNCHER`), so
+the service passes `COMPUTE_SANITIZER_TOOL` through at configure time and runs
+plain ctest; only the pytest half is wrapped by the service. CUDA only.
+`racecheck` and `synccheck` check only calaman's own kernels (`--kernel-name
+kns=calaman`); `memcheck` and `initcheck` check every kernel, vendor ones included.
 
 ## Interactive Shell
 

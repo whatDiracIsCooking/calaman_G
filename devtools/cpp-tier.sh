@@ -32,8 +32,7 @@
 #   --preset NAME   configure/build preset (default: CMAKE_PRESET from
 #                   devtools/config.sh). The test preset follows it when one of
 #                   the same name exists, and is skipped with a note when not
-#                   -- only default, workstation, debug, asan, hip and
-#                   compile-time have one.
+#                   -- see `ctest --list-presets` for which have one.
 #   --fresh         wipe the CMake cache first (`--fresh`). Needed after
 #                   changing a toolchain variable; a plain reconfigure keeps
 #                   the old value and the change appears to do nothing.

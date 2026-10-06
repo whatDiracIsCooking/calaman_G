@@ -398,6 +398,63 @@ if(CALAMAN_ENABLE_ASAN)
 endif()
 
 # ========================================================================
+# NVIDIA compute-sanitizer (CUDA only)
+# ========================================================================
+# Not a compile-time sanitizer: it instruments at RUN time, so the build only
+# adds -lineinfo (so a report names a source line) and wraps every target-run
+# ctest entry in compute-sanitizer through CMAKE_TEST_LAUNCHER. Wrapping per
+# test rather than around ctest keeps labels, -R and per-suite verdicts, and
+# needs no --target-processes. AMD has no counterpart, so HIP refuses it.
+option(CALAMAN_COMPUTE_SANITIZER
+       "Run each ctest entry under NVIDIA compute-sanitizer (CUDA only)" OFF
+)
+set(CALAMAN_COMPUTE_SANITIZER_TOOL
+    "memcheck"
+    CACHE STRING "compute-sanitizer --tool: memcheck|racecheck|initcheck|synccheck"
+)
+set_property(
+  CACHE CALAMAN_COMPUTE_SANITIZER_TOOL PROPERTY STRINGS memcheck racecheck
+                                                initcheck synccheck
+)
+if(CALAMAN_COMPUTE_SANITIZER)
+  if(NOT CALAMAN_GPU_BACKEND STREQUAL "CUDA")
+    message(FATAL_ERROR "CALAMAN_COMPUTE_SANITIZER needs the CUDA backend")
+  endif()
+  find_program(
+    CALAMAN_COMPUTE_SANITIZER_EXECUTABLE
+    NAMES compute-sanitizer
+    HINTS "${CUDAToolkit_BIN_DIR}"
+    REQUIRED
+  )
+  message(
+    STATUS
+      "compute-sanitizer enabled (${CALAMAN_COMPUTE_SANITIZER_TOOL}) for ctest"
+  )
+  add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>)
+  # --require-cuda-init no: host-only suites (arg checks, plans, the compile-
+  # time tier) never touch CUDA, which the tool otherwise reports as an error.
+  set(CMAKE_TEST_LAUNCHER
+      "${CALAMAN_COMPUTE_SANITIZER_EXECUTABLE}" --tool
+      "${CALAMAN_COMPUTE_SANITIZER_TOOL}" --error-exitcode 1
+      --require-cuda-init no
+  )
+  # racecheck and synccheck judge a kernel's own barriers and shared memory, so
+  # they are scoped to ours (every one mangles `calaman` in). Unscoped, racecheck
+  # runs >15x slower in cuBLAS/cuSOLVER and synccheck flags cuBLAS's own Strsm.
+  # memcheck/initcheck stay unscoped: our bad argument faults in vendor code.
+  if(CALAMAN_COMPUTE_SANITIZER_TOOL MATCHES "^(racecheck|synccheck)$")
+    list(APPEND CMAKE_TEST_LAUNCHER --kernel-name kns=calaman)
+  endif()
+endif()
+
+# Scales every TIMEOUT the calaman_add_* test macros set; a sanitized run is
+# many times slower than the timeouts were sized for.
+set(CALAMAN_TEST_TIMEOUT_MULTIPLIER
+    "1"
+    CACHE STRING "Integer factor applied to calaman test TIMEOUTs"
+)
+
+# ========================================================================
 # Coverage (clang source-based, host code only)
 # ========================================================================
 # Instruments CXX -- and only CXX, like ASAN above -- so nvcc's .cu units are

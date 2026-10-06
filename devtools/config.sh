@@ -77,8 +77,9 @@ DEVCONTAINER_CONFIG=${DEVCONTAINER_CONFIG:-.devcontainer/cuda/devcontainer.json}
 #               and a container build can coexist without reconfiguring each
 #               other. Nothing is prebuilt for either; GoogleTest is fetched
 #               and WarpWraps is built from the submodule.
-#   debug / asan / compute-sanitizer
-#   hip         the ROCm backend (build-hip/)
+#   debug / asan / compute-sanitizer   (compute-sanitizer is CUDA only; it
+#               runs each ctest entry under the tool via CMAKE_TEST_LAUNCHER)
+#   hip         the ROCm backend (build-hip/); hip-asan is its asan twin
 #   compile-time  builds the static_assert tier only: no GPU, no GoogleTest
 #   ci-cuda     what .github/workflows/ci.yml builds: the full CUDA tree with
 #               the architecture PINNED, and a test preset that excludes the
@@ -119,9 +120,8 @@ DEVCONTAINER_CONFIG=${DEVCONTAINER_CONFIG:-.devcontainer/cuda/devcontainer.json}
 #   CMAKE_PRESET=asan CTEST_PRESET=asan devtools/cpp-tier.sh
 #
 # CTEST_PRESET is separate because not every configure preset has a matching
-# test preset -- only default, workstation, debug, asan, hip, compile-time,
-# ci-cuda, ci-hip and coverage do. Set it empty to configure and build without
-# running ctest.
+# test preset -- `ctest --list-presets` names the ones that do. Set it empty
+# to configure and build without running ctest.
 CMAKE_PRESET=${CMAKE_PRESET:-default}
 CTEST_PRESET=${CTEST_PRESET:-default}
 

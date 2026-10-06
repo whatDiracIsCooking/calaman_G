@@ -29,6 +29,9 @@ macro(calaman_add_test_executable)
   if(NOT _TEX_TIMEOUT)
     set(_TEX_TIMEOUT 60)
   endif()
+  if(CALAMAN_TEST_TIMEOUT_MULTIPLIER)
+    math(EXPR _TEX_TIMEOUT "${_TEX_TIMEOUT} * ${CALAMAN_TEST_TIMEOUT_MULTIPLIER}")
+  endif()
 
   add_executable(${_TEX_NAME} ${_TEX_MAIN})
 

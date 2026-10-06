@@ -59,7 +59,8 @@ compile). Both below.
 ```bash
 devtools/cpp-tier.sh                       # configure + build + ctest, default preset
 devtools/cpp-tier.sh --preset debug        # switches the ctest preset too
-devtools/cpp-tier.sh --preset asan
+devtools/cpp-tier.sh --preset asan        # hip-asan for the ROCm twin
+devtools/cpp-tier.sh --preset compute-sanitizer   # CUDA only, memcheck per suite
 devtools/cpp-tier.sh --fresh               # wipe the CMake cache and reconfigure
 devtools/cpp-tier.sh --no-test             # configure + build only
 devtools/cpp-tier.sh --clean               # rebuild every object, keep the cache
@@ -89,10 +90,10 @@ Things that will bite:
   cold run spends its time on; `doctor.sh` warns when it is absent.
 - **A missing submodule is the first thing to check** on a fresh clone:
   `git submodule update --init --recursive`. `doctor.sh` reports it.
-- Only `default`, `workstation`, `debug`, `asan`, `hip`, `compile-time`,
-  `coverage`, `ci-cuda` and `ci-hip` have **test** presets. With any other
-  configure preset the script builds and then reports that there is nothing to
-  ctest — which is not the same as passing.
+- Only `default`, `workstation`, `debug`, `asan`, `compute-sanitizer`, `hip`,
+  `hip-asan`, `compile-time`, `coverage`, `ci-cuda` and `ci-hip` have **test**
+  presets. With any other configure preset the script builds and then reports
+  that there is nothing to ctest — which is not the same as passing.
 - `default` and `workstation` are the **same configuration**, differing only in
   `binaryDir` (`build/` vs `build-workstation/`), so a container build and a
   host build can coexist instead of reconfiguring each other.
