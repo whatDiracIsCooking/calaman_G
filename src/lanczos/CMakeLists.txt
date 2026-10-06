@@ -17,16 +17,18 @@ calaman_add_gpu_device_library(
 )
 
 # The module: :types holds the options/result/which/callback; :buffer_size the
-# workspace; :solve the driver. Header-only templates, so no instantiations.cpp.
+# workspace; :ritz the Ritz extraction; :solve the driver. Header-only
+# templates, so no instantiations.cpp.
 #
 # LINK_PUBLIC is what the exported surface names: the stream (wwr.runtime_api),
 # the BLAS/solver handles and enums (wwr.blas, wwr.solver), wwrrandState
-# (wwr.rand), syevd_bufferSize (wwr.wrappers.solver), real_fp and the workspace
-# carving (calaman.common), and Status (calaman.error_handling).
+# (wwr.rand), gemm (wwr.wrappers.blas), syevd (wwr.wrappers.solver),
+# ScopedPointerMode (wwr.extension.blas), real_fp and the workspace carving
+# (calaman.common), and Status (calaman.error_handling).
 #
 # LINK_PRIVATE wwr::backend and INCLUDE_DIRS_PRIVATE are for lanczos_bridge.h,
-# which :buffer_size includes in its GMF: a GMF cannot import, so wwrStream_t
-# arrives via runtime.h, whose backend define wwr::backend supplies.
+# which :buffer_size and :ritz include in their GMF: a GMF cannot import, so
+# wwrStream_t arrives via runtime.h, whose backend define wwr::backend supplies.
 calaman_add_cxx_module_library(
   NAME
   calaman.lanczos
@@ -35,13 +37,16 @@ calaman_add_cxx_module_library(
   PARTITIONS
   types.cppm
   buffer_size.cppm
+  ritz.cppm
   solve.cppm
   LINK_PUBLIC
   wwr::runtime_api
   wwr::blas
   wwr::solver
   wwr::rand
+  wwr::wrappers::blas
   wwr::wrappers::solver
+  wwr::extension::blas
   calaman::common
   calaman::error_handling
   LINK_PRIVATE

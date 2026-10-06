@@ -6,23 +6,25 @@ operator known only through a single-vector matrix-vector-product callback.
 Not a LAPACK routine, so it is its own module rather than a partition of a
 LAPACK-named one, like `calaman.davidson` and `calaman.feast`.
 
-> **Status: skeleton.** The workspace layout, sizing and the solve interface are
-> pinned; `lanczos_solve` validates its arguments and returns
+> **Status: in progress.** The workspace layout, sizing and the solve interface
+> are pinned; `lanczos_solve` validates its arguments and returns
 > `WWRBLAS_STATUS_NOT_SUPPORTED`. The device kernels (`lanczos.cu`, declared in
-> `lanczos_bridge.h`) are in and tested; Ritz extraction, the single-cycle solve
-> and thick restart land in follow-up issues (milestone "calaman.lanczos").
+> `lanczos_bridge.h`) and the Ritz extraction (`:ritz`) are in and tested; the
+> single-cycle solve and thick restart land in follow-up issues (milestone
+> "calaman.lanczos").
 
 Real `float`/`double` only (`calaman::real_fp`). Hermitian/complex, block Lanczos
 and a tridiagonal eigensolver are out of scope.
 
 ## Module
 
-`calaman.lanczos` — one module, three partitions:
+`calaman.lanczos` — one module, four partitions:
 
 | Partition | Contents |
 |---|---|
 | `:types` | `LanczosWhich`, `LanczosOptions`, `LanczosResult`, `LanczosMatvecFn` |
 | `:buffer_size` | `LanczosSlices`, `lanczos_shape_ok`, `make_lanczos_slices` / `lanczos_bufferSize` |
+| `:ritz` | `LanczosRitz`, `LanczosRitzSelection`, `lanczos_select`, `lanczos_ritz_extract` / `_select` / `_compact` / `_vectors` |
 | `:solve` | `lanczos_solve` |
 
 ## The idea
@@ -46,6 +48,19 @@ The projected matrix `T` (`ncv x ncv`) is diagonalised densely with `syevd`:
 WarpWraps has no tridiagonal eigensolver, and after a thick restart `T` is an
 arrowhead plus a tridiagonal tail anyway. The wanted Ritz pairs are selected by
 `LanczosWhich`; their residual estimates `|beta_m s_{m,i}|` cost no matvec.
+
+`:ritz` splits that into four stages so the restart can reuse them:
+
+| Stage | Where | Does |
+|---|---|---|
+| `lanczos_ritz_extract` | device + one sync | `t` copied to `s`, `syevd` in place on `s` (`theta` ascending); reads `theta`, `S`'s last row, `beta_m = beta[ncv-1]` and the status block back into a host `LanczosRitz` |
+| `lanczos_ritz_select` | host | `count` positions per `LanczosWhich`, their estimates, and the flags `estimate <= tol * max(\|theta_i\|, \|\|T\|\|_2)` |
+| `lanczos_ritz_compact` | device, no sync | moves the chosen `theta` / `S` columns to the leading slots — the layout `lanczos_arrowhead` reads |
+| `lanczos_ritz_vectors` | device, no sync | `X = V S_k`, one `gemm` in host pointer mode |
+
+Selections nest: for `k >= nev`, the `k`-pair selection at one `LanczosWhich`
+contains the `nev`-pair one, so a restart can keep extra pairs and still test
+convergence on the wanted ones.
 
 Thick restart (Wu–Simon) keeps the `k` wanted Ritz vectors plus the residual
 direction, writes the arrowhead into `T`, and continues from step `k + 1`.
@@ -80,6 +95,7 @@ lanczos_solve<double>(blas, solver, stream, n, nev, ncv, LanczosWhich::smallest,
 |------|------|
 | `types.cppm` | `:types` — options, result, end selection, matvec callback |
 | `buffer_size.cppm` | `:buffer_size` — slices, workspace layout, sizing |
+| `ritz.cppm` | `:ritz` — `syevd` on `T`, end selection, residual estimates, compaction, Ritz vectors |
 | `solve.cppm` | `:solve` — `lanczos_solve` |
 | `lanczos_bridge.h` | `device::LanczosStatus` and the kernel-launch declarations |
 | `lanczos.cu` | the device library: status reset, step write/normalise + breakdown guard, arrowhead |
