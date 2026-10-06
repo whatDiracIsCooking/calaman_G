@@ -92,6 +92,11 @@ add_subdirectory(davidson)
 # davidson as the other callback-driven eigensolver.
 add_subdirectory(lanczos)
 
+# calaman.diis -- Pulay DIIS extrapolation over a device-resident ring of
+# (vector, residual) pairs. Links only common and error_handling from src/, so
+# its placement is free; grouped with the iterative-solver helpers.
+add_subdirectory(diis)
+
 # calaman.cg_unitary -- Riemannian conjugate gradient on the unitary group
 # U(n). A host driver over wrapped BLAS, calaman.expm (the geodesic step) and
 # calaman.orthogonalize (optional reunitarization), plus its own line-search
