@@ -57,6 +57,21 @@ using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbor
 
 constexpr int kInvalidValue = static_cast<int>(wwr::WWRBLAS_STATUS_INVALID_VALUE);
 
+// Do-nothing callbacks for the rejection paths, which never invoke them.
+constexpr auto kNoopBlock = [](wwr::wwrStream_t, int, const double *, double *) -> Status {
+  return wwr::WWRBLAS_STATUS_SUCCESS;
+};
+constexpr auto kNoopPrecondition = [](wwr::wwrStream_t, int, const double *, const double *,
+                                      double *) -> Status { return wwr::WWRBLAS_STATUS_SUCCESS; };
+
+// The callback concepts accept the shapes davidson_solve calls and reject others.
+static_assert(davidson_sigma<decltype(kNoopBlock), double>);
+static_assert(davidson_metric<decltype(kNoopBlock), double>);
+static_assert(davidson_metric<DavidsonNoMetric, double>);
+static_assert(davidson_preconditioner<decltype(kNoopPrecondition), double>);
+static_assert(!davidson_sigma<decltype(kNoopPrecondition), double>);
+static_assert(!davidson_sigma<decltype(kNoopBlock), float>);
+
 // ── argument checking (host-only; the handle is never dereferenced) ──────────
 
 TEST(DavidsonArgCheckTests, RejectsBadShape) {
@@ -81,26 +96,23 @@ TEST(DavidsonArgCheckTests, RejectsBadGuessCount) {
   DavidsonResult<double> result;
   const auto solve = [&](int guess_count) {
     return davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
-                                  wwr::wwrStream_t{}, 16, 4, 8, nullptr, guess_count, s, {}, {},
-                                  nullptr, &result);
+                                  wwr::wwrStream_t{}, 16, 4, 8, nullptr, guess_count, s, kNoopBlock,
+                                  kNoopPrecondition, nullptr, &result);
   };
   EXPECT_EQ(solve(3).code, kInvalidValue); // below n_roots
   EXPECT_EQ(solve(9).code, kInvalidValue); // above max_subspace
 }
 
 TEST(DavidsonArgCheckTests, RejectsMetricWithoutMetricWorkspace) {
-  // A non-empty metric selects the generalized path, which needs a workspace
+  // A metric selects the generalized path, which needs a workspace
   // sized with_metric; a default (Euclidean) DavidsonSlices has null metric
   // regions, so it is rejected before any handle use rather than silently
   // solving the wrong (Euclidean) problem.
   DavidsonSlices<double> s; // all-null: not sized with_metric
   DavidsonResult<double> result;
-  DavidsonMetricFn<double> metric = [](wwr::wwrStream_t, int, const double *, double *) -> Status {
-    return wwr::WWRBLAS_STATUS_SUCCESS;
-  };
   const Status st = davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
-                                           wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4, s, {}, {},
-                                           nullptr, &result, {}, metric);
+                                           wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4, s, kNoopBlock,
+                                           kNoopPrecondition, nullptr, &result, {}, kNoopBlock);
   EXPECT_EQ(st.code, kInvalidValue);
 }
 
@@ -309,7 +321,7 @@ void check_reference() {
 
   // sigma(B) = A B via a single gemm; the solver holds the handle in host
   // pointer mode for the whole call, so host scalar pointers are correct here.
-  DavidsonSigmaFn<T> sigma = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
+  const auto sigma = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
     const T one{1};
     const T zero{0};
     return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
@@ -319,8 +331,8 @@ void check_reference() {
   // Diagonal Davidson preconditioner correction = residual / (theta - diag),
   // computed on the host (no kernel needed for a test), guarding the near-zero
   // denominator when a Ritz value approaches its own diagonal entry.
-  DavidsonPreconditionFn<T> precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
-                                               const T *residual, T *correction) -> Status {
+  const auto precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
+                                const T *residual, T *correction) -> Status {
     const std::size_t cnt = static_cast<std::size_t>(n) * roots;
     std::vector<T> rbuf(cnt);
     std::vector<T> cbuf(cnt);
@@ -468,20 +480,20 @@ void check_reference_metric() {
       make_davidson_slices<T>(h.solver, n, n_roots, max_subspace, true, work.data(), &s, &lwork)
           .ok());
 
-  DavidsonSigmaFn<T> sigma = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
+  const auto sigma = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
     const T one{1};
     const T zero{0};
     return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
                              d_sigma.data(), n, b, n, &zero, out, n);
   };
-  DavidsonMetricFn<T> metric = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
+  const auto metric = [&](wwr::wwrStream_t, int block, const T *b, T *out) -> Status {
     const T one{1};
     const T zero{0};
     return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
                              d_m.data(), n, b, n, &zero, out, n);
   };
-  DavidsonPreconditionFn<T> precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
-                                               const T *residual, T *correction) -> Status {
+  const auto precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
+                                const T *residual, T *correction) -> Status {
     const std::size_t cnt = static_cast<std::size_t>(n) * roots;
     std::vector<T> rbuf(cnt);
     std::vector<T> cbuf(cnt);

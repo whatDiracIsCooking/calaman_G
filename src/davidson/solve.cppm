@@ -12,10 +12,10 @@
  * collapse the subspace when a full new block would overflow max_subspace, and
  * expand by the twice-modified-Gram-Schmidt-orthonormalized corrections.
  *
- * Two problems share the loop, chosen by whether @p metric is empty:
- *   - EUCLIDEAN (empty metric): H = V^T Sigma_V, standard syevd, residual and
+ * Two problems share the loop, chosen at compile time by the metric's type:
+ *   - EUCLIDEAN (DavidsonNoMetric, the default): H = V^T Sigma_V, standard syevd, residual and
  *     orthogonality in the Euclidean inner product.
- *   - GENERALIZED (non-empty metric): the operator is self-adjoint in the metric
+ *   - GENERALIZED (any other metric): the operator is self-adjoint in the metric
  *     <x,y>_M = x^T M y. H = (M V)^T Sigma_V and S = (M V)^T V, generalized sygvd;
  *     the residual norm is sqrt(R^T M R) and the subspace is expanded
  *     M-orthonormally -- M C is carried in lockstep through every projection so
@@ -88,25 +88,30 @@ struct DavidsonResult {
 
 /// @brief sigma(stream, block_size, b, sigma_out): out[:, :block_size] =
 ///        A b[:, :block_size], device-resident, n x block_size column-major (ld n).
-template<calaman::real_fp T>
-using DavidsonSigmaFn =
-    std::function<Status(wwr::wwrStream_t stream, int block_size, const T *b, T *sigma_out)>;
+template<typename F, typename T>
+concept davidson_sigma =
+    requires(const F &f, wwr::wwrStream_t stream, int block_size, const T *b, T *sigma_out) {
+      { f(stream, block_size, b, sigma_out) } -> std::convertible_to<Status>;
+    };
 
 /// @brief precondition(stream, n_roots, theta, residual, correction): turn the
 ///        residual block (n x n_roots, device) into a correction block (same
 ///        shape, device), given the current Ritz values @p theta (n_roots, HOST).
-template<calaman::real_fp T>
-using DavidsonPreconditionFn = std::function<Status(wwr::wwrStream_t stream, int n_roots,
-                                                    const T *theta, const T *residual,
-                                                    T *correction)>;
+template<typename F, typename T>
+concept davidson_preconditioner = requires(const F &f, wwr::wwrStream_t stream, int n_roots,
+                                           const T *theta, const T *residual, T *correction) {
+  { f(stream, n_roots, theta, residual, correction) } -> std::convertible_to<Status>;
+};
+
+/// @brief The default metric argument: selects the Euclidean path at compile time.
+struct DavidsonNoMetric {};
 
 /// @brief OPTIONAL metric(stream, block_size, b, m_out): apply the SPD metric M,
-///        same shape as DavidsonSigmaFn. Empty (default) selects the Euclidean
-///        path; non-empty selects the generalized path and requires the workspace
-///        to have been sized with_metric.
-template<calaman::real_fp T>
-using DavidsonMetricFn =
-    std::function<Status(wwr::wwrStream_t stream, int block_size, const T *b, T *m_out)>;
+///        same shape as davidson_sigma. DavidsonNoMetric (default) selects the
+///        Euclidean path; any other type the generalized path, which requires the
+///        workspace to have been sized with_metric.
+template<typename F, typename T>
+concept davidson_metric = std::same_as<F, DavidsonNoMetric> || davidson_sigma<F, T>;
 
 } // namespace calaman
 
@@ -122,30 +127,31 @@ export namespace calaman {
  *                        rank; orthonormal (Euclidean) is the usual seed.
  * @param guess_count     n_roots <= guess_count <= max_subspace.
  * @param s               Workspace from make_davidson_slices; sized with_metric
- *                        iff @p metric is non-empty.
+ *                        iff @p metric is not DavidsonNoMetric.
  * @param eigenvectors_out  Out: converged Ritz vectors, n x n_roots device (ld n);
  *                        also the per-iteration Ritz-vector scratch.
  * @param result          Out (host): eigenvalues, iteration count, converged flag.
- * @param metric          OPTIONAL; empty selects the Euclidean path, non-empty the
- *                        generalized (metric) one.
+ * @param metric          OPTIONAL; DavidsonNoMetric (default) selects the Euclidean
+ *                        path, any other davidson_metric the generalized one.
  * @return success on a converged solve; WWRBLAS_STATUS_INTERNAL_ERROR on a
  *         non-converged one when options.fail_on_non_convergence (result still
- *         filled); INVALID_VALUE for a bad guess_count, or a non-empty metric with
+ *         filled); INVALID_VALUE for a bad guess_count, or a metric with
  *         a workspace not sized with_metric; or a propagated BLAS/solver/runtime
  *         failure.
  */
-template<calaman::real_fp T>
+template<calaman::real_fp T, davidson_sigma<T> Sigma, davidson_preconditioner<T> Precondition,
+         davidson_metric<T> Metric = DavidsonNoMetric>
 Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                       wwr::wwrStream_t stream, int n, int n_roots, int max_subspace, const T *guess,
-                      int guess_count, const DavidsonSlices<T> &s, const DavidsonSigmaFn<T> &sigma,
-                      const DavidsonPreconditionFn<T> &precondition, T *eigenvectors_out,
+                      int guess_count, const DavidsonSlices<T> &s, const Sigma &sigma,
+                      const Precondition &precondition, T *eigenvectors_out,
                       DavidsonResult<T> *result, const DavidsonOptions<T> &options = {},
-                      const DavidsonMetricFn<T> &metric = {}) {
+                      const Metric &metric = {}) {
   CLM_REQUIRE(result != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(guess_count >= n_roots && guess_count <= max_subspace,
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
-  const bool use_metric = static_cast<bool>(metric);
-  // The generalized path needs the metric regions; a non-empty metric against an
+  constexpr bool use_metric = !std::same_as<Metric, DavidsonNoMetric>;
+  // The generalized path needs the metric regions; a metric against an
   // Euclidean-sized workspace is a usage error, not a silent Euclidean solve.
   CLM_REQUIRE(!use_metric || (s.mv != nullptr && s.s_sub != nullptr && s.metric_scratch != nullptr),
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
@@ -191,7 +197,7 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
       const int new_count = dim - filled;
       const std::size_t offset = static_cast<std::size_t>(filled) * nz;
       CLM_TRY(sigma(stream, new_count, s.v + offset, s.av + offset));
-      if (use_metric) {
+      if constexpr (use_metric) {
         CLM_TRY(metric(stream, new_count, s.v + offset, s.mv + offset));
       }
       filled = dim;
@@ -245,7 +251,7 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
       CLM_TRY((wwr::axpy<T, int>(cublas_handle, n, &neg_theta, eigenvectors_out + col, 1,
                                  s.residual + col, 1)));
     }
-    if (use_metric) {
+    if constexpr (use_metric) {
       CLM_TRY(metric(stream, n_roots, s.residual, s.metric_scratch));
     }
     bool all_converged = true;
@@ -284,7 +290,7 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
                                   stream));
       CLM_TRY(wwr::wwrMemcpyAsync(s.av, s.ritz_av, block_bytes, wwr::wwrMemcpyDeviceToDevice,
                                   stream));
-      if (use_metric) {
+      if constexpr (use_metric) {
         CLM_TRY(metric(stream, n_roots, s.v, s.mv));
       }
       dim = n_roots;
@@ -294,7 +300,7 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
     // On the metric path, precompute M applied to the correction block, carried in
     // lockstep with the correction through every projection/axpy below so the
     // orthogonalization is done in the M-inner-product.
-    if (use_metric) {
+    if constexpr (use_metric) {
       CLM_TRY(metric(stream, n_roots, s.correction, s.metric_scratch));
     }
 

@@ -19,18 +19,23 @@ than a partition of a LAPACK-named one, like `calaman.feast` and `calaman.expm`.
 | Partition | Contents |
 |---|---|
 | `:buffer_size` | `DavidsonSlices`, the single-buffer workspace layout, `make_davidson_slices` / `davidson_bufferSize` |
-| `:solve` | `DavidsonOptions`, `DavidsonResult`, the three callbacks, `davidson_solve` |
+| `:solve` | `DavidsonOptions`, `DavidsonResult`, the three callback concepts + `DavidsonNoMetric`, `davidson_solve` |
 
 ## The idea
 
-The operator enters as a caller callback (`DavidsonSigmaFn`: `sigma(B) -> A B`,
+The operator enters as a caller callable (`davidson_sigma`: `sigma(B) -> A B`,
 block-in block-out on device buffers), so the module knows nothing about what the
-operator *is*. A second callback (`DavidsonPreconditionFn`) turns a residual
+operator *is*. A second callable (`davidson_preconditioner`) turns a residual
 block into a correction block (the diagonal Davidson correction
 `delta = r / (theta - diag)` is the usual choice, but unknown here). An optional
-third callback (`DavidsonMetricFn`) supplies an SPD metric `M`, selecting a
+third callable (`davidson_metric`) supplies an SPD metric `M`, selecting a
 generalized subspace problem `(V^T M Sigma_V) c = e (V^T M V) c` via `sygvd` for
 an operator that is self-adjoint only in the `M`-inner-product.
+
+The callbacks are concept-constrained template parameters, not `std::function`:
+a lambda is passed (and inlined) as-is, with no type erasure or allocation. The
+metric defaults to `DavidsonNoMetric`, which selects the Euclidean path at
+compile time.
 
 Per `solve` (once implemented):
 
