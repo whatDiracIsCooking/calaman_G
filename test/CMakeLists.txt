@@ -86,6 +86,7 @@ add_subdirectory(syev)
 add_subdirectory(sysv)
 add_subdirectory(sytrs)
 add_subdirectory(sytrs2)
+add_subdirectory(tpttr)
 add_subdirectory(trevc3)
 add_subdirectory(trexc)
 

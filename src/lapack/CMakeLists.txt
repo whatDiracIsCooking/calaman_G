@@ -394,3 +394,11 @@ add_subdirectory(geev)
 # ?syev -- the real symmetric eigensolver driver; links lansy, lascl, sterf and
 # steqr, so it follows them.
 add_subdirectory(syev)
+
+# calaman.tri_index -- the header-only INTERFACE target carrying tri_index.cuh,
+# the device index maps of the triangular storage formats. Added before the
+# conversion modules that link it.
+add_subdirectory(tri_index)
+
+# calaman.tpttr -- packed (tp) to full (tr) triangular storage; links tri_index.
+add_subdirectory(tpttr)
