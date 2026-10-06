@@ -6,28 +6,17 @@
 // a thin wrapper that forwards here -- so, like lacgv.cu, nothing but this
 // kernel lives on the device path. Shared unchanged between both backends.
 //
-// A DIRECT PORT of reference ?lartg's safe-scaling algorithm (Anderson 2017,
-// "Safe Scaling in the Level 1 BLAS"), reproduced per element so the oracle
-// agrees: the g==0 / f==0 special cases, the unscaled fast path when both
-// magnitudes sit inside [rtmin, rtmax], and the scaled fallback otherwise. The
-// four thresholds are precision constants (safmin = smallest normal, safmax =
-// 1/safmin, rtmin = sqrt(safmin), rtmax = sqrt(safmax/2)), computed once on the
-// host in the launcher and handed to every thread rather than recomputed.
-//
-// NEUTRAL MATH, NEVER ::sqrtf vs ::sqrt: fabs/sqrt/copysign/fmin/fmax go through
-// wwr.wrappers.math (wrappers/math/math.cuh), which spells the precision-
-// divergent intrinsic once per type -- the same seam elem_ops forwards its
-// transcendentals to. copysign gives LAPACK's SIGN(a, b) = |a| * sign(b); it is
-// only reached where the sign source is non-zero, so IEEE's signed-zero rule
-// never diverges from Fortran's.
+// The per-element math is lartg_scalar (lartg.cuh), the DIRECT PORT of
+// reference ?lartg's safe-scaling algorithm that ?steqr's kernel shares. Its
+// four thresholds are precision constants, computed once on the host in the
+// launcher (lartg_thresholds) and handed to every thread rather than recomputed.
 #include "lartg_bridge.h"
 
+#include "lapack/lartg/lartg.cuh"
+
 #include <extension/parallel_for/parallel_for.cuh>
-#include <wrappers/math/math.cuh>
 
 #include <cstddef>
-#include <cmath>
-#include <limits>
 
 namespace calaman::device {
 
@@ -51,36 +40,8 @@ struct LartgFunctor {
   const T rtmax_;
 
   __device__ void operator()(const std::size_t k) const {
-    const T f = f_[k];
-    const T g = g_[k];
-    const T f1 = wwr::fabs(f);
-    const T g1 = wwr::fabs(g);
-
     T c, s, r;
-    if (g == T{0}) {
-      c = T{1};
-      s = T{0};
-      r = f;
-    } else if (f == T{0}) {
-      c = T{0};
-      s = wwr::copysign(T{1}, g);
-      r = g1;
-    } else if (f1 > rtmin_ && f1 < rtmax_ && g1 > rtmin_ && g1 < rtmax_) {
-      const T d = wwr::sqrt(f * f + g * g);
-      c = f1 / d;
-      r = wwr::copysign(d, f);
-      s = g / r;
-    } else {
-      const T u = wwr::fmin(safmax_, wwr::fmax(wwr::fmax(safmin_, f1), g1));
-      const T fs = f / u;
-      const T gs = g / u;
-      const T d = wwr::sqrt(fs * fs + gs * gs);
-      c = wwr::fabs(fs) / d;
-      r = wwr::copysign(d, f);
-      s = gs / r;
-      r = r * u;
-    }
-
+    lartg_scalar(f_[k], g_[k], LartgThresholds<T>{safmin_, safmax_, rtmin_, rtmax_}, &c, &s, &r);
     c_[k] = c;
     s_[k] = s;
     r_[k] = r;
@@ -96,14 +57,9 @@ void lartg(const wwr::wwrStream_t stream, const std::size_t n, const T *f, const
     return;
   }
 
-  // The reference's la_constants, in this precision: safmin is the smallest
-  // normal, safmax its reciprocal, and the two roots bound the fast path.
-  const T safmin = std::numeric_limits<T>::min();
-  const T safmax = T{1} / safmin;
-  const T rtmin = std::sqrt(safmin);
-  const T rtmax = std::sqrt(safmax / T{2});
-
-  const LartgFunctor<T> functor{f, g, c, s, r, safmin, safmax, rtmin, rtmax};
+  // The reference's la_constants, in this precision (lartg.cuh).
+  const auto th = lartg_thresholds<T>();
+  const LartgFunctor<T> functor{f, g, c, s, r, th.safmin, th.safmax, th.rtmin, th.rtmax};
   wwr::extension::parallel_for<std::size_t>(stream, n, functor);
 }
 

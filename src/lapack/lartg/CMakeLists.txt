@@ -5,6 +5,20 @@
 # sibling -- a single per-element functor launched through
 # wwr.extension.parallel_for -- but computing a rotation, not conjugating.
 
+# The header's own target: lartg.cuh (lartg_scalar, the per-thread core) for
+# a downstream .cu that generates rotations inside its own kernel (?steqr). An
+# INTERFACE library carrying the src/ root, so it is spelled
+# "lapack/lartg/lartg.cuh", plus wwr.device for wrappers/math/math.cuh --
+# lasr.h's shape.
+add_library(calaman.lartg.header INTERFACE)
+add_library(calaman::lartg::header ALIAS calaman.lartg.header)
+target_include_directories(
+  calaman.lartg.header
+  INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+            $<INSTALL_INTERFACE:${CALAMAN_INSTALL_INCLUDEDIR}>
+)
+target_link_libraries(calaman.lartg.header INTERFACE wwr::device)
+
 # The device-kernel library. lartg.cu launches its functor through
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which
 # carries parallel_for.cuh plus, transitively, wwr.device -- the include root
@@ -19,6 +33,7 @@ calaman_add_gpu_device_library(
   lartg.cu
   LINK_PRIVATE
   wwr::extension::parallel_for
+  calaman::lartg::header
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries
