@@ -11,6 +11,7 @@
 add_subdirectory(shared)
 add_subdirectory(utils)
 
+add_subdirectory(aberth)
 add_subdirectory(cg_unitary)
 add_subdirectory(columnwise_ell1)
 add_subdirectory(columnwise_ell2)

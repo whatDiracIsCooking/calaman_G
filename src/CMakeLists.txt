@@ -33,6 +33,8 @@ add_subdirectory(diff_norm)
 
 add_subdirectory(horner)
 
+add_subdirectory(aberth)
+
 # calaman.paterson_stockmeyer is the asymptotically-cheaper twin of
 # calaman.horner (O(sqrt(d)) gemms vs d). It shares no build edge with horner --
 # added next to it only for readability.
