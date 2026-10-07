@@ -3,32 +3,26 @@
  * @brief Primary interface for calaman.complex_cast -- GPU-parallel conversion
  *        between real and complex floating-point device arrays
  *
- * Four elementwise operations over a device array, each one parallel_for pass:
+ * Elementwise passes (one parallel_for each) between complex and real planes:
  *
- *     set_real_part:  output[i] <- (input[i], Im(output[i]))   complex <- real
- *     set_imag_part:  output[i] <- (Re(output[i]), input[i])   complex <- real
- *     get_real_part:  output[i] <- Re(input[i])                real <- complex
- *     get_imag_part:  output[i] <- Im(input[i])                real <- complex
+ * | Operation     | Effect                                         |
+ * |---------------|------------------------------------------------|
+ * | set_real_part | output[i] <- (input[i], Im(output[i]))         |
+ * | set_imag_part | output[i] <- (Re(output[i]), input[i])         |
+ * | get_real_part | output[i] <- Re(input[i])                      |
+ * | get_imag_part | output[i] <- Im(input[i])                      |
+ * | split_planes  | re(i,j), im(i,j) <- Re, Im of A(i,j), strided  |
+ * | merge_planes  | C(i,j) <- (re(i,j), im(i,j)), strided          |
  *
- * The two set_* operations touch one component and leave the other intact, so a
- * complex array is assembled from two real arrays by one set_real_part followed
- * by one set_imag_part (or split apart by the two get_*). This is the packing
- * glue a complex solver needs when its inputs or outputs arrive as separate
- * real and imaginary planes.
+ * The *_part calls are flat over `count` contiguous elements; a set_* leaves
+ * the other component intact. The strided pair walks a column-major rows-by-cols
+ * block with a leading dimension per side -- the deinterleave ?lacrm / ?larcm
+ * run around their real gemms, generic over which operand is split.
  *
- * COMPLEX is the whole point here, not the deferred extension it is for larfg /
- * horner: there are no gemm scalars to spell constexpr, only component reads and
- * writes, which complex.h's accessors do portably. So the surface is the two
- * complex types ONLY (constrained by calaman::complex_fp) -- a real-to-real cast is
- * the identity and has no place. The real component type is spelled
- * calaman::ComplexToRealType<ComplexT>: float for wwrFloatComplex, double for
- * wwrDoubleComplex.
- *
- * Each function is a thin host wrapper that forwards to a device launcher in
- * complex_cast.cu (declared in complex_cast_bridge.h, included in the GMF), the
- * same module/.cu split calaman.lacpy uses. Everything is enqueued on @p stream
- * and nothing synchronizes; the operations do not alias-check, so in-place reuse
- * is the caller's responsibility.
+ * Complex types only (calaman::complex_fp); the real component type is
+ * calaman::ComplexToRealType<ComplexT>. Each function forwards to a launcher in
+ * complex_cast.cu (declared in complex_cast_bridge.h, in the GMF). Everything is
+ * enqueued on @p stream, nothing synchronizes, nothing alias-checks.
  *
  * Usage:
  *   import calaman.complex_cast;
@@ -123,6 +117,71 @@ void get_imag_part(wwr::wwrStream_t stream, calaman::ComplexToRealType<ComplexT>
                    const ComplexT *input, const std::size_t count) {
   device::get_imag_part(stream, output, input, count);
 }
+
+/// @brief Split a strided complex matrix into two strided real planes
+///
+/// re(i,j) <- Re(A(i,j)), im(i,j) <- Im(A(i,j)) over the @p rows by @p cols
+/// column-major block; padding rows are neither read nor written. The operand
+/// is generic: pass whichever matrix the caller splits. Enqueued on @p stream;
+/// a null launch when rows or cols is 0.
+///
+/// @tparam ComplexT Complex element type (wwrFloatComplex or wwrDoubleComplex)
+/// @param stream    Stream the launch is enqueued on
+/// @param rows      Row count of the block
+/// @param cols      Column count of the block
+/// @param a         Device complex matrix, leading dimension @p lda >= rows
+/// @param lda       Leading dimension of @p a
+/// @param re        Device real plane, leading dimension @p ldp >= rows; overwritten
+/// @param im        Device imaginary plane, leading dimension @p ldp; overwritten
+/// @param ldp       Leading dimension of both planes
+export template<calaman::complex_fp ComplexT>
+void split_planes(wwr::wwrStream_t stream, const std::size_t rows, const std::size_t cols,
+                  const ComplexT *a, const std::size_t lda,
+                  calaman::ComplexToRealType<ComplexT> *re,
+                  calaman::ComplexToRealType<ComplexT> *im, const std::size_t ldp) {
+  device::split_planes(stream, rows, cols, a, lda, re, im, ldp);
+}
+
+/// @brief Merge two strided real planes into a strided complex matrix
+///
+/// C(i,j) <- (re(i,j), im(i,j)) over the @p rows by @p cols column-major block;
+/// C's padding rows are untouched. split_planes' inverse. Enqueued on
+/// @p stream; a null launch when rows or cols is 0.
+///
+/// @tparam ComplexT Complex element type (wwrFloatComplex or wwrDoubleComplex)
+/// @param stream    Stream the launch is enqueued on
+/// @param rows      Row count of the block
+/// @param cols      Column count of the block
+/// @param re        Device real plane, leading dimension @p ldp >= rows
+/// @param im        Device imaginary plane, leading dimension @p ldp
+/// @param ldp       Leading dimension of both planes
+/// @param c         Device complex matrix, leading dimension @p ldc >= rows; overwritten
+/// @param ldc       Leading dimension of @p c
+export template<calaman::complex_fp ComplexT>
+void merge_planes(wwr::wwrStream_t stream, const std::size_t rows, const std::size_t cols,
+                  const calaman::ComplexToRealType<ComplexT> *re,
+                  const calaman::ComplexToRealType<ComplexT> *im, const std::size_t ldp,
+                  ComplexT *c, const std::size_t ldc) {
+  device::merge_planes(stream, rows, cols, re, im, ldp, c, ldc);
+}
+
+extern template void split_planes<wwr::wwrFloatComplex>(wwr::wwrStream_t, std::size_t,
+                                                        std::size_t, const wwr::wwrFloatComplex *,
+                                                        std::size_t, float *, float *,
+                                                        std::size_t);
+extern template void split_planes<wwr::wwrDoubleComplex>(wwr::wwrStream_t, std::size_t,
+                                                         std::size_t,
+                                                         const wwr::wwrDoubleComplex *,
+                                                         std::size_t, double *, double *,
+                                                         std::size_t);
+extern template void merge_planes<wwr::wwrFloatComplex>(wwr::wwrStream_t, std::size_t,
+                                                        std::size_t, const float *, const float *,
+                                                        std::size_t, wwr::wwrFloatComplex *,
+                                                        std::size_t);
+extern template void merge_planes<wwr::wwrDoubleComplex>(wwr::wwrStream_t, std::size_t,
+                                                         std::size_t, const double *,
+                                                         const double *, std::size_t,
+                                                         wwr::wwrDoubleComplex *, std::size_t);
 
 extern template void set_real_part<wwr::wwrFloatComplex>(wwr::wwrStream_t, wwr::wwrFloatComplex *,
                                                          const float *, std::size_t);

@@ -12,6 +12,8 @@
 //      leave every real component untouched -- the read-modify-write contract.
 //   3. count == 0 is a no-op. A call with count 0 touches nothing, for both a
 //      set_* (output array unchanged) and a get_* (output plane unchanged).
+//   4. Strided split_planes / merge_planes. A padded block round-trips exactly
+//      across three different leading dimensions, padding untouched.
 //
 // REQUIRES_GPU (see CMakeLists.txt): every case stages the arrays on the device
 // and runs the cast kernels, so `ctest -LE gpu` excludes it. It needs no
@@ -254,7 +256,61 @@ void zero_count_noop() {
   }
 }
 
+// Strided pair: split a padded rows-by-cols block into planes with their own
+// leading dimension, merge it into a third leading dimension; every in-range
+// component comes back exactly and every padding slot of each output is untouched.
+template<typename T>
+void strided_round_trip() {
+  using R = RealOf<T>;
+  auto handle = shared_device();
+  auto stream = handle->stream().get();
+  const std::size_t rows = 5, cols = 3, lda = 7, ldp = 6, ldc = 9;
+  const R pad{-55};
+
+  std::vector<T> a(lda * cols, elem<T>::make(-99.0, -99.0));
+  for (std::size_t j = 0; j < cols; ++j) {
+    for (std::size_t i = 0; i < rows; ++i) {
+      a[i + j * lda] =
+          elem<T>::make(static_cast<double>(i) - 2.0, 10.0 * static_cast<double>(j) + 1.0);
+    }
+  }
+  auto d_a = to_device(handle, a);
+  auto d_re = to_device(handle, std::vector<R>(ldp * cols, pad));
+  auto d_im = to_device(handle, std::vector<R>(ldp * cols, pad));
+  auto d_c = to_device(handle, std::vector<T>(ldc * cols, elem<T>::make(-7.0, -7.0)));
+
+  split_planes<T>(stream, rows, cols, d_a.data(), lda, d_re.data(), d_im.data(), ldp);
+  merge_planes<T>(stream, rows, cols, d_re.data(), d_im.data(), ldp, d_c.data(), ldc);
+  wwr::wwrStreamSynchronize(stream);
+
+  const auto re = from_device(handle, d_re, ldp * cols);
+  const auto im = from_device(handle, d_im, ldp * cols);
+  const auto c = from_device(handle, d_c, ldc * cols);
+  for (std::size_t k = 0; k < ldp * cols; ++k) {
+    const std::size_t i = k % ldp, j = k / ldp;
+    const bool in = i < rows;
+    EXPECT_EQ(re[k], in ? elem<T>::re(a[i + j * lda]) : pad) << "split re slot " << k;
+    EXPECT_EQ(im[k], in ? elem<T>::im(a[i + j * lda]) : pad) << "split im slot " << k;
+  }
+  for (std::size_t k = 0; k < ldc * cols; ++k) {
+    const std::size_t i = k % ldc, j = k / ldc;
+    const T want = i < rows ? a[i + j * lda] : elem<T>::make(-7.0, -7.0);
+    EXPECT_TRUE(elem<T>::eq(c[k], want)) << "merge slot " << k;
+  }
+
+  // rows == 0 or cols == 0 launches nothing.
+  split_planes<T>(stream, 0, cols, d_c.data(), ldc, d_re.data(), d_im.data(), ldp);
+  merge_planes<T>(stream, rows, 0, d_re.data(), d_im.data(), ldp, d_c.data(), ldc);
+  wwr::wwrStreamSynchronize(stream);
+  EXPECT_EQ(from_device(handle, d_re, ldp * cols), re);
+}
+
 } // namespace
+
+TEST(ComplexCastSpecTests, StridedSplitMerge) {
+  strided_round_trip<wwr::wwrFloatComplex>();
+  strided_round_trip<wwr::wwrDoubleComplex>();
+}
 
 TEST(ComplexCastSpecTests, RoundTrip) {
   round_trip<wwr::wwrFloatComplex>();

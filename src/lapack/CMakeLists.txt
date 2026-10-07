@@ -525,3 +525,8 @@ add_subdirectory(lantb)
 # calaman.lagtm -- tridiagonal matrix-matrix multiply (LAPACK's ?lagtm). A leaf:
 # links only calaman.common and calaman.error_handling.
 add_subdirectory(lagtm)
+
+# calaman.lacrm -- complex times real matrix multiply (LAPACK's ?lacrm): two
+# real gemms around calaman.complex_cast's split_planes / merge_planes (added
+# one level up), which calaman.larcm reuses.
+add_subdirectory(lacrm)

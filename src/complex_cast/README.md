@@ -70,10 +70,31 @@ responsibility.
   component preserved (`make_wwr*Complex`), and stores it back. The target
   `output` elements must therefore hold valid values on entry if the untouched
   component matters.
-- **No bounds, stride or leading-dimension handling.** These are flat `count`
-  passes over contiguous arrays — a column-major matrix with `lda == rows`
-  is a contiguous `rows*cols` run and works directly; a padded matrix would
-  need a strided variant that does not exist yet.
+- **The four `*_part` calls have no leading-dimension handling.** They are flat
+  `count` passes over contiguous arrays. A padded matrix goes through the
+  strided pair below.
+
+## Strided matrix pair
+
+```cpp
+template<calaman::complex_fp ComplexT>
+void calaman::split_planes(wwr::wwrStream_t stream, std::size_t rows, std::size_t cols,
+                           const ComplexT* a, std::size_t lda,
+                           calaman::ComplexToRealType<ComplexT>* re,
+                           calaman::ComplexToRealType<ComplexT>* im, std::size_t ldp);
+
+template<calaman::complex_fp ComplexT>
+void calaman::merge_planes(wwr::wwrStream_t stream, std::size_t rows, std::size_t cols,
+                           const calaman::ComplexToRealType<ComplexT>* re,
+                           const calaman::ComplexToRealType<ComplexT>* im, std::size_t ldp,
+                           ComplexT* c, std::size_t ldc);
+```
+
+One pass each over a column-major `rows`-by-`cols` block, the complex side with
+its own leading dimension and both planes sharing `ldp`; padding rows are
+neither read nor written. Generic over the operand: `calaman.lacrm` splits its
+first operand A (M-by-N), `calaman.larcm` its second operand B, and both merge
+the result planes into C.
 
 ## Build
 
@@ -90,7 +111,7 @@ instantiations survive. Template instantiations are declared `extern template` i
 
 | File | Purpose |
 |---|---|
-| `interface.cppm` | Module primary interface; the four exported wrappers |
+| `interface.cppm` | Module primary interface; the exported wrappers |
 | `complex_cast_bridge.h` | Device-launcher declarations, generic in `ComplexT`/`RealT` |
 | `complex_cast.cu` | Device functors, launcher definitions, device instantiations |
 | `instantiations.cpp` | Module implementation unit; host explicit instantiations |
@@ -98,7 +119,8 @@ instantiations survive. Template instantiations are declared `extern template` i
 
 ## Tests
 
-Not yet wired. A suite under `test/` would, per element type, round-trip two real
-planes through `set_real_part` + `set_imag_part` and back through the two `get_*`,
-check that each `set_*` leaves the other component untouched, and check the
-`count == 0` no-op — against a host reference, like the other numerical suites.
+`test/complex_cast/` (`ComplexCastSpecTests`, REQUIRES_GPU) checks the spec
+directly, bit for bit: the flat round-trip, `set_*` preserving the other
+component, the `count == 0` no-op, and the strided `split_planes` /
+`merge_planes` round-trip with its padding untouched. `calaman.lacrm`'s oracle
+suite exercises the strided pair against the reference LAPACK.
