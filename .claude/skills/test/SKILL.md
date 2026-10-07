@@ -24,9 +24,10 @@ Two rules, and the second is about where this repo's numbers are proved:
    numerical suites compare each routine's device result against the reference
    LAPACK, and they carry the `gpu` ctest label. A green `cpp-tier.sh` on a box
    with a GPU **does** assert this project's numbers, for the backend it built.
-   `ctest -LE gpu` — the `ci-cuda`/`ci-hip` presets, and so all of CI — excludes
-   every one of them and proves compile-and-link plus the host-only suites. Say
-   which of the two you ran.
+   `ctest -LE gpu` — the `ci-cuda`/`ci-hip`/`ci-asan` presets, and so all of
+   CI — excludes every one of them and proves compile-and-link plus the
+   host-only suites (under ASan+LSan too, on `ci-asan`). Say which of the two
+   you ran.
 
 ## Two suites, and neither covers the other
 
@@ -60,6 +61,7 @@ compile). Both below.
 devtools/cpp-tier.sh                       # configure + build + ctest, default preset
 devtools/cpp-tier.sh --preset debug        # switches the ctest preset too
 devtools/cpp-tier.sh --preset asan        # hip-asan for the ROCm twin
+devtools/cpp-tier.sh --preset ci-asan     # CI's asan leg: host-only, no card
 devtools/cpp-tier.sh --preset compute-sanitizer   # CUDA only, memcheck (+ leak-check) per suite
 devtools/cpp-tier.sh --fresh               # wipe the CMake cache and reconfigure
 devtools/cpp-tier.sh --no-test             # configure + build only
@@ -91,7 +93,8 @@ Things that will bite:
 - **A missing submodule is the first thing to check** on a fresh clone:
   `git submodule update --init --recursive`. `doctor.sh` reports it.
 - Only `default`, `workstation`, `debug`, `asan`, `compute-sanitizer`, `hip`,
-  `hip-asan`, `compile-time`, `coverage`, `ci-cuda` and `ci-hip` have **test**
+  `hip-asan`, `compile-time`, `coverage`, `ci-cuda`, `ci-hip` and `ci-asan`
+  have **test**
   presets. With any other configure preset the script builds and then reports
   that there is nothing to ctest — which is not the same as passing.
 - **A green sanitizer preset is green only for what it checks.** The LSan
@@ -100,7 +103,10 @@ Things that will bite:
   that list, and register any new suppression there before adding it. Each
   sanitized preset also runs its **canaries** (label `sanitizer_canary`,
   `test/sanitizer_canaries/`): a red canary means the check went dark, not
-  that a canary needs fixing. compute-sanitizer registers only the selected
+  that a canary needs fixing. CI's `cpp (asan)` leg (`ci-asan`) runs the three
+  host canaries on every code PR, so ASan going dark in CI turns it red; the
+  device canaries are `gpu`-labelled and never run there. compute-sanitizer
+  registers only the selected
   tool's canaries, so all four tools take four `-DCALAMAN_COMPUTE_SANITIZER_TOOL`
   reconfigures.
 - `default` and `workstation` are the **same configuration**, differing only in
@@ -128,7 +134,7 @@ numbers:
 
 - **No device.** Nothing is expected to call `GTEST_SKIP` on a missing card, so a
   GPU-less box *fails* the device suites. The way to run without one is the `gpu`
-  ctest label — `ctest -LE gpu`, which the `ci-cuda` and `ci-hip` test presets
+  ctest label — `ctest -LE gpu`, which the `ci-*` test presets
   do — because an exclusion is named in the output where a skip blends into
   green. Label every suite that touches a device.
 - **No CPU reference LAPACK.** `CMakeLists.txt` reports a `WARNING` at configure

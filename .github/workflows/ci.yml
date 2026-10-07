@@ -19,6 +19,11 @@
 #                 src/*.cpp that cannot fail the job
 #   cpp (hip)     the same shape for HIP: the whole tree through clang's
 #                 -x hip front end, then the same `-LE gpu`
+#   cpp (asan)    the CUDA tree again, Debug + AddressSanitizer on host code
+#                 (preset ci-asan), then `-LE gpu`: the host-only suites run
+#                 under ASan+LSan, and so do the host sanitizer canaries, which
+#                 pass only when ASan reports -- the proof it is on. No device
+#                 code is checked (docs/sanitizers.md, G5)
 #   (no install-check job: the package tier is dormant, see the bottom of this
 #    file)
 #   ci-ok         an aggregate that fails unless every job above either
@@ -27,16 +32,17 @@
 #                 ruleset
 #
 # BE PRECISE ABOUT WHAT THE cpp JOBS PROVE, because "the whole tree built, then
-# ctest" reads like more than it is. `test/` IS EMPTY TODAY, so what the two cpp
-# legs currently prove is:
+# ctest" reads like more than it is. Every numerical suite in `test/` is
+# REQUIRES_GPU, so what the cpp legs prove is:
 #
 #   * the toolchain, the presets and the CMake wiring configure and build;
 #   * the WarpWraps submodule compiles for both backends at this pin, its own
 #     compile-time static_assert tier included (it is built as a subdirectory --
 #     deps/CMakeLists.txt says why);
-#   * nothing at all about this project's numerics, because there is none yet.
+#   * the host-only suites pass, and (asan leg) pass under ASan+LSan;
+#   * nothing at all about this project's numerics.
 #
-# As test/ fills, `-LE gpu` is what keeps these legs honest: every suite that
+# `-LE gpu` is what keeps these legs honest: every suite that
 # touches a device carries that label and is EXCLUDED BY NAME here, because a
 # hosted runner has no card. What is left after the exclusion is compile-and-link
 # plus whatever runs on a CPU. NOTHING HERE TESTS GPU BEHAVIOUR, and in this
@@ -61,7 +67,7 @@
 # ---------------------------------------------------------------------------
 # THE IMAGES COME FROM .github/workflows/images.yml
 # ---------------------------------------------------------------------------
-# Neither C++ job builds a container; both declare one. The toolchain is
+# No C++ leg builds a container; each declares one. The toolchain is
 # clang-20 with libc++'s module manifest, CMake 4.2 and a vendor SDK, which is
 # far too much to install per run -- and re-deriving it in YAML is how it
 # drifts from docker/. images.yml publishes `:cuda-ci` and `:hip-ci` to GHCR
@@ -206,7 +212,7 @@ jobs:
     # After lint, so a ruff finding does not cost a 20-minute module build
     # before it is reported. On `changes` too, so a docs-only PR skips this
     # entirely -- `ci-ok` knows the skip is intentional. `if` is evaluated
-    # against the whole matrix, so a false skips both legs.
+    # against the whole matrix, so a false skips every leg.
     needs: [lint, changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -241,6 +247,14 @@ jobs:
           - backend: hip
             image: hip-ci
             preset: ci-hip
+            tidy: ''
+          # Host-only ASan. A leg rather than a job of its own so it inherits
+          # the docs-only skip and the `cpp` entry in ci-ok's gated set. Runs
+          # in parallel, so it adds no wall time beyond its own build; its
+          # sccache is keyed on `asan`, never shared with the Release cuda leg.
+          - backend: asan
+            image: cuda-ci
+            preset: ci-asan
             tidy: ''
     container:
       # `calaman`, not `calaman_g`: the tag prefix comes from PROJECT_NAME in
@@ -292,8 +306,9 @@ jobs:
       # first if that appears.
       #
       # The preset is passed explicitly, so cpp-tier.sh moves the TEST preset
-      # with it -- ci-cuda excludes the `gpu` label, ci-hip includes only
-      # `compile_time`.
+      # with it -- ci-cuda and ci-hip exclude the `gpu` label, ci-asan
+      # excludes `gpu` and `no_sanitizer` and loads the asan preset's
+      # ASAN_OPTIONS/LSAN_OPTIONS.
       - name: cpp tier
         env:
           BUILD_JOBS: '4'

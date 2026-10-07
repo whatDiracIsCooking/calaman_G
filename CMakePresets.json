@@ -124,6 +124,16 @@
       "displayName": "CI, HIP backend (no device)",
       "description": "The HIP half of CI, deliberately the same shape as ci-cuda: the whole tree through clang's -x hip front end, runtime test binaries included, then the same `-LE gpu` selection. Compiling the test sources is the point -- clang is the stricter front end, and nvcc waves through code it rejects. Note this also compiles WarpWraps for HIP, which is where a portability break in the dependency's device code would surface.",
       "inherits": "hip"
+    },
+    {
+      "name": "ci-asan",
+      "binaryDir": "${sourceDir}/build-ci-asan",
+      "displayName": "CI, CUDA backend, ASAN (no device)",
+      "description": "The asan preset with ci-cuda's pinned architecture, so it configures without a driver: Debug + AddressSanitizer on host code (CXX units and the host side of every .cu), the whole tree built. Its test preset excludes the `gpu` label, so what runs is the host-only suites plus the host ASan/LSan canaries -- and the canaries are what prove ASan is on. It checks no device code.",
+      "inherits": "asan",
+      "cacheVariables": {
+        "CMAKE_CUDA_ARCHITECTURES": "86"
+      }
     }
   ],
   "buildPresets": [
@@ -166,6 +176,10 @@
     {
       "name": "ci-hip",
       "configurePreset": "ci-hip"
+    },
+    {
+      "name": "ci-asan",
+      "configurePreset": "ci-asan"
     },
     {
       "name": "compile-time",
@@ -269,6 +283,16 @@
       "filter": {
         "exclude": {
           "label": "gpu"
+        }
+      }
+    },
+    {
+      "name": "ci-asan",
+      "inherits": "asan",
+      "configurePreset": "ci-asan",
+      "filter": {
+        "exclude": {
+          "label": "gpu|no_sanitizer"
         }
       }
     },

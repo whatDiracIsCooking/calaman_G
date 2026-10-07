@@ -212,7 +212,10 @@ it.
   **compile-and-link plus whatever CPU-only tests exist**, not as a test of GPU
   behaviour. Today that is compile-and-link plus the one host-only suite
   (`linalg_scaffold_tests`); every numerical suite is `REQUIRES_GPU` and excluded,
-  so CI still proves nothing about a kernel's numbers.
+  so CI still proves nothing about a kernel's numbers. A third leg, `cpp
+  (asan)` (preset `ci-asan`), runs that same host-only set under ASan+LSan,
+  plus the host sanitizer canaries that prove ASan is on; device code is never
+  sanitized in CI (`docs/sanitizers.md`, G5).
 - **What CI cannot do: run a kernel.** Every numerical claim this project makes
   — a factorisation that agrees with the reference LAPACK to a tolerance — needs
   a card, which no hosted runner has. So **`devtools/cpp-tier.sh` on a box with
