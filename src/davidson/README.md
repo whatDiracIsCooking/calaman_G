@@ -45,9 +45,11 @@ Per `solve`:
    in the subspace.
 2. **Rayleigh–Ritz.** `H = V^T Sigma_V`, diagonalized by `syevd` (Euclidean) or
    the generalized `sygvd` (metric). Ritz vectors `X = V S_k` and their image
-   `A X = Sigma_V S_k` come from the same rotation — no second `sigma`.
-3. **Residuals and locking.** `R = A X - X diag(theta)`; a converged root is
-   locked (its correction computed but discarded).
+   `A X = Sigma_V S_k` come from the same rotation (`ritz_rotate`) — no second
+   `sigma`.
+3. **Residuals and locking.** `R = A X - X diag(theta)`; the per-root norms are
+   classified by `calaman.ritz`'s absolute `classify_ritz`, and a converged root
+   is locked (its correction computed but discarded).
 4. **Collapse.** Before expanding past `max_subspace`, `V`/`Sigma_V` reset to the
    current Ritz pairs; `make_davidson_slices` requires `max_subspace >= 2*n_roots`
    so a post-collapse subspace always has room for a full new block.

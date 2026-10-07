@@ -3,7 +3,8 @@
 //   * ritz_select -- positions per RitzWhich and the nested-selection property
 //     (host-only);
 //   * classify_ritz -- the convergence predicate, the scale floor, the boundary,
-//     a length mismatch and the vacuous empty selection (host-only);
+//     the absolute (scale-free) form, a length mismatch and the vacuous empty
+//     selection (host-only);
 //   * ritz_rotate -- argument checks before any handle use (host-only; the
 //     device product is ritz_rotate_tests.cpp).
 //
@@ -71,6 +72,19 @@ TEST(RitzClassifyTests, ValueDominatesASmallScale) {
   const auto sel = classify_ritz<float>(values, residuals, 1e-6f, 0.0f);
   EXPECT_EQ(sel.converged, (std::vector<bool>{true, false}));
   EXPECT_EQ(sel.converged_count, 1);
+}
+
+TEST(RitzClassifyTests, AbsoluteIgnoresValues) {
+  const std::vector<double> values = {1e6, -1e6, 0.0, 0.5};
+  const std::vector<double> residuals = {2e-6, 1e-6, 1e-6, 0.0};
+  // threshold 1e-6 whatever the value; the scaled form would pass the first two.
+  const auto sel = classify_ritz<double>(values, residuals, 1e-6);
+  EXPECT_TRUE(sel.index.empty());
+  EXPECT_EQ(sel.values, values);
+  EXPECT_EQ(sel.residuals, residuals);
+  EXPECT_EQ(sel.converged, (std::vector<bool>{false, true, true, true})); // 2nd, 3rd: equality
+  EXPECT_EQ(sel.converged_count, 3);
+  EXPECT_TRUE(classify_ritz<double>(values, std::vector<double>{0.0}, 1.0).values.empty());
 }
 
 TEST(RitzClassifyTests, AllConvergedAndEmpty) {
