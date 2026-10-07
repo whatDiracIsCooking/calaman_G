@@ -238,7 +238,7 @@ std::vector<T> reference_selection(const std::vector<T> &a, int n, int nev, Lanc
   std::vector<T> a_copy = a;
   EXPECT_EQ(ref_syevd(n, a_copy.data(), w.data()), 0);
   std::vector<T> expected;
-  for (const int i : lanczos_select(which, n, nev)) {
+  for (const int i : ritz_select(which, n, nev)) {
     expected.push_back(w[static_cast<std::size_t>(i)]);
   }
   return expected;

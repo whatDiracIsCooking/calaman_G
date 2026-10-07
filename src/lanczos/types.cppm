@@ -14,15 +14,12 @@ import wwr.runtime_api; // wwrStream_t
 import calaman.common;  // real_fp
 export import calaman.error_handling; // Status -- the callback's return type
 export import calaman.iterative;      // IterationInfo, stop_reason, converged
+export import calaman.ritz;           // RitzWhich (LanczosWhich), RitzSelection
 
 export namespace calaman {
 
-/// @brief Which end of the spectrum lanczos_solve converges.
-enum class LanczosWhich {
-  smallest,  ///< the nev algebraically smallest eigenvalues
-  largest,   ///< the nev algebraically largest eigenvalues
-  both_ends, ///< ceil(nev / 2) from the top, floor(nev / 2) from the bottom
-};
+/// @brief Which end of the spectrum lanczos_solve converges (count = nev).
+using LanczosWhich = RitzWhich;
 
 /// @brief Convergence/restart knobs for one lanczos_solve call.
 template<calaman::real_fp T>

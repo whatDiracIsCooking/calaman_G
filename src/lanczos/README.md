@@ -20,9 +20,9 @@ and a tridiagonal eigensolver are out of scope.
 
 | Partition | Contents |
 |---|---|
-| `:types` | `LanczosWhich`, `LanczosOptions`, `LanczosStopReason`, `LanczosInfo`, the `lanczos_matvec` concept |
+| `:types` | `LanczosWhich` (alias of `calaman.ritz`'s `RitzWhich`), `LanczosOptions`, `LanczosStopReason`, `LanczosInfo`, the `lanczos_matvec` concept |
 | `:buffer_size` | `LanczosSlices`, `lanczos_shape_ok`, `lanczos_restart_keep`, `make_lanczos_slices` / `lanczos_bufferSize` |
-| `:ritz` | `LanczosRitz`, `LanczosRitzSelection`, `lanczos_select`, `lanczos_ritz_extract` / `_select` / `_compact` / `_vectors` |
+| `:ritz` | `LanczosRitz`, `lanczos_ritz_extract` / `_select` / `_compact` / `_vectors` |
 | `:solve` | `lanczos_solve` |
 
 ## The idea
@@ -48,14 +48,17 @@ WarpWraps has no tridiagonal eigensolver, and after a thick restart `T` is an
 arrowhead plus a tridiagonal tail anyway. The wanted Ritz pairs are selected by
 `LanczosWhich`; their residual estimates `|beta_m s_{m,i}|` cost no matvec.
 
-`:ritz` splits that into four stages so the restart can reuse them:
+`:ritz` splits that into four stages so the restart can reuse them. Selection,
+classification and the rotation are the shared
+[`calaman.ritz`](../ritz/README.md) layer (`ritz_select`, `classify_ritz`,
+`ritz_rotate`); these stages adapt it to `LanczosSlices`:
 
 | Stage | Where | Does |
 |---|---|---|
 | `lanczos_ritz_extract` | device + one sync | `t` copied to `s`, `syevd` in place on `s` (`theta` ascending); reads `theta`, `S`'s last row, `beta_m = beta[ncv-1]` and the status block back into a host `LanczosRitz` |
 | `lanczos_ritz_select` | host | `count` positions per `LanczosWhich`, their estimates, and the flags `estimate <= tol * max(\|theta_i\|, \|\|T\|\|_2)` |
 | `lanczos_ritz_compact` | device, no sync | moves the chosen `theta` / `S` columns to the leading slots — the layout `lanczos_arrowhead` reads |
-| `lanczos_ritz_vectors` | device, no sync | `X = V S_k`, one `gemm` in host pointer mode |
+| `lanczos_ritz_vectors` | device, no sync | `X = V S_k` (`ritz_rotate`), one `gemm` in host pointer mode |
 
 Selections nest: for `k >= nev`, the `k`-pair selection at one `LanczosWhich`
 contains the `nev`-pair one, so a restart can keep extra pairs and still test
