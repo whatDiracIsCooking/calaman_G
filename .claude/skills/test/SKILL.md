@@ -60,7 +60,7 @@ compile). Both below.
 devtools/cpp-tier.sh                       # configure + build + ctest, default preset
 devtools/cpp-tier.sh --preset debug        # switches the ctest preset too
 devtools/cpp-tier.sh --preset asan        # hip-asan for the ROCm twin
-devtools/cpp-tier.sh --preset compute-sanitizer   # CUDA only, memcheck per suite
+devtools/cpp-tier.sh --preset compute-sanitizer   # CUDA only, memcheck (+ leak-check) per suite
 devtools/cpp-tier.sh --fresh               # wipe the CMake cache and reconfigure
 devtools/cpp-tier.sh --no-test             # configure + build only
 devtools/cpp-tier.sh --clean               # rebuild every object, keep the cache
@@ -96,8 +96,7 @@ Things that will bite:
   that there is nothing to ctest — which is not the same as passing.
 - **A green sanitizer preset is green only for what it checks.** The LSan
   suppression, the racecheck/synccheck kernel filter, the timeout multiplier
-  and the gaps (no AMD device checking, no `--leak-check`,
-  no UBSan) are all in `docs/sanitizers.md`. Report a sanitized run against
+  and the gaps (no AMD device checking, no UBSan) are all in `docs/sanitizers.md`. Report a sanitized run against
   that list, and register any new suppression there before adding it. Each
   sanitized preset also runs its **canaries** (label `sanitizer_canary`,
   `test/sanitizer_canaries/`): a red canary means the check went dark, not

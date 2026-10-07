@@ -11,7 +11,8 @@ namespace calaman::canary {
 
 /// @brief Launch the canary kernel named @p name and synchronize
 ///
-/// Names: memcheck, initcheck, racecheck-error, racecheck-warning, synccheck.
+/// Names: memcheck, memcheck-leak, initcheck, racecheck-error,
+/// racecheck-warning, synccheck.
 /// Runtime errors are ignored on purpose. @return false for an unknown name.
 bool run_device_canary(const char *name);
 

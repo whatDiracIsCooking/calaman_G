@@ -2,9 +2,10 @@
  * @file device_canaries.cu
  * @brief Deliberately buggy kernels, one per compute-sanitizer tool
  *
- * Each kernel carries exactly one defect that its tool must report; the
- * launcher ignores every runtime error, so the sanitizer is the only thing
- * that can fail the run. Registered by this directory's CMakeLists.txt only
+ * Each kernel carries exactly one defect that its tool must report (the
+ * memcheck leak is an unfreed allocation, no kernel); the launcher ignores
+ * every runtime error, so the sanitizer is the only thing that can fail the
+ * run. Registered by this directory's CMakeLists.txt only
  * under the compute-sanitizer preset, for the tool it selected.
  *
  * Every kernel lives in calaman:: on purpose: the racecheck/synccheck filter
@@ -72,7 +73,13 @@ bool run_device_canary(const char *const name) {
   (void)wwr::wwrMalloc(reinterpret_cast<void **>(&b), kThreads * sizeof(int));
 
   bool known = true;
-  if (std::strcmp(name, "memcheck") == 0) {
+  if (std::strcmp(name, "memcheck-leak") == 0) {
+    // memcheck --leak-check full: a device allocation never freed. Its
+    // pointer is dropped here, so nothing below can release it.
+    void *leaked = nullptr;
+    (void)wwr::wwrMalloc(&leaked, kThreads * sizeof(int));
+    leaked = nullptr;
+  } else if (std::strcmp(name, "memcheck") == 0) {
     oob_global_write<<<1, kThreads>>>(a, kThreads);
   } else if (std::strcmp(name, "initcheck") == 0) {
     uninitialized_read<<<1, kThreads>>>(a, b);

@@ -7,8 +7,8 @@
 
 int main(const int argc, char **const argv) {
   if (argc != 2 || !calaman::canary::run_device_canary(argv[1])) {
-    std::fputs("usage: sanitizer_canary_device <memcheck|initcheck|"
-               "racecheck-error|racecheck-warning|synccheck>\n",
+    std::fputs("usage: sanitizer_canary_device <memcheck|memcheck-leak|"
+               "initcheck|racecheck-error|racecheck-warning|synccheck>\n",
                stderr);
     return 2;
   }

@@ -79,7 +79,10 @@ if(CALAMAN_COMPUTE_SANITIZER)
 
   set(_tool "${CALAMAN_COMPUTE_SANITIZER_TOOL}")
   if(_tool STREQUAL "memcheck")
-    set(_cases "memcheck" "Invalid __global__ write")
+    # The leak needs --leak-check full on the launcher (docs/sanitizers.md).
+    set(_cases "memcheck" "Invalid __global__ write" "memcheck-leak"
+               "Leaked [0-9]+ bytes"
+    )
   elseif(_tool STREQUAL "initcheck")
     set(_cases "initcheck" "Uninitialized __global__ memory read")
   elseif(_tool STREQUAL "racecheck")

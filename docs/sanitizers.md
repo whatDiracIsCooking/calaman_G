@@ -186,16 +186,23 @@ The fields read the same; for a gap, *Why vendor-side* says why it is open.
 - **Upstream:** n/a.
 - **Proven by:** n/a.
 
-### G3. memcheck runs without `--leak-check`
+### G3. Closed: memcheck runs with `--leak-check full`
 
-- **What is off:** device allocations leaked by a suite are not reported.
-- **Symptom:** none — never enabled.
+- **What is off:** nothing. Kept under its number so citations still resolve.
+  It was: memcheck ran without `--leak-check`, so a device allocation a suite
+  never freed went unreported.
+- **Symptom:** n/a.
 - **Observed on:** the default toolchain above.
-- **Why vendor-side:** open, not vendor.
-- **Evidence:** the launcher in `CMakeLists.txt` carries no `--leak-check`.
-- **Re-verify:** n/a.
+- **Why vendor-side:** n/a. The fix: the compute-sanitizer launcher appends
+  `--leak-check full` when the tool is `memcheck` (`CMakeLists.txt`); a leak
+  counts toward `--error-exitcode`, so it fails the suite.
+- **Evidence:** with leak-check on, `compute-sanitizer` (memcheck) ran 242/242
+  with no leak reported anywhere, so no calaman, test, or vendor allocation
+  needed a fix or an entry here. The canary below exits 0 when the flag is
+  dropped (2026-10-07, #232).
+- **Re-verify:** any compute-sanitizer bump — the canary below does it.
 - **Upstream:** n/a.
-- **Proven by:** none yet. Tracked by #232.
+- **Proven by:** `sanitizer_canary.compute_sanitizer.memcheck_leak`.
 
 ### G4. No UBSan
 
@@ -250,6 +257,7 @@ every other; all carry the `sanitizer_canary` label.
 | `asan.cu_heap_buffer_overflow` | `asan`, `hip-asan` | host write one past a `new[]` in a `.cu` launch wrapper | `AddressSanitizer: heap-buffer-overflow` |
 | `lsan.leak` | `asan`, `hip-asan` | host `new[]` dropped in `calaman::canary` | `LeakSanitizer: detected memory leaks` |
 | `compute_sanitizer.memcheck` | `compute-sanitizer`, tool `memcheck` | global write one past the allocation | `Invalid __global__ write` |
+| `compute_sanitizer.memcheck_leak` | tool `memcheck` | `wwrMalloc` never freed | `Leaked <n> bytes` |
 | `compute_sanitizer.initcheck` | tool `initcheck` | read of never-written device memory | `Uninitialized __global__ memory read` |
 | `compute_sanitizer.racecheck_error` | tool `racecheck` | cross-warp shared-memory race | `Error: Race reported` |
 | `compute_sanitizer.racecheck_warning` | tool `racecheck` | intra-warp shared-memory race | `Warning: Race reported` |
