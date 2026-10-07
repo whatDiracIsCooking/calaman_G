@@ -1,6 +1,6 @@
 /**
  * @file aberth_bridge.h
- * @brief Device-launcher declaration shared between calaman.aberth's interface
+ * @brief Device-launcher declaration shared between calaman.polynomial_roots's interface
  *        unit and its device-compiled translation unit
  *
  * Included by interface.cppm in its global module fragment and by aberth.cu

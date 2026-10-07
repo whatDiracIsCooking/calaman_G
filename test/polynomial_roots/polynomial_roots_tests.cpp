@@ -1,4 +1,4 @@
-// Oracle test for calaman.aberth -- every root of a batch of polynomials by the
+// Oracle test for calaman.polynomial_roots -- every root of a batch of polynomials by the
 // Aberth-Ehrlich iteration, one warp per polynomial.
 //
 // The oracle is the reference LAPACK: the roots of p are the eigenvalues of its
@@ -21,7 +21,7 @@ import std;
 import wwr.runtime_api;
 import wwr.complex;
 import wwr.extension.memory_buffer;
-import calaman.aberth;
+import calaman.polynomial_roots;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
 import calaman.test.utils.shared_device;

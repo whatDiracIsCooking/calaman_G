@@ -1,6 +1,6 @@
 /**
  * @file aberth.cu
- * @brief calaman.aberth's device side: the batched launch over aberth_warp
+ * @brief calaman.polynomial_roots's device side: the batched launch over aberth_warp
  *
  * One warp per polynomial, up to kMaxWarpsPerBlock per block as the 48 KiB
  * dynamic-shared budget allows; each warp owns a 2n slice of that buffer.
@@ -9,7 +9,7 @@
 
 #include "aberth_bridge.h"
 
-#include "aberth/aberth.cuh"
+#include "polynomial_roots/aberth.cuh"
 #include "common/align_up.h"
 #include "common/block_params.h"
 

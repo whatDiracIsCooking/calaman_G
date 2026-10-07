@@ -2,12 +2,12 @@
  * @file instantiations.cpp
  * @brief The one explicit instantiation of aberth per supported type pair
  *
- * Implementation unit of calaman.aberth, paired with interface.cppm's `extern
+ * Implementation unit of calaman.polynomial_roots, paired with interface.cppm's `extern
  * template` list; the device side is instantiated in aberth.cu. The three lists
  * stay in step -- a pair added to one alone links against nothing.
  */
 
-module calaman.aberth;
+module calaman.polynomial_roots;
 
 // Imports are not re-exported through the primary interface; the signatures
 // below need these names.
