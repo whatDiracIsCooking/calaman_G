@@ -79,6 +79,34 @@ set(WWR_INSTALL
 
 add_subdirectory(WarpWraps)
 
+# Under UBSan, WarpWraps's build-time dispatch checks (*_dispatch targets) leave
+# ALL: -fsanitize=function adds relocations to each vendor call through a
+# WWR_FUNCTION alias, and the check counts relocations. Every other preset and
+# CI still build them (docs/sanitizers.md, S6).
+function(_calaman_exclude_dispatch_checks _dir)
+  get_property(
+    _targets
+    DIRECTORY ${_dir}
+    PROPERTY BUILDSYSTEM_TARGETS
+  )
+  foreach(_t IN LISTS _targets)
+    if(_t MATCHES "_dispatch$")
+      set_target_properties(${_t} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    endif()
+  endforeach()
+  get_property(
+    _subdirs
+    DIRECTORY ${_dir}
+    PROPERTY SUBDIRECTORIES
+  )
+  foreach(_sub IN LISTS _subdirs)
+    _calaman_exclude_dispatch_checks(${_sub})
+  endforeach()
+endfunction()
+if(CALAMAN_ENABLE_UBSAN)
+  _calaman_exclude_dispatch_checks(${CMAKE_CURRENT_SOURCE_DIR}/WarpWraps)
+endif()
+
 # ==========================================================================
 # GoogleTest
 # ==========================================================================

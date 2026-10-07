@@ -415,6 +415,27 @@ if(CALAMAN_ENABLE_ASAN)
 endif()
 
 # ========================================================================
+# UndefinedBehaviorSanitizer (host code only)
+# ========================================================================
+# Same reach as ASAN above: CXX units and, through -Xcompiler, the host side
+# of every CUDA `.cu`. -fno-sanitize-recover makes the first finding abort the
+# process, so a report can never sit in a passing test's log. Composes with
+# CALAMAN_ENABLE_ASAN, but has presets of its own (ubsan, hip-ubsan).
+option(CALAMAN_ENABLE_UBSAN
+       "Enable UndefinedBehaviorSanitizer instrumentation for host code" OFF
+)
+if(CALAMAN_ENABLE_UBSAN)
+  message(STATUS "UndefinedBehaviorSanitizer enabled (host code only)")
+  add_compile_options(
+    $<$<COMPILE_LANGUAGE:CXX>:-fsanitize=undefined>
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-sanitize-recover=undefined>
+    "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fsanitize=undefined>"
+    "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fno-sanitize-recover=undefined>"
+  )
+  add_link_options(-fsanitize=undefined)
+endif()
+
+# ========================================================================
 # NVIDIA compute-sanitizer (CUDA only)
 # ========================================================================
 # Not a compile-time sanitizer: it instruments at RUN time, so the build only

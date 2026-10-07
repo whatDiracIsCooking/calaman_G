@@ -1,9 +1,11 @@
 // host_main.cpp -- `sanitizer_canary_host <name>`: one deliberate host-side
-// memory bug in calaman code, for ASan / LSan to report. Exits 0 when the bug
+// bug in calaman code, for ASan / LSan / UBSan to report. Exits 0 when the bug
 // goes unnoticed, so only the sanitizer can make the run fail; 2 on a bad
-// argument. See docs/sanitizers.md (S1, S3).
+// argument. See docs/sanitizers.md (S1, S3, G4).
+#include <climits>
 #include <cstdio>
 #include <cstring>
+#include <thread>
 
 namespace calaman::canary {
 
@@ -19,11 +21,23 @@ void heap_buffer_overflow() {
 }
 
 // LSan: drops the only pointer to a heap allocation. The leak's stack is
-// calaman's own, so a vendor-scoped lsan.supp line must not swallow it.
+// calaman's own, so a vendor-scoped lsan.supp line must not swallow it. It
+// runs on a thread of its own: LSan scans the main thread's stack and
+// registers conservatively at exit, and a stale copy of the pointer there
+// (codegen-dependent; seen in #234) keeps the allocation reachable.
 void leak() {
-  int *volatile leaked = new int[64];
-  leaked[0] = 1;
-  leaked = nullptr;
+  std::thread([] {
+    int *volatile leaked = new int[64];
+    leaked[0] = 1;
+    leaked = nullptr;
+  }).join();
+}
+
+// UBSan: signed int overflow. The volatile operand keeps it a runtime add.
+void signed_overflow() {
+  volatile int top = INT_MAX;
+  volatile int sum = top + 1;
+  (void)sum;
 }
 
 } // namespace
@@ -39,7 +53,12 @@ int main(const int argc, char **const argv) {
     calaman::canary::leak();
     return 0;
   }
-  std::fputs("usage: sanitizer_canary_host <heap-buffer-overflow|leak>\n",
+  if (argc == 2 && std::strcmp(argv[1], "signed-overflow") == 0) {
+    calaman::canary::signed_overflow();
+    return 0;
+  }
+  std::fputs("usage: sanitizer_canary_host "
+             "<heap-buffer-overflow|leak|signed-overflow>\n",
              stderr);
   return 2;
 }

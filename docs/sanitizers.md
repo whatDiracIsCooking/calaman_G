@@ -113,7 +113,7 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 ### S4. `CALAMAN_TEST_TIMEOUT_MULTIPLIER` (loosened timing)
 
 - **What is off:** no check — every test TIMEOUT is multiplied, 3 in `asan`,
-  `hip-asan` and `ci-asan`, 10 in `compute-sanitizer` (`CMakePresets.json`;
+  `hip-asan`, `ci-asan`, `ubsan` and `hip-ubsan`, 10 in `compute-sanitizer` (`CMakePresets.json`;
   compose forwards `TIMEOUT_MULTIPLIER`). Listed because a hang hides longer
   behind it.
 - **Symptom:** `SteqrOracleTests` overran its 120s TIMEOUT under `hip-asan` at
@@ -131,8 +131,9 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 ### S5. The `no_sanitizer` ctest label
 
 - **What is off:** any ctest entry labeled `no_sanitizer` is excluded by the
-  `asan`, `hip-asan`, `ci-asan` and `compute-sanitizer` test presets and by
-  both compose sanitizer services (`-LE no_sanitizer`); the pytest marker of
+  `asan`, `hip-asan`, `ci-asan`, `ubsan`, `hip-ubsan` and `compute-sanitizer`
+  test presets and by both compose sanitizer services (`-LE no_sanitizer`);
+  the pytest marker of
   the same name is deselected by the compose `compute-sanitizer` service.
 - **Symptom:** none today — **nothing in calaman carries the label or the
   marker.** It is mechanism, kept so a case that instrumentation makes
@@ -144,6 +145,34 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 - **Re-verify:** any change that adds the label or the marker.
 - **Upstream:** n/a.
 - **Proven by:** n/a while unused.
+
+### S6. WarpWraps's dispatch checks are not built under UBSan
+
+- **What is off:** no sanitizer check — a build-time one. Under
+  `CALAMAN_ENABLE_UBSAN`, `deps/CMakeLists.txt` sets `EXCLUDE_FROM_ALL` on every
+  WarpWraps `*_dispatch` target (`wwr_add_dispatch_check`, which disassembles
+  the `wwr.wrappers.*` objects and checks each wrapper calls exactly one
+  vendor function). UBSan's own instrumentation is untouched, WarpWraps
+  included.
+- **Symptom:** `ubsan` and `hip-ubsan` failed to build: `dispatch check FAILED,
+  756 problem(s)` per module — `asum<double, int>: calls wwrblasDasum
+  wwrblasDasum wwrblasDasum wwrblasDasum, expected wwrblasDasum`.
+- **Observed on:** clang 20.1.8, both backends, WarpWraps `53913fa`.
+- **Why vendor-side:** not a finding at all. `-fsanitize=function` checks a call
+  made through a function reference (a `WWR_FUNCTION` alias) by loading the
+  callee's address, which adds three GOT relocations beside the call's own,
+  and the check counts relocations. `-fno-sanitize=function` was the other
+  fix; it would switch a UB check off in WarpWraps code, which the policy
+  forbids.
+- **Evidence:** `llvm-objdump -dr` on `instantiations.cpp.o` shows 3
+  `R_X86_64_REX_GOTPCRELX` + 1 `R_X86_64_PLT32` to `cublasDasum_v2` per
+  instantiation; a two-line reproducer has 4 references under
+  `-fsanitize=undefined` and 1 with `-fno-sanitize=function`.
+- **Re-verify:** a WarpWraps bump that teaches `dispatch.py` to count calls
+  rather than relocations — then drop the exclusion.
+- **Upstream:** none yet (WarpWraps).
+- **Proven by:** n/a — it removes no sanitizer coverage. The dispatch property
+  is static and still checked by every other preset and every CI leg.
 
 ## Coverage gaps
 
@@ -205,16 +234,30 @@ The fields read the same; for a gap, *Why vendor-side* says why it is open.
 - **Upstream:** n/a.
 - **Proven by:** `sanitizer_canary.compute_sanitizer.memcheck_leak`.
 
-### G4. No UBSan
+### G4. Closed: host code runs under UBSan
 
-- **What is off:** no `-fsanitize=undefined` build on either backend.
-- **Symptom:** none — never run.
-- **Observed on:** n/a.
-- **Why vendor-side:** open, not vendor.
-- **Evidence:** no UBSan option in `CMakeLists.txt` or `CMakePresets.json`.
-- **Re-verify:** n/a.
+- **What is off:** nothing in host code. Kept under its number so citations
+  still resolve. It was: no `-fsanitize=undefined` build on either backend.
+- **Symptom:** n/a. Its first run found two real bugs in calaman code, both
+  fixed (#234), not suppressed: `src/davidson/solve.cppm` offset the null
+  `metric_scratch`/`mv` pointers on the no-metric path (`applying non-zero
+  offset 384 to null pointer`), and `test/feast/feast_tests.cpp` loaded
+  `static_cast<wwrblasFillMode_t>(999)`, outside the enum's value range.
+- **Observed on:** the default toolchain above, both cards.
+- **Why vendor-side:** n/a. The fix: `CALAMAN_ENABLE_UBSAN` adds
+  `-fsanitize=undefined -fno-sanitize-recover=undefined` to CXX units and, via
+  `-Xcompiler`, to the host side of every CUDA `.cu` (the same reach as ASan
+  after G1), through the `ubsan` and `hip-ubsan` presets. No-recover makes the
+  first finding abort the process, so a report cannot sit in a green test's
+  log. No `UBSAN_OPTIONS` suppression exists; the presets set only
+  `print_stacktrace=1`.
+- **Evidence:** both presets run the whole tier green on their card (PR for
+  #234). The `.cu` canary below exits 0 (red) when the `-Xcompiler` flags are
+  dropped.
+- **Re-verify:** any clang bump (new checks join `undefined`), any CUDA bump.
 - **Upstream:** n/a.
-- **Proven by:** none yet. Tracked by #234.
+- **Proven by:** `sanitizer_canary.ubsan.signed_overflow` and
+  `sanitizer_canary.ubsan.cu_signed_overflow`.
 
 ### G5. No device sanitizer in CI (no GPU on hosted runners)
 
@@ -255,6 +298,26 @@ The fields read the same; for a gap, *Why vendor-side* says why it is open.
 - **Upstream:** n/a.
 - **Proven by:** `sanitizer_canary.compute_sanitizer.racecheck_warning`.
 
+### G7. No UBSan on device code, and none in CI
+
+- **What is off:** `ubsan`/`hip-ubsan` instrument host code only, and only
+  locally. nvcc gets the flags through `-Xcompiler`, which reaches its host
+  compiler alone; on HIP, clang drops them for the device pass (`ignoring
+  '-fsanitize=undefined' option as it is not currently supported for target
+  'amdgcn-amd-amdhsa'`, once per `.cu`). No CI leg builds a UBSan preset.
+- **Symptom:** UB in a kernel, or in host code CI's other legs reach, merges
+  green unless someone ran a UBSan preset.
+- **Observed on:** the default toolchain above.
+- **Why vendor-side:** neither vendor compiler has device UBSan. The CI half is
+  a choice: #234 scoped UBSan to local presets, and a `ci-ubsan` leg would be
+  a fourth full build.
+- **Evidence:** the clang warning above in every `hip-ubsan` `.cu` compile;
+  `ci.yml` has no `ubsan` leg.
+- **Re-verify:** a clang or CUDA release with device UBSan; any change to the
+  CI matrix.
+- **Upstream:** n/a.
+- **Proven by:** n/a.
+
 ## Canaries
 
 A canary is a deliberately buggy run that must fail under the check it guards
@@ -269,6 +332,8 @@ every other; all carry the `sanitizer_canary` label.
 | `asan.heap_buffer_overflow` | `asan`, `hip-asan` | host write one past a `new[]` | `AddressSanitizer: heap-buffer-overflow` |
 | `asan.cu_heap_buffer_overflow` | `asan`, `hip-asan` | host write one past a `new[]` in a `.cu` launch wrapper | `AddressSanitizer: heap-buffer-overflow` |
 | `lsan.leak` | `asan`, `hip-asan` | host `new[]` dropped in `calaman::canary` | `LeakSanitizer: detected memory leaks` |
+| `ubsan.signed_overflow` | `ubsan`, `hip-ubsan` | host `INT_MAX + 1` in a `.cpp` | `host_main.cpp:<l>:<c>: runtime error: signed integer overflow` |
+| `ubsan.cu_signed_overflow` | `ubsan`, `hip-ubsan` | host `INT_MAX + 1` in a `.cu` launch wrapper | `host_cu_canary.cu:<l>:<c>: runtime error: signed integer overflow` |
 | `compute_sanitizer.memcheck` | `compute-sanitizer`, tool `memcheck` | global write one past the allocation | `Invalid __global__ write` |
 | `compute_sanitizer.memcheck_leak` | tool `memcheck` | `wwrMalloc` never freed | `Leaked <n> bytes` |
 | `compute_sanitizer.initcheck` | tool `initcheck` | read of never-written device memory | `Uninitialized __global__ memory read` |

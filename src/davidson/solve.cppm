@@ -343,11 +343,13 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
       }
       const std::size_t ci = static_cast<std::size_t>(i) * nz;
       T *candidate = s.correction + ci;
-      T *m_candidate = s.metric_scratch + ci; // M candidate (metric path only)
+      // M candidate (metric path only; metric_scratch is null without a metric,
+      // and offsetting a null pointer is UB).
+      T *m_candidate = use_metric ? s.metric_scratch + ci : nullptr;
       for (int j = 0; j < kept; ++j) {
         const std::size_t aj = static_cast<std::size_t>(dim + j) * nz;
         T *accepted = s.v + aj;
-        T *m_accepted = s.mv + aj;
+        T *m_accepted = use_metric ? s.mv + aj : nullptr;
         // <accepted, candidate> in the active product: Euclidean accepted^T candidate;
         // metric accepted^T M candidate = (M accepted)^T candidate.
         T projection{};

@@ -61,6 +61,7 @@ compile). Both below.
 devtools/cpp-tier.sh                       # configure + build + ctest, default preset
 devtools/cpp-tier.sh --preset debug        # switches the ctest preset too
 devtools/cpp-tier.sh --preset asan        # hip-asan for the ROCm twin
+devtools/cpp-tier.sh --preset ubsan       # hip-ubsan for the ROCm twin; local only
 devtools/cpp-tier.sh --preset ci-asan     # CI's asan leg: host-only, no card
 devtools/cpp-tier.sh --preset compute-sanitizer   # CUDA only, memcheck (+ leak-check) per suite
 devtools/cpp-tier.sh --fresh               # wipe the CMake cache and reconfigure
@@ -92,20 +93,24 @@ Things that will bite:
   cold run spends its time on; `doctor.sh` warns when it is absent.
 - **A missing submodule is the first thing to check** on a fresh clone:
   `git submodule update --init --recursive`. `doctor.sh` reports it.
-- Only `default`, `workstation`, `debug`, `asan`, `compute-sanitizer`, `hip`,
-  `hip-asan`, `compile-time`, `coverage`, `ci-cuda`, `ci-hip` and `ci-asan`
-  have **test**
+- Only `default`, `workstation`, `debug`, `asan`, `ubsan`,
+  `compute-sanitizer`, `hip`, `hip-asan`, `hip-ubsan`, `compile-time`,
+  `coverage`, `ci-cuda`, `ci-hip` and `ci-asan` have **test**
   presets. With any other configure preset the script builds and then reports
   that there is nothing to ctest — which is not the same as passing.
 - **A green sanitizer preset is green only for what it checks.** The LSan
   suppression, the racecheck/synccheck kernel filter, the timeout multiplier
-  and the gaps (no AMD device checking, no UBSan) are all in `docs/sanitizers.md`. Report a sanitized run against
+  and the gaps (no AMD device checking, no device sanitizer in CI, no device
+  or CI UBSan) are all in
+  `docs/sanitizers.md`. Report a sanitized run against
   that list, and register any new suppression there before adding it. Each
   sanitized preset also runs its **canaries** (label `sanitizer_canary`,
   `test/sanitizer_canaries/`): a red canary means the check went dark, not
   that a canary needs fixing. CI's `cpp (asan)` leg (`ci-asan`) runs the three
   host canaries on every code PR, so ASan going dark in CI turns it red; the
-  device canaries are `gpu`-labelled and never run there. compute-sanitizer
+  device canaries are `gpu`-labelled and never run there. `ubsan`/`hip-ubsan`
+  (host UBSan, `-fno-sanitize-recover`, so a finding aborts its test) are
+  local only — no CI leg runs them. compute-sanitizer
   registers only the selected
   tool's canaries, so all four tools take four `-DCALAMAN_COMPUTE_SANITIZER_TOOL`
   reconfigures.
