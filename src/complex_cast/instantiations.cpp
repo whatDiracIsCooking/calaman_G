@@ -1,6 +1,6 @@
 /**
  * @file instantiations.cpp
- * @brief The explicit instantiations of the four complex_cast operations per type
+ * @brief The explicit instantiations of the complex_cast operations per type
  *
  * Implementation unit of calaman.complex_cast. Pairs with the `extern template`
  * declarations in interface.cppm: together they keep every importer from
@@ -44,5 +44,19 @@ template void get_imag_part<wwr::wwrFloatComplex>(wwr::wwrStream_t, float *,
                                                   const wwr::wwrFloatComplex *, std::size_t);
 template void get_imag_part<wwr::wwrDoubleComplex>(wwr::wwrStream_t, double *,
                                                    const wwr::wwrDoubleComplex *, std::size_t);
+
+template void split_planes<wwr::wwrFloatComplex>(wwr::wwrStream_t, std::size_t, std::size_t,
+                                                 const wwr::wwrFloatComplex *, std::size_t,
+                                                 float *, float *, std::size_t);
+template void split_planes<wwr::wwrDoubleComplex>(wwr::wwrStream_t, std::size_t, std::size_t,
+                                                  const wwr::wwrDoubleComplex *, std::size_t,
+                                                  double *, double *, std::size_t);
+
+template void merge_planes<wwr::wwrFloatComplex>(wwr::wwrStream_t, std::size_t, std::size_t,
+                                                 const float *, const float *, std::size_t,
+                                                 wwr::wwrFloatComplex *, std::size_t);
+template void merge_planes<wwr::wwrDoubleComplex>(wwr::wwrStream_t, std::size_t, std::size_t,
+                                                  const double *, const double *, std::size_t,
+                                                  wwr::wwrDoubleComplex *, std::size_t);
 
 } // namespace calaman

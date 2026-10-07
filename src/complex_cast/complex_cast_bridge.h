@@ -79,4 +79,27 @@ template<typename ComplexT, typename RealT>
 void get_imag_part(wwr::wwrStream_t stream, RealT *output, const ComplexT *input,
                    std::size_t count);
 
+/// @brief Split the rows-by-cols complex A (lda) into real planes re, im (ldp)
+///
+/// re(i,j) <- Re(A(i,j)), im(i,j) <- Im(A(i,j)), all column-major; the planes'
+/// padding rows are untouched. Enqueued on @p stream; launches nothing when
+/// rows or cols is 0.
+///
+/// @tparam ComplexT Complex element type (wwrFloatComplex, wwrDoubleComplex)
+/// @tparam RealT    Its real component type; call with ComplexToRealType<ComplexT>
+template<typename ComplexT, typename RealT>
+void split_planes(wwr::wwrStream_t stream, std::size_t rows, std::size_t cols, const ComplexT *a,
+                  std::size_t lda, RealT *re, RealT *im, std::size_t ldp);
+
+/// @brief Merge real planes re, im (ldp) into the rows-by-cols complex C (ldc)
+///
+/// C(i,j) <- (re(i,j), im(i,j)), all column-major; C's padding rows are
+/// untouched. Enqueued on @p stream; launches nothing when rows or cols is 0.
+///
+/// @tparam ComplexT Complex element type (wwrFloatComplex, wwrDoubleComplex)
+/// @tparam RealT    Its real component type; call with ComplexToRealType<ComplexT>
+template<typename ComplexT, typename RealT>
+void merge_planes(wwr::wwrStream_t stream, std::size_t rows, std::size_t cols, const RealT *re,
+                  const RealT *im, std::size_t ldp, ComplexT *c, std::size_t ldc);
+
 } // namespace calaman::device

@@ -6,11 +6,11 @@
 # Not a LAPACK routine -- it is the packing glue a complex solver needs to
 # assemble a complex array from two real planes, or split one apart -- so it is
 # its own module, like calaman.horner. Structurally the twin of calaman.gebal's
-# kernel half: four hand-written per-element functors launched through
+# kernel half: hand-written per-element functors launched through
 # wwr.extension.parallel_for, reading/writing complex components through
 # complex.h's neutral accessors (never .x/.y, which hipComplex lacks).
 
-# The device-kernel library. complex_cast.cu launches its four functors through
+# The device-kernel library. complex_cast.cu launches its functors through
 # wwr.extension.parallel_for, so it links that INTERFACE library PRIVATE, which
 # carries parallel_for.cuh plus, transitively, wwr.device: complex.h for the
 # neutral complex types and runtime.h (wwrStream_t, pulled in by
@@ -30,7 +30,7 @@ calaman_add_gpu_device_library(
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm carries
-# the four exported wrappers; instantiations.cpp is the explicit-instantiation
+# the exported wrappers; instantiations.cpp is the explicit-instantiation
 # implementation unit paired with its `extern template` list.
 #
 # LINK_PUBLIC carries every module the exported surface names, so an importer
