@@ -214,13 +214,17 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
     local.m = h.m;
     local.max_residual = h.max_residual;
 
+    // Each devInfo field through calaman::devinfo_verdict (calaman.error_handling);
+    // a failure is published as NumericalFailure, never returned bare.
     for (std::size_t e = 0; e < Ne; ++e) {
-      if (h.lu_info[e] != 0) {
-        return publish(FeastStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
+      if (const Status verdict = devinfo_verdict(h.lu_info[e]); !verdict.ok()) {
+        return publish(FeastStopReason::NumericalFailure, verdict);
       }
     }
-    if (h.qr_info[0] != 0 || h.qr_info[1] != 0 || h.eig_info != 0) {
-      return publish(FeastStopReason::NumericalFailure, wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
+    for (const int info : {h.qr_info[0], h.qr_info[1], h.eig_info}) {
+      if (const Status verdict = devinfo_verdict(info); !verdict.ok()) {
+        return publish(FeastStopReason::NumericalFailure, verdict);
+      }
     }
 
     // Not judged on the first iteration, whose Ritz values from a random start
