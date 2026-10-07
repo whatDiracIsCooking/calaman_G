@@ -487,3 +487,12 @@ add_subdirectory(lansp)
 # ?lanhp). No device code of its own: it runs calaman.lansp's kernel with the
 # Hermitian flag and links calaman.lansp.device, so it follows lansp.
 add_subdirectory(lanhp)
+
+# calaman.lansb -- the norm of a symmetric band matrix in band storage (LAPACK's
+# ?lansb). Links only calaman.common and calaman.error_handling.
+add_subdirectory(lansb)
+
+# calaman.lanhb -- the norm of a Hermitian band matrix in band storage (LAPACK's
+# ?lanhb). No device code of its own: it runs calaman.lansb's kernel with the
+# Hermitian flag and links calaman.lansb.device, so it follows lansb.
+add_subdirectory(lanhb)
