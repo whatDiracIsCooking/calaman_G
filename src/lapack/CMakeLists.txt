@@ -99,6 +99,10 @@ add_subdirectory(langb)
 # only calaman.common and calaman.error_handling.
 add_subdirectory(langt)
 
+# calaman.lanhs -- the norm of an upper Hessenberg matrix (LAPACK's ?lanhs).
+# Links only calaman.common and calaman.error_handling.
+add_subdirectory(lanhs)
+
 # calaman.lanst -- the norm of a symmetric tridiagonal (LAPACK's ?lanst), plus
 # the header-only per-thread lanst_max_abs (calaman::lanst::header) that the
 # ?sterf/?steqr kernels include, so it must precede both. Links only
