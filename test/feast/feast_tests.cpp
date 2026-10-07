@@ -11,7 +11,10 @@
 //   * the reference LAPACK -- LAPACKE_?syevd on a dense random symmetric matrix
 //     gives every eigenpair; the ones in [Emin, Emax] are the oracle feast is
 //     checked against (count, values, and per-pair backward error);
-//   * an empty interval, where feast must report m = 0 and converge.
+//   * an empty interval, where feast must report m = 0 and converge;
+//   * the dense model behind a wrapper hiding its norm1_estimate hook, so the
+//     residuals' ||A||_1 is lacn2's estimate: same eigenpairs, and an estimate
+//     never above the exact norm (and equal to it on a diagonal matrix).
 //
 // The host arithmetic is done in double regardless of T, so the oracle shares
 // none of feast's device code. float and double (FEAST is real-symmetric only).
@@ -212,10 +215,10 @@ struct FeastResult {
   std::vector<T> q;      // n * m0
 };
 
-template<typename T, std::size_t Ne>
+template<typename T, std::size_t Ne, class Wrap = std::identity>
 FeastResult<T> run_feast(std::shared_ptr<DeviceHandle> handle, Handles &h, int n,
                          const std::vector<T> &a_full, T Emin, T Emax, int m0,
-                         const std::vector<T> &q0, FeastOptions<T> opts = {}) {
+                         const std::vector<T> &q0, FeastOptions<T> opts = {}, Wrap wrap = {}) {
   auto d_a = to_device(handle, a_full);
   auto d_q = to_device(handle, q0);
 
@@ -227,7 +230,7 @@ FeastResult<T> run_feast(std::shared_ptr<DeviceHandle> handle, Handles &h, int n
   FeastResult<T> r;
   r.status = feast<T, Ne>(h.blas, h.solver, handle->stream().get(), wwr::WWRBLAS_FILL_MODE_LOWER, n,
                           d_a.data(), n, Emin, Emax, m0, d_lambda.data(), d_q.data(), d_work.data(),
-                          bytes, opts, &r.info);
+                          bytes, opts, &r.info, wrap);
   wwr::wwrStreamSynchronize(handle->stream().get());
   r.lambda = from_device(handle, d_lambda, m0);
   r.q = from_device(handle, d_q, static_cast<std::size_t>(n) * m0);
@@ -448,6 +451,112 @@ void check_empty_interval() {
 
 TEST(FeastEmptyIntervalTests, N8Double) { check_empty_interval<double, 8>(); }
 TEST(FeastEmptyIntervalTests, N8Float) { check_empty_interval<float, 8>(); }
+
+// ========================================================================
+// Device: a model with no norm1_estimate hook, so ||A||_1 comes from lacn2
+// ========================================================================
+
+// Forwards the resolvent model's apply/prepare/filter and nothing else, so the
+// driver falls back to lacn2 (driven by apply) for the residuals' scale.
+template<class Inner>
+struct HideNorm1 {
+  Inner &inner;
+
+  template<class T>
+  Status apply(wwr::wwrStream_t stream, int k, const T *X, T *Y) {
+    return inner.apply(stream, k, X, Y);
+  }
+  template<class Contour>
+  Status prepare(wwr::wwrStream_t stream, const Contour &contour) {
+    return inner.prepare(stream, contour);
+  }
+  template<class Contour, class T>
+  Status filter(wwr::wwrStream_t stream, const Contour &contour, int k, const T *Y, T *out) {
+    return inner.filter(stream, contour, k, Y, out);
+  }
+};
+
+template<typename T>
+struct HideNorm1Wrap {
+  template<class Inner>
+  HideNorm1<Inner> operator()(Inner &inner) const {
+    static_assert(feast_norm1_hook<Inner, T>, "the dense model has the hook");
+    static_assert(feast_resolvent<HideNorm1<Inner>, T>);
+    static_assert(!feast_norm1_hook<HideNorm1<Inner>, T>, "the wrapper hides it");
+    return HideNorm1<Inner>{inner};
+  }
+};
+
+// Runs feast on A twice, from the same start -- the dense model as is, and
+// behind HideNorm1 -- and checks the hook-less run against the reference
+// eigenvalues ref[lo .. lo + count) and against the hooked run. Its ||A||_1 is
+// lacn2's: never above the exact one, and equal to it when @p exact_estimate.
+template<typename T, std::size_t Ne>
+void check_hidden_norm(int n, const std::vector<T> &a, const std::vector<T> &ref, int lo,
+                       int count, int m0, bool exact_estimate, unsigned seed) {
+  const T emin = static_cast<T>((static_cast<double>(ref[lo - 1]) + ref[lo]) / 2.0);
+  const T emax =
+      static_cast<T>((static_cast<double>(ref[lo + count - 1]) + ref[lo + count]) / 2.0);
+
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  const auto q0 = random_matrix<T>(n, m0, seed);
+  const auto dense = run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0);
+  const auto hidden =
+      run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0, {}, HideNorm1Wrap<T>{});
+
+  ASSERT_EQ(dense.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_EQ(hidden.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_CONVERGED(dense.info);
+  EXPECT_CONVERGED(hidden.info);
+  ASSERT_EQ(dense.info.m, count);
+  ASSERT_EQ(hidden.info.m, count);
+
+  // The hook is exact; lacn2's estimate is a lower bound on it.
+  const double norm_a = host_norm1(n, a);
+  const double ntol = (std::is_same_v<T, float> ? 1e-5 : 1e-12) * norm_a;
+  EXPECT_NEAR(dense.info.norm_a, norm_a, ntol) << "hooked ||A||_1";
+  EXPECT_GT(hidden.info.norm_a, T(0));
+  EXPECT_LE(hidden.info.norm_a, norm_a + ntol) << "lacn2 estimate above ||A||_1";
+  if (exact_estimate) {
+    EXPECT_NEAR(hidden.info.norm_a, norm_a, ntol) << "lacn2 exact on this class";
+  }
+
+  const T evtol = static_cast<T>((std::is_same_v<T, float> ? 1e-3 : 1e-8) * std::max(1.0, norm_a));
+  const double restol = std::is_same_v<T, float> ? 1e-3 : 1e-9;
+  for (int i = 0; i < count; ++i) {
+    EXPECT_NEAR(hidden.lambda[i], ref[lo + i], evtol) << "eigenvalue " << i;
+    EXPECT_NEAR(hidden.lambda[i], dense.lambda[i], evtol) << "vs the hooked run, " << i;
+    const double be = pair_backward_error(n, a, norm_a, hidden.lambda[i],
+                                          &hidden.q[static_cast<std::size_t>(i) * n]);
+    EXPECT_LE(be, restol) << "backward error of pair " << i;
+  }
+  destroy_handles(h);
+}
+
+TEST(FeastHiddenNormTests, DiagonalDouble) {
+  // diag(0 .. 11): lacn2 is exact on a diagonal matrix; [2.5, 6.5] holds 3..6.
+  const int n = 12;
+  std::vector<double> d(n);
+  for (int i = 0; i < n; ++i) {
+    d[i] = static_cast<double>(i);
+  }
+  check_hidden_norm<double, 8>(n, diagonal(d), d, 3, 4, 8, true, 1234);
+}
+
+TEST(FeastHiddenNormTests, DenseSymmetricDouble) {
+  const int n = 24;
+  const auto a = random_symmetric<double>(n, 7);
+  check_hidden_norm<double, 8>(n, a, reference_eigenvalues<double>(n, a), n / 4, n / 4, n / 4 + 4,
+                               false, 8);
+}
+
+TEST(FeastHiddenNormTests, DenseSymmetricFloat) {
+  const int n = 16;
+  const auto a = random_symmetric<float>(n, 7);
+  check_hidden_norm<float, 8>(n, a, reference_eigenvalues<float>(n, a), n / 4, n / 4, n / 4 + 4,
+                              false, 8);
+}
 
 } // namespace
 } // namespace calaman

@@ -38,6 +38,7 @@ import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEigMode_t, WWRSOLVE
 import wwr.wrappers.solver; // syevd_bufferSize
 import calaman.common;      // align_up, WorkspaceLayout, member_ptr, carve_workspace, real_fp, ...
 import calaman.orthogonalize;         // orthogonalize_bufferSize
+import calaman.lacn2;                 // lacn2_bufferSize
 import :resolvent;                    // DenseResolventSlices
 export import calaman.error_handling; // Status -- the cross-domain return type
 
@@ -58,7 +59,7 @@ struct FeastSlices {
   T *rotated = nullptr;   ///< m0 x m0: those eigenvectors, in-interval columns first
   T *ritz = nullptr;      ///< m0: the Ritz values, ascending, as syevd returns them
   T *residuals = nullptr; ///< m0: relative residual of each returned pair; 0 past status->m
-  T *norm_a = nullptr;    ///< one element: ||A||_1
+  T *norm_a = nullptr;    ///< one element: ||A||_1, or lacn2's lower bound on it
 
   // ── the per-iteration status, and pointers into it ─────────────────────
   device::FeastStatus<T> *status = nullptr;
@@ -69,10 +70,12 @@ struct FeastSlices {
   T *scratch = nullptr; ///< orthogonalize's workspace, then syevd's
   int lwork_qr = 0;     ///< orthogonalize's lwork, in elements of T
   int lwork_eig = 0;    ///< syevd's lwork, in elements of T
+  void *norm_work = nullptr;      ///< lacn2's workspace, aliasing scratch: used before the loop
+  std::size_t norm_work_bytes = 0; ///< its size, lacn2_bufferSize<T>(n)
 
   /// @brief Lay the slices out from @p layout: FIXED regions, then the one
-  ///        shared QR/eigensolver SCRATCH block. @p qr_len / @p eig_len are the
-  ///        orthogonalize / syevd lworks, in elements of T.
+  ///        shared QR/eigensolver/lacn2 SCRATCH block. @p qr_len / @p eig_len
+  ///        are the orthogonalize / syevd lworks, in elements of T.
   void carve(WorkspaceLayout &layout, const int n, const int m0, const int qr_len,
              const int eig_len) {
     const std::size_t nz = static_cast<std::size_t>(n);
@@ -97,6 +100,9 @@ struct FeastSlices {
     // One SCRATCH region: orthogonalize's workspace, then syevd's. They are
     // never live together, so the block is sized to the larger and reused.
     scratch = layout.scratch<T>(static_cast<std::size_t>(std::max(qr_len, eig_len)));
+    // lacn2's ||A||_1 estimate runs once, before either, so it aliases them too.
+    norm_work_bytes = lacn2_bufferSize<T>(n);
+    norm_work = layout.scratch<std::byte>(norm_work_bytes);
   }
 };
 

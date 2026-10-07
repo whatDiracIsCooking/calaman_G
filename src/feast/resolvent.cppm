@@ -16,6 +16,9 @@
  * into separate calls. Z_e I - A is complex symmetric, so the factorization is
  * a general LU, never singular: every Im Z_e > 0 and A's spectrum is real.
  *
+ * A model may add the optional feast_norm1_hook, ||A||_1 for the residuals'
+ * scale; DenseResolvent's is exact.
+ *
  * Every member expects the BLAS handle's stream to be the @p stream it is
  * given.
  */
@@ -54,6 +57,14 @@ concept feast_resolvent = linear_operator<R, T> && requires(R &r, wwr::wwrStream
                                                             int k, const T *Y, T *out) {
   { r.prepare(stream, contour) } -> std::convertible_to<Status>;
   { r.filter(stream, contour, k, Y, out) } -> std::convertible_to<Status>;
+};
+
+/// @brief The optional hook: r.norm1_estimate(stream, d_out) enqueues ||A||_1,
+///        or a lower bound on it, into the device scalar @p d_out. A model
+///        without it gets lacn2's estimate, driven by its apply.
+template<class R, class T>
+concept feast_norm1_hook = requires(R &r, wwr::wwrStream_t stream, T *d_out) {
+  { r.norm1_estimate(stream, d_out) } -> std::convertible_to<Status>;
 };
 
 } // namespace calaman
@@ -182,8 +193,8 @@ public:
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
-  /// @brief ||A||_1, exactly, into the device scalar @p d_out.
-  Status norm1(wwr::wwrStream_t stream, T *d_out) {
+  /// @brief ||A||_1, exactly, into the device scalar @p d_out: the feast_norm1_hook.
+  Status norm1_estimate(wwr::wwrStream_t stream, T *d_out) {
     device::feast_sym_norm1(stream, uplo_ == wwr::WWRBLAS_FILL_MODE_LOWER, n_, d_A_, lda_,
                             s_.colsum, d_out);
     CLM_TRY(wwr::wwrGetLastError());
@@ -203,5 +214,6 @@ static_assert(slices_for<DenseResolventSlices<float>, int, int, int>);
 static_assert(feast_resolvent<DenseResolvent<float>, float>);
 static_assert(feast_resolvent<DenseResolvent<double>, double>);
 static_assert(!feast_resolvent<DenseResolvent<double>, float>);
+static_assert(feast_norm1_hook<DenseResolvent<double>, double>);
 
 } // namespace calaman

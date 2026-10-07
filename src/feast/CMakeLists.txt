@@ -50,6 +50,7 @@ calaman_add_gpu_device_library(
 #   calaman.iterative       IterationInfo, FeastInfo's base (re-exported)
 #   calaman.linear_operator linear_operator, feast_resolvent's base
 #                           (re-exported)
+#   calaman.lacn2           ||A||_1 for a model with no norm1_estimate hook
 # (every entry point returns it). wwr.complex is not listed: no partition names
 # the vendor complex type, and RealToComplexType's target is reachable
 # transitively through calaman.common.
@@ -83,6 +84,7 @@ calaman_add_cxx_module_library(
   calaman::error_handling
   calaman::iterative
   calaman::linear_operator
+  calaman::lacn2
   LINK_PRIVATE
   wwr::backend
   INCLUDE_DIRS_PRIVATE
