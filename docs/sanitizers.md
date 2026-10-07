@@ -41,8 +41,8 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 ### S1. LSan: ROCm runtime leaks at exit
 
 - **What is off:** `leak:libhsa-runtime64.so` and `leak:libamdhip64.so` in
-  `test/shared/lsan.supp`, loaded by the `asan` and `hip-asan` test presets
-  through `LSAN_OPTIONS` (`CMakePresets.json`).
+  `test/shared/lsan.supp`, loaded by the `asan`, `hip-asan` and `ci-asan` test
+  presets through `LSAN_OPTIONS` (`CMakePresets.json`).
 - **Symptom:** `hip-asan` failed 94 suites on LeakSanitizer at process exit.
 - **Observed on:** ROCm 7.2.4, gfx1200, clang 20.1.8.
 - **Why vendor-side:** a fixed ~6KB per process that touches a device,
@@ -91,8 +91,8 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 
 ### S3. `ASAN_OPTIONS=protect_shadow_gap=0`
 
-- **What is off:** ASan's protection of the shadow gap, set in the `asan` and
-  `hip-asan` test presets and the compose `asan` service
+- **What is off:** ASan's protection of the shadow gap, set in the `asan`,
+  `hip-asan` and `ci-asan` test presets and the compose `asan` service
   (`docker/compose.yaml`).
 - **Symptom:** under `asan`, every GPU suite died with
   `cudaErrorMemoryAllocation`.
@@ -112,9 +112,10 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 
 ### S4. `CALAMAN_TEST_TIMEOUT_MULTIPLIER` (loosened timing)
 
-- **What is off:** no check — every test TIMEOUT is multiplied, 3 in `asan` and
-  `hip-asan`, 10 in `compute-sanitizer` (`CMakePresets.json`; compose forwards
-  `TIMEOUT_MULTIPLIER`). Listed because a hang hides longer behind it.
+- **What is off:** no check — every test TIMEOUT is multiplied, 3 in `asan`,
+  `hip-asan` and `ci-asan`, 10 in `compute-sanitizer` (`CMakePresets.json`;
+  compose forwards `TIMEOUT_MULTIPLIER`). Listed because a hang hides longer
+  behind it.
 - **Symptom:** `SteqrOracleTests` overran its 120s TIMEOUT under `hip-asan` at
   1x.
 - **Observed on:** ROCm 7.2.4, gfx1200 (the overrun); the factors were sized on
@@ -130,9 +131,9 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 ### S5. The `no_sanitizer` ctest label
 
 - **What is off:** any ctest entry labeled `no_sanitizer` is excluded by the
-  `asan`, `hip-asan` and `compute-sanitizer` test presets and by both compose
-  sanitizer services (`-LE no_sanitizer`); the pytest marker of the same name is
-  deselected by the compose `compute-sanitizer` service.
+  `asan`, `hip-asan`, `ci-asan` and `compute-sanitizer` test presets and by
+  both compose sanitizer services (`-LE no_sanitizer`); the pytest marker of
+  the same name is deselected by the compose `compute-sanitizer` service.
 - **Symptom:** none today — **nothing in calaman carries the label or the
   marker.** It is mechanism, kept so a case that instrumentation makes
   intractable is excluded by name rather than skipped.
@@ -215,19 +216,31 @@ The fields read the same; for a gap, *Why vendor-side* says why it is open.
 - **Upstream:** n/a.
 - **Proven by:** none yet. Tracked by #234.
 
-### G5. No sanitizer in CI
+### G5. No device sanitizer in CI (no GPU on hosted runners)
 
-- **What is off:** `.github/workflows/ci.yml` runs no sanitized preset; every
-  sanitizer run is a local one on a box with a card.
-- **Symptom:** none — a host-side memory error in a host-only suite merges
-  green.
-- **Observed on:** n/a.
-- **Why vendor-side:** partly: hosted runners have no GPU, so device checking
-  cannot run there. Host-only ASan can, and does not yet.
-- **Evidence:** no `asan` job in `ci.yml`.
-- **Re-verify:** n/a.
+- **What is off:** CI checks host code only. Its `cpp (asan)` leg builds the
+  `ci-asan` preset (`asan` with `ci-cuda`'s pinned `sm_86`) and runs
+  `-LE gpu|no_sanitizer` under ASan+LSan, with the `asan` preset's
+  `ASAN_OPTIONS`/`LSAN_OPTIONS` (S1, S3). Every `gpu`-labelled suite and the
+  compute-sanitizer and `hip-asan` presets stay local-only, so device code,
+  and host code reached only from a `gpu` suite, is never sanitized in CI.
+- **Symptom:** a device memory error, or a host one on a GPU-only path, merges
+  green unless someone ran a sanitized preset on a card.
+- **Observed on:** GitHub-hosted `ubuntu-latest`, the `cuda-ci` image.
+- **Why vendor-side:** hosted runners have no GPU, so no device code can run
+  there at all; a HIP ASan leg would add a build for host code the CUDA leg
+  already covers.
+- **Evidence:** `ci.yml`'s `asan` matrix leg; it is part of `cpp`, so `ci-ok`
+  requires it on every code change and accepts its skip only on a docs-only
+  one.
+- **Re-verify:** if a GPU runner is ever added — then run `compute-sanitizer`
+  and `asan` with the `gpu` label included.
 - **Upstream:** n/a.
-- **Proven by:** none yet. Tracked by #233.
+- **Proven by:** `sanitizer_canary.asan.heap_buffer_overflow`,
+  `sanitizer_canary.asan.cu_heap_buffer_overflow` and
+  `sanitizer_canary.lsan.leak` run in that leg (none is `gpu`-labelled), so a
+  CI build that loses `-fsanitize=address`, or an `LSAN_OPTIONS` that hides
+  calaman's own leak, turns the leg red.
 
 ### G6. Closed: racecheck warning-severity hazards do fail a run
 
