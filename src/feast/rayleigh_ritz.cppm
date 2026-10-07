@@ -9,7 +9,7 @@
  *   H      = basis^T W                           gemm, m0 x m0
  *   H      = Y diag(ritz) Y^T                    syevd
  *   pairs inside [Emin, Emax] rotated first      device::feast_select
- *   X      = basis Y,   A X = W Y                two gemms
+ *   X      = basis Y,   A X = W Y                two ritz_rotates
  *
  * The filtered subspace is not orthonormal -- rho(A) shrinks each eigenvector
  * direction by a different factor -- so it is orthonormalized before projecting.
@@ -49,6 +49,7 @@ import wwr.wrappers.solver; // syevd
 import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the BLAS calls)
 import calaman.common;      // kOne, kZero, real_fp
 import calaman.orthogonalize; // orthogonalize
+import calaman.ritz;          // ritz_rotate
 import :buffer_size;
 export import calaman.error_handling; // Status, PointerModeStatus
 
@@ -92,11 +93,9 @@ Status rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_
   device::feast_select(stream, m0, Emin, Emax, s.ritz, s.projected, d_lambda, s.rotated, s.status);
   CLM_TRY(wwr::wwrGetLastError());
 
-  CLM_TRY(wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, m0, m0,
-                            &kOne<T>, s.basis, n, s.rotated, m0, &kZero<T>, d_X, n));
-
-  CLM_TRY(wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, m0, m0,
-                            &kOne<T>, s.a_basis, n, s.rotated, m0, &kZero<T>, s.a_ritz, n));
+  // Already in host mode, so ritz_rotate's own guard costs handle-state calls, no sync.
+  CLM_TRY(ritz_rotate<T>(cublas_handle, n, m0, m0, s.basis, n, s.rotated, m0, d_X, n));
+  CLM_TRY(ritz_rotate<T>(cublas_handle, n, m0, m0, s.a_basis, n, s.rotated, m0, s.a_ritz, n));
 
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }

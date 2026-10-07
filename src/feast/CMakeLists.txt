@@ -43,8 +43,9 @@ calaman_add_gpu_device_library(
 # RealToComplexType traits (calaman.common), the type-safe BLAS and
 # eigensolver wrappers (wwr.wrappers.blas, wwr.wrappers.solver), the typed
 # constants kOne/kZero/kPi and align_up (calaman.common), the QR
-# orthonormalizer (calaman.orthogonalize), the ScopedPointerMode guard
-# Rayleigh-Ritz forces host mode with (wwr.extension.blas) and
+# orthonormalizer (calaman.orthogonalize), the Ritz-vector rotation
+# (calaman.ritz), the ScopedPointerMode guard Rayleigh-Ritz forces host mode
+# with (wwr.extension.blas) and
 #   calaman.error_handling  Status, the cross-domain return type
 #   calaman.iterative       IterationInfo, FeastInfo's base (re-exported)
 # (every entry point returns it). wwr.complex is not listed: no partition names
@@ -76,6 +77,7 @@ calaman_add_cxx_module_library(
   wwr::extension::blas
   calaman::common
   calaman::orthogonalize
+  calaman::ritz
   calaman::error_handling
   calaman::iterative
   LINK_PRIVATE
