@@ -4,9 +4,10 @@
 // precision on the host. The device path is a two-stage block reduction, a
 // different summation order from the reference, so agreement is real evidence.
 //
-// Inputs are small mixed-sign integer ramps, so every entry is exact and float and
-// double behave identically; the only GPU-vs-reference difference is summation
-// order, absorbed by a relative tolerance.
+// Real inputs are small mixed-sign integer ramps, so every entry is exact and float
+// and double behave identically; the only GPU-vs-reference difference is summation
+// order, absorbed by a relative tolerance. The complex (c/z) cases use random
+// entries and the shared tolerance (test/shared/tolerance.cppm) -- see below.
 //
 // The numerical suites stage A on the device and run the kernels, so they are
 // REQUIRES_GPU (labeled `gpu`, excluded by `ctest -LE gpu`) -- including the
@@ -22,10 +23,12 @@
 import std;
 
 import wwr.runtime_api;
+import wwr.complex;
 import wwr.extension.memory_buffer;
 import calaman.lange;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.shared.tolerance;
 import calaman.test.utils.shared_device;
 
 namespace calaman {
@@ -36,6 +39,7 @@ using wwr::extension::HostBufferWrapper;
 
 using test::AbortPolicy;
 using test::DeviceHandle;
+using test::factorization_tol;
 using test::shared_device;
 
 using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
@@ -231,6 +235,137 @@ TEST(LangeOracleTests, EmptyMatrixWritesZero) {
                             d_result.data())
                   .ok());
   EXPECT_DOUBLE_EQ(scalar_from_device(shared_device(), d_result), 0.0) << "n == 0 must write 0";
+}
+
+// ========================================================================
+// Complex (clange/zlange): a real norm of a complex matrix
+// ========================================================================
+//
+// The oracle is LAPACKE_?lange in the same precision, over the same buffer: the
+// wwr complex types are layout-compatible with lapack_complex_* (as the lacgv
+// suite relies on). Entries are random over a few binades with non-trivial
+// imaginary parts, so |z| is an inexact hypot and the comparison takes the shared
+// tolerance, with the reduction length max(m, n) as its term count.
+
+template<typename C>
+struct complex_elem;
+
+template<>
+struct complex_elem<wwr::wwrFloatComplex> {
+  using R = float;
+  static wwr::wwrFloatComplex make(double re, double im) {
+    return wwr::make_wwrFloatComplex(static_cast<float>(re), static_cast<float>(im));
+  }
+  static float ref(char norm, std::size_t m, std::size_t n, const wwr::wwrFloatComplex *a,
+                   std::size_t lda) {
+    return LAPACKE_clange(LAPACK_COL_MAJOR, norm, static_cast<lapack_int>(m),
+                          static_cast<lapack_int>(n),
+                          reinterpret_cast<const lapack_complex_float *>(a),
+                          static_cast<lapack_int>(lda));
+  }
+};
+
+template<>
+struct complex_elem<wwr::wwrDoubleComplex> {
+  using R = double;
+  static wwr::wwrDoubleComplex make(double re, double im) {
+    return wwr::make_wwrDoubleComplex(re, im);
+  }
+  static double ref(char norm, std::size_t m, std::size_t n, const wwr::wwrDoubleComplex *a,
+                    std::size_t lda) {
+    return LAPACKE_zlange(LAPACK_COL_MAJOR, norm, static_cast<lapack_int>(m),
+                          static_cast<lapack_int>(n),
+                          reinterpret_cast<const lapack_complex_double *>(a),
+                          static_cast<lapack_int>(lda));
+  }
+};
+
+// Every LAPACK NORM char lange accepts, with the MatrixNorm it maps to ('O' is
+// the 1-norm's synonym).
+struct NormCase {
+  char c;
+  MatrixNorm which;
+};
+constexpr NormCase kNormCases[] = {{'M', MatrixNorm::max_abs},
+                                   {'1', MatrixNorm::one},
+                                   {'O', MatrixNorm::one},
+                                   {'I', MatrixNorm::inf},
+                                   {'F', MatrixNorm::frobenius}};
+
+// Stage an m-by-n complex matrix with leading dimension lda; the lda > m padding
+// rows hold NaN, so a single stray read turns the norm into NaN and fails.
+template<typename C>
+void expect_complex_matches_reference(const NormCase nc, std::size_t m, std::size_t n,
+                                      std::size_t lda) {
+  using R = typename complex_elem<C>::R;
+  ASSERT_GE(lda, m);
+  std::mt19937 gen(static_cast<std::uint32_t>(131 * m + 17 * n + lda));
+  std::uniform_real_distribution<double> dist(-4.0, 4.0);
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  std::vector<C> a(lda * n);
+  for (std::size_t j = 0; j < n; ++j) {
+    for (std::size_t i = 0; i < lda; ++i) {
+      a[i + j * lda] = i < m ? complex_elem<C>::make(dist(gen), dist(gen))
+                             : complex_elem<C>::make(nan, nan);
+    }
+  }
+  const R oracle = complex_elem<C>::ref(nc.c, m, n, a.data(), lda);
+  ASSERT_TRUE(std::isfinite(oracle)) << "the oracle read the padding";
+
+  auto d_a = to_device(shared_device(), a);
+  DeviceBuffer<R> d_result(1, shared_device());
+  const Status s = lange<C>(shared_device()->stream().get(), nc.which, m, n, d_a.data(), lda,
+                            d_result.data());
+  ASSERT_TRUE(s.ok()) << "lange returned " << s.name() << ": " << s.message();
+  const std::size_t terms = std::max(m, n);
+  EXPECT_NEAR(scalar_from_device(shared_device(), d_result), oracle,
+              factorization_tol<R>(oracle, terms, terms))
+      << "norm=" << nc.c << " m=" << m << " n=" << n << " lda=" << lda;
+}
+
+template<typename C>
+void run_complex_shapes() {
+  for (const NormCase nc : kNormCases) {
+    expect_complex_matches_reference<C>(nc, 1, 1, 1);       // n = 1, single element
+    expect_complex_matches_reference<C>(nc, 1, 8, 1);       // single row
+    expect_complex_matches_reference<C>(nc, 8, 1, 8);       // single column (n = 1)
+    expect_complex_matches_reference<C>(nc, 7, 5, 7);       // small rectangle, contiguous
+    expect_complex_matches_reference<C>(nc, 16, 16, 16);    // square
+    expect_complex_matches_reference<C>(nc, 5, 4, 9);       // lda > m: padded submatrix view
+    expect_complex_matches_reference<C>(nc, 300, 3, 300);   // m > block size: strided fold
+    expect_complex_matches_reference<C>(nc, 300, 3, 307);   // and with padding
+    expect_complex_matches_reference<C>(nc, 3, 300, 5);     // wide rows, padded
+    expect_complex_matches_reference<C>(nc, 257, 129, 260); // both dims past one block
+  }
+}
+
+TEST(LangeOracleTests, ComplexFloat) {
+  run_complex_shapes<wwr::wwrFloatComplex>();
+}
+TEST(LangeOracleTests, ComplexDouble) {
+  run_complex_shapes<wwr::wwrDoubleComplex>();
+}
+
+// m == 0 or n == 0 writes a real 0 for every norm, over a pre-seeded sentinel.
+template<typename C>
+void expect_complex_empty_writes_zero() {
+  using R = typename complex_elem<C>::R;
+  auto dummy = to_device(shared_device(), std::vector<C>{complex_elem<C>::make(42.0, 1.0)});
+  for (const NormCase nc : kNormCases) {
+    for (const auto [m, n] : {std::pair<std::size_t, std::size_t>{0, 4}, {4, 0}, {0, 0}}) {
+      auto d_result = to_device(shared_device(), std::vector<R>{R(-12345)});
+      ASSERT_TRUE(lange<C>(shared_device()->stream().get(), nc.which, m, n, dummy.data(),
+                           m == 0 ? 1 : m, d_result.data())
+                      .ok());
+      EXPECT_EQ(scalar_from_device(shared_device(), d_result), R{0})
+          << "norm=" << nc.c << " m=" << m << " n=" << n;
+    }
+  }
+}
+
+TEST(LangeOracleTests, ComplexEmptyWritesZero) {
+  expect_complex_empty_writes_zero<wwr::wwrFloatComplex>();
+  expect_complex_empty_writes_zero<wwr::wwrDoubleComplex>();
 }
 
 } // namespace

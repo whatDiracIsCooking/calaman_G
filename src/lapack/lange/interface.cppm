@@ -4,33 +4,20 @@
  *        LAPACK's ?lange
  *
  * Returns the 1-norm, infinity-norm, Frobenius norm, or largest absolute element
- * of an m-by-n column-major matrix A, selected at runtime by a MatrixNorm (as
- * ?lange selects on its NORM char). The result is written to a device scalar and
- * the call returns WITHOUT synchronizing, like a BLAS call; the caller
- * synchronizes when it needs the value. An empty matrix (m or n zero) writes 0,
- * matching DLANGE.
+ * of an m-by-n column-major matrix A, selected by a MatrixNorm (as ?lange selects
+ * on its NORM char). The result is written to a device scalar and the call
+ * returns WITHOUT synchronizing; an empty matrix writes 0, matching DLANGE.
  *
- * The computation is a two-stage reduction (lange.cu): A to a per-column (or
- * per-row) intermediate, then that to one scalar. The intermediate needs device
- * scratch, so -- unlike the stream-only, allocate-nothing columnwise_* modules --
- * this allocates it on @p stream (wwrMallocAsync/FreeAsync, stream-ordered) and
- * therefore returns a calaman::Status, the way calaman.gebal does for its own
- * scratch. A bare wwrStream_t, not a device handle, is still the whole handle
- * requirement: no device index and no memory pool beyond that one buffer.
+ * A two-stage reduction (lange.cu) whose intermediate is device scratch this
+ * allocates on @p stream (stream-ordered), hence the calaman::Status return.
  *
- * Mapping from DLANGE (docs/architecture.md §4 -- keep the name, drop the Fortran
- * calling convention): CHARACTER NORM becomes the MatrixNorm enum; the s/d/c/z
- * variants become one template over T (float, double); the WORK array DLANGE asks
- * for the infinity norm is the internally-allocated scratch. The Frobenius norm
- * uses a plain sum of squares (not DLANGE's scaled DLASSQ), matching
- * calaman.columnwise_ell2 -- well-scaled inputs only, a deliberate simplification.
+ * Mapping from DLANGE (docs/architecture.md §4): NORM becomes MatrixNorm; s/d/c/z
+ * become one template over T, whose norm is always real (ComplexToRealType<T>);
+ * WORK is the internal scratch. Divergence: the Frobenius norm is a plain sum of
+ * squares, not DLANGE's scaled ?lassq -- correct for well-scaled inputs.
  *
- * Templated over float and double; the complex matrix norm is a T -> real
- * reduction, a deliberate later extension, as calaman.diff_norm notes.
- *
- * `extern template` below pairs with instantiations.cpp: the wrapper is
- * instantiated once inside this library, so an importer never re-instantiates a
- * body that names the .cu-side launcher declared only in the GMF.
+ * `extern template` pairs with instantiations.cpp, so an importer never
+ * re-instantiates a body that names the GMF-declared .cu launcher.
  *
  * Usage:
  *   import calaman.lange;      // also re-exports calaman::MatrixNorm and Status
@@ -56,7 +43,8 @@ export module calaman.lange;
 
 import std;
 import wwr.runtime_api; // wwrStream_t, wwrMallocAsync/FreeAsync/MemsetAsync, wwrGetLastError
-import calaman.common;  // MatrixNorm (:enums) -- the typed replacement for DLANGE NORM
+import wwr.complex;     // wwrFloatComplex, wwrDoubleComplex (extern template list)
+import calaman.common;  // MatrixNorm (:enums), ComplexToRealType
 
 // export import, not a plain import: lange RETURNS calaman::Status, so a consumer
 // of `import calaman.lange;` must see Status's member functions, not just its
@@ -82,31 +70,33 @@ export using calaman::MatrixNorm;
 /// per-column/per-row scratch buffer on @p stream, so the return carries any
 /// allocation or launch failure. A and result must live on @p stream's device.
 ///
-/// @tparam T Element type; one of the instantiated types (float, double)
+/// @tparam T Element type; float, double, wwrFloatComplex or wwrDoubleComplex
 /// @param stream   Stream the launches are enqueued on; A and result live on its device
 /// @param which    Which matrix norm to compute (max_abs, one, inf, frobenius)
 /// @param m        Number of rows of A
 /// @param n        Number of columns of A
 /// @param d_A      Source device matrix, column-major, leading dimension @p lda
 /// @param lda      Leading dimension of @p d_A; lda >= m
-/// @param d_result Device scalar receiving the norm
+/// @param d_result Device scalar receiving the (real) norm
 /// @return Success, or the first failing step's error (allocation or launch)
 export template<typename T>
 Status lange(const wwr::wwrStream_t stream, const MatrixNorm which, const std::size_t m,
-             const std::size_t n, const T *const d_A, const std::size_t lda, T *const d_result) {
+             const std::size_t n, const T *const d_A, const std::size_t lda,
+             ComplexToRealType<T> *const d_result) {
+  using R = ComplexToRealType<T>;
   if (m == 0 || n == 0) {
     // DLANGE is 0 for an empty matrix; a zeroed scalar is that in IEEE.
-    return wwr::wwrMemsetAsync(d_result, 0, sizeof(T), stream);
+    return wwr::wwrMemsetAsync(d_result, 0, sizeof(R), stream);
   }
 
   // The infinity norm reduces along rows, so its intermediate is one value per
   // row; the other three reduce along columns, one value per column.
   const std::size_t scratch_len = (which == MatrixNorm::inf) ? m : n;
-  T *d_scratch = nullptr;
+  R *d_scratch = nullptr;
   CLM_TRY(
-      wwr::wwrMallocAsync(reinterpret_cast<void **>(&d_scratch), scratch_len * sizeof(T), stream));
+      wwr::wwrMallocAsync(reinterpret_cast<void **>(&d_scratch), scratch_len * sizeof(R), stream));
 
-  device::lange<T>(stream, which, m, n, d_A, lda, d_result, d_scratch);
+  device::lange<T, R>(stream, which, m, n, d_A, lda, d_result, d_scratch);
   // The launcher returns void; its sticky launch error is the only way to catch a
   // bad launch. Capture it BEFORE the free so a free failure cannot mask it, then
   // free unconditionally -- the free is stream-ordered after the kernels, and a
@@ -120,5 +110,11 @@ extern template Status lange<float>(wwr::wwrStream_t, MatrixNorm, std::size_t, s
                                     const float *, std::size_t, float *);
 extern template Status lange<double>(wwr::wwrStream_t, MatrixNorm, std::size_t, std::size_t,
                                      const double *, std::size_t, double *);
+extern template Status lange<wwr::wwrFloatComplex>(wwr::wwrStream_t, MatrixNorm, std::size_t,
+                                                   std::size_t, const wwr::wwrFloatComplex *,
+                                                   std::size_t, float *);
+extern template Status lange<wwr::wwrDoubleComplex>(wwr::wwrStream_t, MatrixNorm, std::size_t,
+                                                    std::size_t, const wwr::wwrDoubleComplex *,
+                                                    std::size_t, double *);
 
 } // namespace calaman

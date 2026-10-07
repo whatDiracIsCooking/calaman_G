@@ -17,9 +17,10 @@
  * links wwr_backend PRIVATE -- see this directory's CMakeLists.txt.
  *
  * The caller owns @p d_scratch (the per-column or per-row intermediate the
- * two-stage reduction writes); the host wrapper allocates it. Templated over
- * float and double, matching the rest of calaman -- a complex matrix norm is a
- * T -> real reduction, a deliberate later extension, as calaman.diff_norm notes.
+ * two-stage reduction writes); the host wrapper allocates it. R is T's real
+ * component type: scratch and result are R, so a complex matrix has a real norm.
+ * It is a second parameter, not ComplexToRealType<T>, so this GMF header needs
+ * no fp_types.h.
  */
 
 #pragma once
@@ -38,7 +39,8 @@ namespace calaman::device {
 /// @p stream and returns without synchronizing. Assumes @p m and @p n are both
 /// nonzero (the host wrapper handles the empty case).
 ///
-/// @tparam T Element type; instantiated for float, double
+/// @tparam T Element type; float, double, wwrFloatComplex, wwrDoubleComplex
+/// @tparam R Real component type of T -- the type of the scratch and the result
 /// @param stream    Stream the launches are enqueued on; all pointers live on its device
 /// @param which     Which matrix norm to compute
 /// @param m         Rows of A
@@ -47,8 +49,8 @@ namespace calaman::device {
 /// @param lda       Leading dimension (column stride); lda >= m
 /// @param d_result  Device scalar receiving the norm
 /// @param d_scratch Device scratch of length n (or m when which == inf)
-template<typename T>
+template<typename T, typename R>
 void lange(wwr::wwrStream_t stream, MatrixNorm which, std::size_t m, std::size_t n, const T *d_A,
-           std::size_t lda, T *d_result, T *d_scratch);
+           std::size_t lda, R *d_result, R *d_scratch);
 
 } // namespace calaman::device
