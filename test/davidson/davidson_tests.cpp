@@ -304,6 +304,13 @@ std::vector<T> reference_eigenvalues(int n, std::vector<T> a) {
   return w; // ascending
 }
 
+/// ||A||_2 of a symmetric matrix from its ascending spectrum: the larger end.
+template<typename T>
+double spectral_norm(const std::vector<T> &ascending) {
+  return std::max(std::abs(static_cast<double>(ascending.front())),
+                  std::abs(static_cast<double>(ascending.back())));
+}
+
 /// Host copy of a device buffer of @p count elements.
 template<typename T>
 std::vector<T> to_host(std::shared_ptr<DeviceHandle> handle, const T *device, std::size_t count) {
@@ -437,7 +444,10 @@ void check_reference() {
 
   EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
   EXPECT_CONVERGED(info);
-  EXPECT_LE(info.max_residual_norm, options.residual_tolerance);
+  // The relative predicate's bound tol * max(|theta|, ||H||_2) is at most
+  // tol * ||A||_2: Ritz values lie inside A's spectrum.
+  EXPECT_LE(static_cast<double>(info.max_residual_norm),
+            static_cast<double>(options.residual_tolerance) * spectral_norm(ref));
   const auto vals = p.eigenvalues();
   for (int i = 0; i < p.n_roots; ++i) {
     // ascending, and matching the reference's lowest n_roots.
@@ -468,7 +478,10 @@ void check_first_iteration_stop(int max_iterations, bool zero_correction,
   EXPECT_FALSE(converged(info));
   EXPECT_EQ(static_cast<int>(info.reason), static_cast<int>(expected));
   EXPECT_EQ(info.iterations, 1);
-  EXPECT_GT(info.max_residual_norm, options.residual_tolerance);
+  // Above tol * ||A||_2, so above every root's relative bound: not converged.
+  EXPECT_GT(static_cast<double>(info.max_residual_norm),
+            static_cast<double>(options.residual_tolerance) *
+                spectral_norm(reference_eigenvalues<T>(p.n, p.a)));
   const auto vals = p.eigenvalues();
   const auto ref = p.leading_block_eigenvalues();
   const double tol = std::is_same_v<T, float> ? 1e-5 : 1e-12;

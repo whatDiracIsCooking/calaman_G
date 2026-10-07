@@ -3,7 +3,7 @@
 //   * ritz_select -- positions per RitzWhich and the nested-selection property
 //     (host-only);
 //   * classify_ritz -- the convergence predicate, the scale floor, the boundary,
-//     the absolute (scale-free) form, a length mismatch and the vacuous empty
+//     relative-not-absolute thresholds, a length mismatch and the vacuous empty
 //     selection (host-only);
 //   * ritz_rotate -- argument checks before any handle use (host-only; the
 //     device product is ritz_rotate_tests.cpp).
@@ -74,17 +74,15 @@ TEST(RitzClassifyTests, ValueDominatesASmallScale) {
   EXPECT_EQ(sel.converged_count, 1);
 }
 
-TEST(RitzClassifyTests, AbsoluteIgnoresValues) {
-  const std::vector<double> values = {1e6, -1e6, 0.0, 0.5};
-  const std::vector<double> residuals = {2e-6, 1e-6, 1e-6, 0.0};
-  // threshold 1e-6 whatever the value; the scaled form would pass the first two.
-  const auto sel = classify_ritz<double>(values, residuals, 1e-6);
-  EXPECT_TRUE(sel.index.empty());
-  EXPECT_EQ(sel.values, values);
-  EXPECT_EQ(sel.residuals, residuals);
-  EXPECT_EQ(sel.converged, (std::vector<bool>{false, true, true, true})); // 2nd, 3rd: equality
-  EXPECT_EQ(sel.converged_count, 3);
-  EXPECT_TRUE(classify_ritz<double>(values, std::vector<double>{0.0}, 1.0).values.empty());
+TEST(RitzClassifyTests, RelativeNotAbsolute) {
+  // One predicate, no absolute form: a spectrum below 1 in magnitude tightens the
+  // threshold under tolerance, a large value loosens it above.
+  const std::vector<double> values = {0.01, -0.5, 100.0};
+  const std::vector<double> residuals = {6e-7, 5e-7, 9e-5};
+  // threshold 1e-6 * max(|value|, 0.5) = 5e-7, 5e-7, 1e-4.
+  const auto sel = classify_ritz<double>(values, residuals, 1e-6, 0.5);
+  EXPECT_EQ(sel.converged, (std::vector<bool>{false, true, true})); // 1st: under tol, still out
+  EXPECT_EQ(sel.converged_count, 2);
 }
 
 TEST(RitzClassifyTests, AllConvergedAndEmpty) {

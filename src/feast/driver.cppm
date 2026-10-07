@@ -66,13 +66,9 @@ template<calaman::real_fp T>
 struct FeastOptions {
   int max_iterations = 20;
 
-  /**
-   * Converged when every returned pair's relative residual
-   *
-   *   ||A x - lambda x||_1 / ((||A||_1 + |lambda|) ||x||_1)
-   *
-   * -- its normwise backward error -- is below this.
-   */
+  /// @brief Backward error: a pair converges when ||A x - lambda x||_1 /
+  ///        ((||A||_1 + |lambda|) ||x||_1) < tol, strictly, and m repeats. Not
+  ///        classify_ritz's relative test. Compared: architecture.md §8.
   T tol = std::is_same_v<T, float> ? T(1e-5) : T(1e-12);
 };
 
