@@ -534,3 +534,10 @@ add_subdirectory(lacrm)
 # calaman.larcm -- real times complex matrix multiply (LAPACK's ?larcm): the
 # mirror of calaman.lacrm, splitting the complex B instead of A.
 add_subdirectory(larcm)
+
+# calaman.rfp_blocks -- the host-side RFP sub-block geometry (offsets, leading
+# dimensions, stored uplo of A11, A22 and the off-diagonal block), shared by
+# the routines that run BLAS on RFP sub-blocks; calaman.hfrk (?hfrk and ?sfrk)
+# is the first of them and follows it.
+add_subdirectory(rfp_blocks)
+add_subdirectory(hfrk)

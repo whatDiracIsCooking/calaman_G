@@ -26,6 +26,9 @@ Hermitian convention. `TRANSR = 'T'`/`'C'` stores the (conjugate) transpose of
 that whole array. Which corner depends on `UPLO` and the parity of `n`, giving
 LAPACK's 8 cases; the map lives once, in `calaman::device::rfp_index`
 (`src/lapack/tri_index/tri_index.cuh`), shared with tfttr, tpttf and tfttp.
+The same layout per *block* -- where A11, A22 and the off-diagonal block sit,
+for routines that run BLAS on RFP sub-blocks (?hfrk/?sfrk, ?tfsm) -- is the
+host constexpr `calaman::rfp_blocks` (`src/lapack/rfp_blocks/rfp_blocks.cppm`).
 
 ## Mapping from ?TRTTF
 
