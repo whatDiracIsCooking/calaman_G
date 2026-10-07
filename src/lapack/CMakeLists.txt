@@ -264,6 +264,13 @@ add_subdirectory(lae2)
 add_subdirectory(laev2)
 add_subdirectory(lapy2)
 
+# calaman.lapy3 / calaman.larmm -- header-only device ports of ?lapy3 and
+# ?larmm (lapy3.cuh, larmm.cuh, each with its own ::header INTERFACE target),
+# plus the batched oracle wrappers that exercise them on a card. lapy2's
+# siblings; they link only wwr and calaman.error_handling.
+add_subdirectory(lapy3)
+add_subdirectory(larmm)
+
 # calaman.sterf -- eigenvalues of a symmetric tridiagonal (LAPACK's ?sterf), one
 # single-thread kernel over the sterf.cuh device core. That header links
 # calaman::sym2x2, calaman::lanst::header and calaman::lasrt::header (all
