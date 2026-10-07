@@ -93,9 +93,7 @@ Status apply_filter(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream,
   int info = 0;
   CLM_TRY(wwr::getrsBatched<C>(cublas_handle, wwr::WWRBLAS_OP_N, n, m0, s.resolvent_ptrs, n, s.ipiv,
                                s.rhs_ptrs, n, &info, contour.count));
-  if (info != 0) {
-    return wwr::WWRBLAS_STATUS_INTERNAL_ERROR;
-  }
+  CLM_TRY(devinfo_verdict(info));
 
   device::feast_accumulate(stream, nm, contour, s.rhs, s.rhs_stride, d_out);
   CLM_TRY(wwr::wwrGetLastError());

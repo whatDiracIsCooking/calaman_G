@@ -232,10 +232,8 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
     CLM_TRY(wwr::wwrMemcpyAsync(&info_host, s.info, sizeof(int), wwr::wwrMemcpyDeviceToHost,
                                 stream));
     CLM_TRY(wwr::wwrStreamSynchronize(stream));
-    // info != 0 is a synthetic host-side verdict on the eigensolver's devInfo, so
-    // (like feast's own host-side conditions) it carries a BLAS-domain code -- the
-    // solver-domain status constants are macros, not importable through wwr.solver.
-    CLM_REQUIRE(info_host == 0, wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
+    // devInfo's domain and code: calaman::devinfo_verdict (calaman.error_handling).
+    CLM_TRY(devinfo_verdict(info_host));
 
     // 3. Ritz vectors X = V S_k and their operator images A X = Sigma_V S_k.
     CLM_TRY((wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n_roots, dim,

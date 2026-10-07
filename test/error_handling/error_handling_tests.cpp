@@ -153,5 +153,25 @@ TEST(ErrorHandlingTests, DrivesGpuCheckAndPolicy) {
   EXPECT_EQ(handled, 1);
 }
 
+// --- devinfo_verdict: the host-side verdict on a device solver's devInfo -------
+// Zero is a success; any nonzero devInfo (a negative bad-argument index or a
+// positive numerical failure) is WWRBLAS_STATUS_INTERNAL_ERROR in the BLAS domain.
+static_assert(devinfo_verdict(0).ok());
+static_assert(devinfo_verdict(1) == Status{wwr::WWRBLAS_STATUS_INTERNAL_ERROR});
+
+TEST(ErrorHandlingTests, DevinfoVerdictZeroIsSuccess) {
+  EXPECT_TRUE(devinfo_verdict(0).ok());
+}
+
+TEST(ErrorHandlingTests, DevinfoVerdictNonzeroIsBlasInternalError) {
+  for (const int info : {1, 7, -1, -4}) {
+    const Status verdict = devinfo_verdict(info);
+    EXPECT_FALSE(verdict.ok()) << "info=" << info;
+    EXPECT_EQ(verdict.domain, ErrorDomain::blas) << "info=" << info;
+    EXPECT_EQ(verdict.code, static_cast<int>(wwr::WWRBLAS_STATUS_INTERNAL_ERROR))
+        << "info=" << info;
+  }
+}
+
 } // namespace
 } // namespace calaman

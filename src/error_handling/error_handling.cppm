@@ -186,6 +186,16 @@ struct Status {
   }
 };
 
+/// @brief The host-side verdict on a device solver's devInfo: ok iff @p info is 0
+///
+/// The one place a nonzero devInfo becomes a Status. A failure carries the
+/// BLAS-domain WWRBLAS_STATUS_INTERNAL_ERROR: the solver-domain status constants
+/// are macros, so wwr.solver cannot export one to name here.
+[[nodiscard]] constexpr Status devinfo_verdict(const int info) noexcept {
+  return info == 0 ? Status{wwr::WWRBLAS_STATUS_SUCCESS}
+                   : Status{wwr::WWRBLAS_STATUS_INTERNAL_ERROR};
+}
+
 } // namespace calaman
 
 // The error_type registration for calaman::Status. These three explicit

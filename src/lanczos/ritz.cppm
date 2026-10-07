@@ -117,9 +117,8 @@ Status lanczos_ritz_extract(wwr::wwrsolverDnHandle_t solver_handle, wwr::wwrStre
   ritz->t_norm = std::max(std::abs(ritz->theta.front()), std::abs(ritz->theta.back()));
   ritz->breakdown = status.breakdown != 0;
   ritz->breakdown_step = status.breakdown_step;
-  // A host-side verdict on devInfo carries a BLAS-domain code, as in davidson.
-  CLM_REQUIRE(status.eig_info == 0, wwr::WWRBLAS_STATUS_INTERNAL_ERROR);
-  return wwr::WWRBLAS_STATUS_SUCCESS;
+  // devInfo's domain and code: calaman::devinfo_verdict (calaman.error_handling).
+  return devinfo_verdict(status.eig_info);
 }
 
 /**

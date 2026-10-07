@@ -146,8 +146,10 @@ cross-domain return type, so a non-success solver result (the `syevd` /
 and a device-copy failure in the runtime domain, instead of the old
 `WWRBLAS_STATUS_INTERNAL_ERROR` masquerade. Genuine host-side outcomes the
 iteration itself reaches still carry an explicit BLAS-domain code deliberately:
-a bad argument is `INVALID_VALUE`, and `info.reason` distinguishes a `SUCCESS`
-return that covers `MaxIterations` / `SubspaceTooSmall`.
+a bad argument is `INVALID_VALUE`, a nonzero devInfo is whatever
+`calaman::devinfo_verdict` (`calaman.error_handling`) says, and `info.reason`
+distinguishes a `SUCCESS` return that covers `MaxIterations` /
+`SubspaceTooSmall`.
 
 ## Usage
 
