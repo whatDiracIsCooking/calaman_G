@@ -521,3 +521,7 @@ add_subdirectory(lantr)
 # run calaman.lantr's kernel and link calaman.lantr.device, so they follow it.
 add_subdirectory(lantp)
 add_subdirectory(lantb)
+
+# calaman.lagtm -- tridiagonal matrix-matrix multiply (LAPACK's ?lagtm). A leaf:
+# links only calaman.common and calaman.error_handling.
+add_subdirectory(lagtm)
