@@ -20,6 +20,7 @@ module calaman.lange;
 // visible without these.
 import std;
 import wwr.runtime_api;
+import wwr.complex;    // wwrFloatComplex, wwrDoubleComplex
 import calaman.common; // MatrixNorm
 
 namespace calaman {
@@ -28,5 +29,10 @@ template Status lange<float>(wwr::wwrStream_t, MatrixNorm, std::size_t, std::siz
                              std::size_t, float *);
 template Status lange<double>(wwr::wwrStream_t, MatrixNorm, std::size_t, std::size_t,
                               const double *, std::size_t, double *);
+template Status lange<wwr::wwrFloatComplex>(wwr::wwrStream_t, MatrixNorm, std::size_t, std::size_t,
+                                            const wwr::wwrFloatComplex *, std::size_t, float *);
+template Status lange<wwr::wwrDoubleComplex>(wwr::wwrStream_t, MatrixNorm, std::size_t,
+                                             std::size_t, const wwr::wwrDoubleComplex *,
+                                             std::size_t, double *);
 
 } // namespace calaman

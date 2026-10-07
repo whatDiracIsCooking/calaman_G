@@ -12,7 +12,8 @@
 # wwrStream_t that lange_bridge.h also pulls in) plus the runtime libs;
 # wwr.extension.parallel_for carries parallel_for.cuh and, transitively, that
 # same wwr.device. calaman.common carries the src/ root that resolves
-# "common/enums.h" (MatrixNorm), which lange_bridge.h and lange.cu #include.
+# "common/enums.h" (MatrixNorm), which lange_bridge.h and lange.cu #include,
+# and "common/elem_ops.cuh" (complex modulus and components) lange.cu does.
 calaman_add_gpu_device_library(
   NAME
   calaman.lange.device
@@ -41,7 +42,8 @@ calaman_add_gpu_device_library(
 # interface re-exports it (export import) for the Status return type, and its
 # src/ root resolves the "error_handling/error_macros.h" interface.cppm pulls
 # into the GMF for CLM_TRY. LINK_PUBLIC wwr.runtime_api is the wwrStream_t the
-# exported signature names.
+# exported signature names; wwr.complex is the complex element types the
+# `extern template` list names.
 calaman_add_cxx_module_library(
   NAME
   calaman.lange
@@ -51,6 +53,7 @@ calaman_add_cxx_module_library(
   instantiations.cpp
   LINK_PUBLIC
   wwr::runtime_api
+  wwr::complex
   calaman::common
   calaman::error_handling
   LINK_PRIVATE

@@ -11,7 +11,9 @@ column-major matrix, selected at runtime by a `MatrixNorm`:
 | `frobenius` | `'F'`/`'E'` | `sqrt(sum_ij A(i,j)^2)` |
 
 The result is written to a device scalar; an empty matrix (`m` or `n` zero)
-writes `0`, as DLANGE returns `0`. Templated over `float` and `double`.
+writes `0`, as DLANGE returns `0`. Templated over `float`, `double`,
+`wwrFloatComplex` and `wwrDoubleComplex` (s/d/c/z); the norm is always real
+(`ComplexToRealType<T>`), so the complex variants write a `float`/`double`.
 
 ## Shape
 
@@ -47,7 +49,7 @@ propagate a `NaN` from either operand, matching DLANGE's
 
 The Frobenius norm uses a plain sum of squares rather than DLANGE's scaled
 `DLASSQ`, matching `calaman.columnwise_ell2` — correct for well-scaled inputs, a
-deliberate simplification. The norm of a **complex** matrix is real-valued (a
-`T → real` reduction), a deliberate later extension, as `calaman.diff_norm` notes
-for the same reason; `reduce_columns` is already generic over that differing value
-type, so only this wrapper is type-fixed.
+deliberate simplification. For a **complex** matrix every stage is a `T → real`
+reduction: `reduce_columns`' pre-transform maps each element to `|z|` (or, for
+`frobenius`, `re² + im²` — the two components CLANGE's `CLASSQ` sums), through
+`common/elem_ops.cuh`, so the scratch, the folds and the result are all real.

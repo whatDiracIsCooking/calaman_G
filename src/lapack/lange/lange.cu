@@ -19,14 +19,18 @@
 // wwr.extension.parallel_for as columnwise_ell2 does. The folds propagate a NaN
 // from either operand, matching DLANGE's `VALUE.LT.temp .OR. disnan(temp)`.
 //
+// Complex A reduces to a real norm: the pre-transforms map T -> R (R the real
+// component type) through common/elem_ops.cuh -- |z| for the sum/max norms, and
+// re^2 + im^2 for 'F' (the two components CLANGE's CLASSQ sums), so every fold,
+// the scratch and the result are R. For real T, R == T.
+//
 // Shared unchanged between both backends -- under CUDA the .cu extension is all
 // CMake needs, under HIP this directory's CMakeLists.txt forces LANGUAGE CXX back
-// on so clang compiles it with -x hip. Float and double only, matching the rest
-// of calaman; the complex matrix norm is a T -> real reduction, a deliberate
-// later extension -- see interface.cppm.
+// on so clang compiles it with -x hip.
 #include "lange_bridge.h"
 
 #include <extension/parallel_for/parallel_for.cuh>
+#include "common/elem_ops.cuh"
 #include "reduce_columns/reduce_columns.cuh"
 
 #include <cstddef>
@@ -36,16 +40,20 @@ namespace calaman::device {
 
 namespace {
 
-/// @brief Per-element pre-transform |x|, the magnitude the sum/max norms fold
-template<typename T>
+/// @brief Per-element pre-transform T -> R: |x|, the magnitude the sum/max norms fold
+template<typename T, typename R>
 struct AbsFunctor {
-  __device__ T operator()(const T x) const { return x < T{0} ? -x : x; }
+  __device__ R operator()(const T x) const { return elem_ops<T>::modulus(x); }
 };
 
-/// @brief Per-element pre-transform x^2, the square the Frobenius norm sums
-template<typename T>
+/// @brief Per-element pre-transform T -> R: re^2 + im^2, what the Frobenius norm sums
+template<typename T, typename R>
 struct SquareFunctor {
-  __device__ T operator()(const T x) const { return x * x; }
+  __device__ R operator()(const T x) const {
+    const R re = elem_ops<T>::real_part(x);
+    const R im = elem_ops<T>::imag_part(x);
+    return re * re + im * im;
+  }
 };
 
 /// @brief Associative binary fold a + b, the sum the 1/inf/Frobenius norms accumulate
@@ -96,16 +104,15 @@ struct SqrtFunctor {
 /// access is uncoalesced, the price of reducing along the non-contiguous
 /// direction reduce_columns cannot. The seed is 0 and + propagates a NaN, so a
 /// non-finite row carries through to the max fold.
-template<typename T>
-__global__ void rowwise_abssum_kernel(const T *const d_A, T *const d_rowsum, const std::size_t m,
+template<typename T, typename R>
+__global__ void rowwise_abssum_kernel(const T *const d_A, R *const d_rowsum, const std::size_t m,
                                       const std::size_t n, const std::size_t lda) {
   const std::size_t stride = static_cast<std::size_t>(gridDim.x) * blockDim.x;
   for (std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x; i < m;
        i += stride) {
-    T acc = T{0};
+    R acc = R{0};
     for (std::size_t j = 0; j < n; ++j) {
-      const T x = d_A[i + j * lda];
-      acc += (x < T{0} ? -x : x);
+      acc += elem_ops<T>::modulus(d_A[i + j * lda]);
     }
     d_rowsum[i] = acc;
   }
@@ -113,46 +120,52 @@ __global__ void rowwise_abssum_kernel(const T *const d_A, T *const d_rowsum, con
 
 } // namespace
 
-template<typename T>
+template<typename T, typename R>
 void lange(const wwr::wwrStream_t stream, const MatrixNorm which, const std::size_t m,
-           const std::size_t n, const T *const d_A, const std::size_t lda, T *const d_result,
-           T *const d_scratch) {
+           const std::size_t n, const T *const d_A, const std::size_t lda, R *const d_result,
+           R *const d_scratch) {
   switch (which) {
   case MatrixNorm::max_abs:
     // Stage 1: per-column max|.| into d_scratch[0..n). Stage 2: max over the n.
-    reduce_columns_transform<T, T>(stream, d_A, d_scratch, m, n, lda, AbsFunctor<T>{},
-                                   MaxFunctor<T>{});
-    reduce_columns<T>(stream, d_scratch, d_result, n, 1, n, MaxFunctor<T>{});
+    reduce_columns_transform<T, R>(stream, d_A, d_scratch, m, n, lda, AbsFunctor<T, R>{},
+                                   MaxFunctor<R>{});
+    reduce_columns<R>(stream, d_scratch, d_result, n, 1, n, MaxFunctor<R>{});
     break;
   case MatrixNorm::one:
     // Stage 1: per-column sum|.| (the column sums). Stage 2: max over them.
-    reduce_columns_transform<T, T>(stream, d_A, d_scratch, m, n, lda, AbsFunctor<T>{},
-                                   PlusFunctor<T>{});
-    reduce_columns<T>(stream, d_scratch, d_result, n, 1, n, MaxFunctor<T>{});
+    reduce_columns_transform<T, R>(stream, d_A, d_scratch, m, n, lda, AbsFunctor<T, R>{},
+                                   PlusFunctor<R>{});
+    reduce_columns<R>(stream, d_scratch, d_result, n, 1, n, MaxFunctor<R>{});
     break;
   case MatrixNorm::inf: {
     // Stage 1: per-row sum|.| (the m row sums). Stage 2: max over them.
     constexpr unsigned int kBlockSize = 4 * WWR_WARP_SIZE;
     const unsigned int blocks = static_cast<unsigned int>((m + kBlockSize - 1) / kBlockSize);
-    rowwise_abssum_kernel<T><<<blocks, kBlockSize, 0, stream>>>(d_A, d_scratch, m, n, lda);
-    reduce_columns<T>(stream, d_scratch, d_result, m, 1, m, MaxFunctor<T>{});
+    rowwise_abssum_kernel<T, R><<<blocks, kBlockSize, 0, stream>>>(d_A, d_scratch, m, n, lda);
+    reduce_columns<R>(stream, d_scratch, d_result, m, 1, m, MaxFunctor<R>{});
     break;
   }
   case MatrixNorm::frobenius:
     // Stage 1: per-column sum of squares. Stage 2: sum them. Stage 3: sqrt the one.
-    reduce_columns_transform<T, T>(stream, d_A, d_scratch, m, n, lda, SquareFunctor<T>{},
-                                   PlusFunctor<T>{});
-    reduce_columns<T>(stream, d_scratch, d_result, n, 1, n, PlusFunctor<T>{});
-    wwr::extension::parallel_for<std::size_t>(stream, 1, SqrtFunctor<T>{d_result});
+    reduce_columns_transform<T, R>(stream, d_A, d_scratch, m, n, lda, SquareFunctor<T, R>{},
+                                   PlusFunctor<R>{});
+    reduce_columns<R>(stream, d_scratch, d_result, n, 1, n, PlusFunctor<R>{});
+    wwr::extension::parallel_for<std::size_t>(stream, 1, SqrtFunctor<R>{d_result});
     break;
   }
 }
 
-// One per supported type, matching lange_bridge.h's declarations and the module's
-// use sites -- float and double.
-template void lange<float>(wwr::wwrStream_t, MatrixNorm, std::size_t, std::size_t, const float *,
-                           std::size_t, float *, float *);
-template void lange<double>(wwr::wwrStream_t, MatrixNorm, std::size_t, std::size_t, const double *,
-                            std::size_t, double *, double *);
+// One per supported type, matching lange_bridge.h and interface.cppm's `extern
+// template` list -- float, double and their complex counterparts (real R).
+template void lange<float, float>(wwr::wwrStream_t, MatrixNorm, std::size_t, std::size_t,
+                                  const float *, std::size_t, float *, float *);
+template void lange<double, double>(wwr::wwrStream_t, MatrixNorm, std::size_t, std::size_t,
+                                    const double *, std::size_t, double *, double *);
+template void lange<wwr::wwrFloatComplex, float>(wwr::wwrStream_t, MatrixNorm, std::size_t,
+                                                 std::size_t, const wwr::wwrFloatComplex *,
+                                                 std::size_t, float *, float *);
+template void lange<wwr::wwrDoubleComplex, double>(wwr::wwrStream_t, MatrixNorm, std::size_t,
+                                                   std::size_t, const wwr::wwrDoubleComplex *,
+                                                   std::size_t, double *, double *);
 
 } // namespace calaman::device
