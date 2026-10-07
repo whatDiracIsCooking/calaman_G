@@ -94,6 +94,11 @@ Things that will bite:
   `hip-asan`, `compile-time`, `coverage`, `ci-cuda` and `ci-hip` have **test**
   presets. With any other configure preset the script builds and then reports
   that there is nothing to ctest — which is not the same as passing.
+- **A green sanitizer preset is green only for what it checks.** The LSan
+  suppression, the racecheck/synccheck kernel filter, the timeout multiplier
+  and the gaps (no `.cu` host ASan, no AMD device checking, no `--leak-check`,
+  no UBSan) are all in `docs/sanitizers.md`. Report a sanitized run against
+  that list, and register any new suppression there before adding it.
 - `default` and `workstation` are the **same configuration**, differing only in
   `binaryDir` (`build/` vs `build-workstation/`), so a container build and a
   host build can coexist instead of reconfiguring each other.

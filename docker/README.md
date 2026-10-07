@@ -306,6 +306,11 @@ plain ctest; only the pytest half is wrapped by the service. CUDA only.
 `racecheck` and `synccheck` check only calaman's own kernels (`--kernel-name
 kns=calaman`); `memcheck` and `initcheck` check every kernel, vendor ones included.
 
+Every suppression, narrowed scope and known coverage gap of both sanitizer
+services — that kernel filter, `ASAN_OPTIONS=protect_shadow_gap=0`, the timeout
+multiplier, the `no_sanitizer` exclusion — is registered in
+[`docs/sanitizers.md`](../docs/sanitizers.md).
+
 ## Interactive Shell
 
 ```bash
