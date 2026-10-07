@@ -95,6 +95,10 @@ add_subdirectory(lange)
 # ?langb). Links only calaman.common and calaman.error_handling.
 add_subdirectory(langb)
 
+# calaman.langt -- the norm of a general tridiagonal (LAPACK's ?langt). Links
+# only calaman.common and calaman.error_handling.
+add_subdirectory(langt)
+
 # calaman.lanst -- the norm of a symmetric tridiagonal (LAPACK's ?lanst), plus
 # the header-only per-thread lanst_max_abs (calaman::lanst::header) that the
 # ?sterf/?steqr kernels include, so it must precede both. Links only
