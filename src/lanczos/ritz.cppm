@@ -10,9 +10,9 @@
  * and s.s (the layout lanczos_arrowhead reads); lanczos_ritz_vectors forms
  * X = V S_k with one gemm.
  *
- * A pair is converged when its estimate is at or below
- * tolerance * max(|theta_i|, ||T||_2). For k >= nev, the k-pair selection at
- * one LanczosWhich contains the nev-pair one.
+ * Selection, classification and the rotation are calaman.ritz's (ritz_select,
+ * classify_ritz with scale ||T||_2, ritz_rotate); this partition adapts them to
+ * LanczosSlices and keeps what is Lanczos-only.
  *
  * Usage:
  *   LanczosRitz<double> ritz;
@@ -37,13 +37,12 @@ import std;
 import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*
 import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.runtime_api;     // wwrMemcpyAsync, wwrMemcpy2DAsync, wwrStreamSynchronize
-import wwr.wrappers.blas;   // gemm
 import wwr.wrappers.solver; // syevd
-import wwr.extension.blas;  // ScopedPointerMode
 import :buffer_size;        // LanczosSlices
 import :types;              // LanczosWhich
-import calaman.common;      // kOne, kZero, real_fp
-export import calaman.error_handling; // Status, PointerModeStatus
+import calaman.common;      // real_fp
+export import calaman.ritz; // RitzSelection, ritz_select, classify_ritz, ritz_rotate
+export import calaman.error_handling; // Status
 
 export namespace calaman {
 
@@ -58,65 +57,24 @@ struct LanczosRitz {
   int breakdown_step = -1;   ///< its first such step, -1 if none
 };
 
-/// @brief The wanted pairs out of a LanczosRitz, in ascending theta order.
+/// @brief Select @p count pairs of @p ritz at @p which (ritz_select), with the
+///        estimates |beta_m s_{m,i}| classified at scale ||T||_2 (classify_ritz).
+///        index holds the positions in ritz.theta. Host only; empty on a bad count.
 template<calaman::real_fp T>
-struct LanczosRitzSelection {
-  std::vector<int> index;      ///< positions in LanczosRitz::theta, strictly ascending
-  std::vector<T> values;       ///< theta at index
-  std::vector<T> residuals;    ///< |beta_m * s_last_row| at index
-  std::vector<bool> converged; ///< residuals[i] <= tol * max(|values[i]|, t_norm)
-  int converged_count = 0;
-
-  bool all_converged() const { return converged_count == static_cast<int>(index.size()); }
-};
-
-/// @brief The @p count positions, ascending, of an ascending ncv-spectrum that
-///        @p which wants (both_ends: ceil(count/2) top, floor(count/2) bottom).
-/// @return Empty unless 1 <= count <= ncv.
-inline std::vector<int> lanczos_select(const LanczosWhich which, const int ncv, const int count) {
-  std::vector<int> index;
-  if (count < 1 || count > ncv) {
-    return index;
-  }
-  int low = 0; // how many come from the bottom; the rest from the top
-  switch (which) {
-  case LanczosWhich::smallest:
-    low = count;
-    break;
-  case LanczosWhich::largest:
-    low = 0;
-    break;
-  case LanczosWhich::both_ends:
-    low = count / 2;
-    break;
-  }
-  index.reserve(static_cast<std::size_t>(count));
-  for (int i = 0; i < low; ++i) {
-    index.push_back(i);
-  }
-  for (int i = ncv - (count - low); i < ncv; ++i) {
-    index.push_back(i);
-  }
-  return index;
-}
-
-/// @brief Select @p count pairs of @p ritz at @p which, with their residual
-///        estimates and convergence flags. Host only; empty on a bad count.
-template<calaman::real_fp T>
-LanczosRitzSelection<T> lanczos_ritz_select(const LanczosRitz<T> &ritz, const LanczosWhich which,
-                                            const int count, const T tolerance) {
-  LanczosRitzSelection<T> sel;
-  sel.index = lanczos_select(which, static_cast<int>(ritz.theta.size()), count);
-  for (const int i : sel.index) {
+RitzSelection<T> lanczos_ritz_select(const LanczosRitz<T> &ritz, const LanczosWhich which,
+                                     const int count, const T tolerance) {
+  std::vector<int> index = ritz_select(which, static_cast<int>(ritz.theta.size()), count);
+  std::vector<T> values;
+  std::vector<T> residuals;
+  values.reserve(index.size());
+  residuals.reserve(index.size());
+  for (const int i : index) {
     const auto iz = static_cast<std::size_t>(i);
-    const T theta = ritz.theta[iz];
-    const T residual = std::abs(ritz.beta_m * ritz.s_last_row[iz]);
-    const bool ok = residual <= tolerance * std::max(std::abs(theta), ritz.t_norm);
-    sel.values.push_back(theta);
-    sel.residuals.push_back(residual);
-    sel.converged.push_back(ok);
-    sel.converged_count += ok ? 1 : 0;
+    values.push_back(ritz.theta[iz]);
+    residuals.push_back(std::abs(ritz.beta_m * ritz.s_last_row[iz]));
   }
+  RitzSelection<T> sel = classify_ritz<T>(values, residuals, tolerance, ritz.t_norm);
+  sel.index = std::move(index);
   return sel;
 }
 
@@ -204,8 +162,7 @@ Status lanczos_ritz_compact(wwr::wwrStream_t stream, const int ncv, const std::v
 
 /**
  * @brief Ritz vectors X = V(:, 0:ncv) * S(:, 0:count): the leading @p count
- *        (compacted) pairs rotated out of the basis, by one gemm in HOST
- *        pointer mode (the handle's mode is restored on return).
+ *        (compacted) pairs rotated out of the basis -- ritz_rotate on s.v, s.s.
  *
  * @param x   Out: n x count device, ld @p ldx >= n; must not overlap V.
  * @return INVALID_VALUE for a bad count/ldx or a null @p x.
@@ -213,15 +170,7 @@ Status lanczos_ritz_compact(wwr::wwrStream_t stream, const int ncv, const std::v
 template<calaman::real_fp T>
 Status lanczos_ritz_vectors(wwr::wwrblasHandle_t blas_handle, const int n, const int ncv,
                             const int count, const LanczosSlices<T> &s, T *x, const int ldx) {
-  CLM_REQUIRE(x != nullptr && count >= 1 && count <= ncv && ldx >= n,
-              wwr::WWRBLAS_STATUS_INVALID_VALUE);
-  wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
-  const wwr::extension::ScopedPointerMode mode{blas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
-                                               PointerModeStatus{&pm_status}};
-  CLM_TRY(pm_status);
-  CLM_TRY((wwr::gemm<T, int>(blas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, count, ncv,
-                             &kOne<T>, s.v, n, s.s, ncv, &kZero<T>, x, ldx)));
-  return wwr::WWRBLAS_STATUS_SUCCESS;
+  return ritz_rotate<T>(blas_handle, n, ncv, count, s.v, n, s.s, ncv, x, ldx);
 }
 
 } // namespace calaman

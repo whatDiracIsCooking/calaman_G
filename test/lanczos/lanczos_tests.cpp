@@ -4,9 +4,9 @@
 //     / lanczos_solve -- nev < 1, ncv < 2*nev + 1, ncv > n, a null out-pointer,
 //     a null result or a null matvec is rejected before any handle use
 //     (host-only; the solve itself is lanczos_solve_tests.cpp);
-//   * the :ritz selection -- positions per LanczosWhich, the nested-selection
-//     property, residual estimates and convergence flags on a hand-built
-//     snapshot, and each Ritz stage's argument checks (host-only);
+//   * the :ritz selection -- residual estimates and convergence flags on a
+//     hand-built snapshot, and each Ritz stage's argument checks (host-only;
+//     the positions and nesting are calaman.ritz's, test/ritz/);
 //   * the workspace sizing and carving -- the size query equals the extent the
 //     carve actually spans, and every region is non-null, 256-aligned, inside the
 //     buffer and disjoint from the others (REQUIRES_GPU: syevd_bufferSize needs a
@@ -142,31 +142,6 @@ TEST(LanczosArgCheckTests, OptionDefaults) {
 }
 
 // ── Ritz selection (host-only) ───────────────────────────────────────────────
-
-TEST(LanczosSelectTests, PositionsPerWhich) {
-  using V = std::vector<int>;
-  EXPECT_EQ(lanczos_select(LanczosWhich::smallest, 10, 3), (V{0, 1, 2}));
-  EXPECT_EQ(lanczos_select(LanczosWhich::largest, 10, 3), (V{7, 8, 9}));
-  EXPECT_EQ(lanczos_select(LanczosWhich::both_ends, 10, 3), (V{0, 8, 9})); // 2 top, 1 bottom
-  EXPECT_EQ(lanczos_select(LanczosWhich::both_ends, 10, 4), (V{0, 1, 8, 9}));
-  EXPECT_EQ(lanczos_select(LanczosWhich::both_ends, 10, 1), (V{9}));
-  EXPECT_EQ(lanczos_select(LanczosWhich::largest, 5, 5), (V{0, 1, 2, 3, 4}));
-  EXPECT_TRUE(lanczos_select(LanczosWhich::smallest, 10, 0).empty());
-  EXPECT_TRUE(lanczos_select(LanczosWhich::largest, 10, 11).empty());
-}
-
-TEST(LanczosSelectTests, LargerSelectionContainsSmaller) {
-  for (const LanczosWhich which :
-       {LanczosWhich::smallest, LanczosWhich::largest, LanczosWhich::both_ends}) {
-    for (int nev = 1; nev <= 12; ++nev) {
-      const std::vector<int> wanted = lanczos_select(which, 12, nev);
-      for (int k = nev; k <= 12; ++k) {
-        const std::vector<int> kept = lanczos_select(which, 12, k);
-        EXPECT_TRUE(std::ranges::includes(kept, wanted)) << nev << " in " << k;
-      }
-    }
-  }
-}
 
 TEST(LanczosSelectTests, ResidualEstimatesAndConvergence) {
   LanczosRitz<double> ritz;

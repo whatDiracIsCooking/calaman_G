@@ -255,7 +255,7 @@ const char *name(LanczosWhich which) {
 
 /// The whole :ritz pipeline on one loaded T, checked stage by stage.
 template<typename T>
-LanczosRitzSelection<T> run_case(const Dense<T> &t, const Case c, int n, T beta_m, T tolerance,
+RitzSelection<T> run_case(const Dense<T> &t, const Case c, int n, T beta_m, T tolerance,
                                  std::uint32_t seed) {
   const int ncv = t.rows;
   SCOPED_TRACE(::testing::Message() << "which=" << name(c.which) << " count=" << c.count
@@ -286,8 +286,8 @@ LanczosRitzSelection<T> run_case(const Dense<T> &t, const Case c, int n, T beta_
   EXPECT_EQ(rig.download(rig.s.t, m * m), t.a);
 
   // select
-  const LanczosRitzSelection<T> sel = lanczos_ritz_select(ritz, c.which, c.count, tolerance);
-  EXPECT_EQ(sel.index, lanczos_select(c.which, ncv, c.count));
+  const RitzSelection<T> sel = lanczos_ritz_select(ritz, c.which, c.count, tolerance);
+  EXPECT_EQ(sel.index, ritz_select(c.which, ncv, c.count));
   EXPECT_EQ(sel.index.size(), static_cast<std::size_t>(c.count));
   int converged = 0;
   for (std::size_t j = 0; j < sel.index.size(); ++j) {

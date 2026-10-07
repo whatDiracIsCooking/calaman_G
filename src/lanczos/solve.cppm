@@ -287,7 +287,7 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
   CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, 0, s, matvec, &info->matvecs));
 
   LanczosRitz<T> ritz;
-  LanczosRitzSelection<T> sel;
+  RitzSelection<T> sel;
   std::vector<int> cols(static_cast<std::size_t>(nev)); // the wanted pairs' columns of V(:, 0:k)
   bool all_passed = false;
   for (;;) {
@@ -296,7 +296,7 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
     // Selections nest, so the wanted pairs sit inside the kept ones; their
     // estimates must be read before the restart compacts S.
     sel = lanczos_ritz_select(ritz, which, nev, options.tolerance);
-    const std::vector<int> kept = lanczos_select(which, ncv, k);
+    const std::vector<int> kept = ritz_select(which, ncv, k);
     for (std::size_t j = 0; j < cols.size(); ++j) {
       cols[j] = static_cast<int>(std::ranges::lower_bound(kept, sel.index[j]) - kept.begin());
     }

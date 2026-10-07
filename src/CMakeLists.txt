@@ -25,6 +25,11 @@ add_subdirectory(error_handling)
 # must precede nnls, feast and cg_unitary, which link it.
 add_subdirectory(iterative)
 
+# calaman.ritz -- ritz_select/classify_ritz/ritz_rotate, the Ritz-pair layer
+# the projection eigensolvers share. Links only common and error_handling from
+# src/; it must precede lanczos (and davidson, feast), which link it.
+add_subdirectory(ritz)
+
 add_subdirectory(complex_cast)
 
 add_subdirectory(set_element)
