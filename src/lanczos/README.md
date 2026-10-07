@@ -14,6 +14,11 @@ LAPACK-named one, like `calaman.davidson` and `calaman.feast`.
 Real `float`/`double` only (`calaman::real_fp`). Hermitian/complex, block Lanczos
 and a tridiagonal eigensolver are out of scope.
 
+**Planned:** shift-invert for interior eigenvalues, with an exact (dense)
+shifted solve behind the operator concept shared with davidson and feast.
+Inexact Krylov shift-solves, and block, Hermitian and generalized Lanczos, are
+deferred — [`docs/architecture.md` §9](../../docs/architecture.md) says why.
+
 ## Module
 
 `calaman.lanczos` — one module, four partitions:

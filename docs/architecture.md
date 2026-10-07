@@ -302,3 +302,50 @@ is reduced on device in the 1-norm; routing it through the host-side
   (#240's PR has the per-case numbers, both cards).
 - feast compares strictly (`<`), the shared predicate inclusively (`<=`); the
   difference only matters at equality and is left as it was.
+
+## 9. One operator concept for every matrix-free solver; Lanczos goes interior by exact shift-invert only
+
+**Decided 2026-10-07** (planning after milestone 11, *Matrix-free FEAST*). A
+plan, not yet code: nothing below is implemented.
+
+**Decision.**
+
+- **One concept.** The block operator `op.apply(stream, k, X, Y)`, `Y = A X`
+  (n x k, device-resident, ld n), that milestone 11's #301 introduces is defined
+  once, as `linear_operator<Op, T>` in a shared `calaman.operator` module, not
+  as `feast_operator` inside `calaman.feast`.
+  lanczos, davidson and feast all constrain on it. `lanczos_matvec` and
+  `davidson_sigma` become adapters over it (a single-vector callable is a
+  `k = 1` operator), so their existing callers do not change.
+- **Shift-invert Lanczos, exact solves only.** Interior eigenvalues near a
+  shift `sigma` come from running the unchanged thick-restart driver on
+  `(A - sigma I)^-1` and mapping each Ritz value back as
+  `lambda = sigma + 1/theta`. The shifted solve is a model behind the shared
+  concept; the one model shipped is dense (`sytrf` once, `sytrs` per apply).
+- **Deferred:** a Krylov shift-solve model (MINRES on `A - sigma I`), block
+  Lanczos, Hermitian Lanczos and the generalized `A x = lambda B x` problem.
+
+**Context.** Lanczos was already matrix-free (`lanczos_matvec`), so milestone
+11's goal does not transfer; its shape does — a concept, interchangeable models,
+a spectral transformation through solves. Without one shared concept, the same
+operator would need three adapters (`lanczos_matvec`, `davidson_sigma`,
+`feast_operator`). Shift-invert comes first among the README's gaps because it
+is the largest new capability (Lanczos today converges only the ends of the
+spectrum) and fits the existing driver; block Lanczos rewrites every stage.
+
+The Krylov model is deferred on accuracy, not effort. Lanczos assumes a fixed,
+exactly symmetric operator; an inner solve to tolerance `tau` breaks both at the
+`tau` level, and full reorthogonalization hides part of that, not all. It needs
+an explicit accuracy contract (roughly: Ritz values good to
+`tau * ||(A - sigma I)^-1||`) and a test that demonstrates it before it ships.
+Davidson, which tolerates inexact solves, may be the better home for that case.
+
+**Consequences.**
+
+- #301 (amended 2026-10-07) creates `calaman.operator`, so the Lanczos work
+  imports the concept instead of unifying after the fact.
+- The dense shifted solve is backward stable, so §8's relative `tolerance`
+  keeps its meaning — applied to `theta`, the transformed Ritz values, not to
+  `lambda`.
+- A caller who has only a matvec, with no way to factor `A - sigma I`, has no
+  interior-eigenvalue Lanczos until the Krylov model lands.
