@@ -56,8 +56,9 @@ export namespace calaman {
 /// @brief Convergence/iteration knobs for one davidson_solve call.
 template<calaman::real_fp T>
 struct DavidsonOptions {
-  /// @brief A root is converged when its residual norm (Euclidean, or the M-norm
-  ///        on the metric path) is at or below this.
+  /// @brief Relative: a pair converges when ||A x - theta x||_2 (the M-norm on
+  ///        the metric path) <= tol * max(|theta|, ||H||_2), ||H||_2 = max |theta|
+  ///        over the subspace spectrum (classify_ritz). Compared: architecture.md §8.
   T residual_tolerance = T{1e-8};
   /// @brief Subspace expansions before giving up.
   int max_iterations = 100;
@@ -71,7 +72,7 @@ struct DavidsonOptions {
 
 /// @brief Why davidson_solve stopped.
 enum class DavidsonStopReason {
-  Converged,        ///< every root's residual norm met residual_tolerance
+  Converged,        ///< every root's residual norm met the residual_tolerance bound
   MaxIterations,    ///< the iteration budget ran out
   Stagnated,        ///< no correction survived re-orthogonalization: the subspace stopped growing
   NumericalFailure, ///< a BLAS/solver/runtime call or a callback failed (Status says which)
@@ -244,7 +245,12 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
                            n));
     CLM_TRY(wwr::wwrMemcpyAsync(theta.data(), s.ritz, sizeof(T) * static_cast<std::size_t>(n_roots),
                                 wwr::wwrMemcpyDeviceToHost, stream));
+    // ||H||_2 = max |theta| over the ascending subspace spectrum: its two ends.
+    T theta_top{};
+    CLM_TRY(wwr::wwrMemcpyAsync(&theta_top, s.ritz + (dim - 1), sizeof(T),
+                                wwr::wwrMemcpyDeviceToHost, stream));
     CLM_TRY(wwr::wwrStreamSynchronize(stream));
+    const T h_norm = std::max(std::abs(theta.front()), std::abs(theta_top));
 
     // 4. Residual R = A X - X diag(theta), then its per-root norm. Euclidean:
     //    ||R_i||. Metric: sqrt(R_i^T M R_i) -- the norm the operator is symmetric
@@ -273,9 +279,9 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
       }
       residual_norms[static_cast<std::size_t>(i)] = norm;
     }
-    // Absolute test (residual <= residual_tolerance): the scale-free classify_ritz.
+    // Relative test at scale ||H||_2 (DavidsonOptions::residual_tolerance).
     const RitzSelection<T> sel =
-        classify_ritz<T>(theta, residual_norms, options.residual_tolerance);
+        classify_ritz<T>(theta, residual_norms, options.residual_tolerance, h_norm);
     info->max_residual_norm = std::ranges::fold_left(
         sel.residuals, T{0}, [](const T a, const T b) { return std::max(a, b); });
     if (sel.all_converged()) {

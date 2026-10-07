@@ -10,8 +10,9 @@
  *
  * Signatures are raw pointers plus leading dimensions, never a solver's slices
  * struct: each solver owns its own workspace carve (the `workspace` skill).
- * A pair is converged when residual <= tolerance * max(|value|, scale), or
- * residual <= tolerance in the absolute (scale-free) overload.
+ * One convergence predicate, shared by lanczos and davidson: residual <=
+ * tolerance * max(|value|, scale), scale the projected matrix's 2-norm
+ * (docs/architecture.md §8; feast's backward error is the other meaning).
  *
  * Usage:
  *   import calaman.ritz;
@@ -87,14 +88,13 @@ inline std::vector<int> ritz_select(const RitzWhich which, const int available, 
   return index;
 }
 
-} // namespace calaman
-
-namespace calaman::detail {
-
-// classify_ritz's body: converged iff residuals[i] <= threshold(values[i]).
-template<calaman::real_fp T, typename Threshold>
-RitzSelection<T> classify_ritz_by(const std::span<const T> values,
-                                  const std::span<const T> residuals, const Threshold &threshold) {
+/// @brief Classify each pair: converged iff residuals[i] <= tolerance *
+///        max(|values[i]|, @p scale), @p scale the projected matrix's 2-norm.
+///        Host only; index is left empty.
+/// @return Empty when @p values and @p residuals differ in length.
+template<calaman::real_fp T>
+RitzSelection<T> classify_ritz(const std::span<const T> values, const std::span<const T> residuals,
+                               const T tolerance, const T scale) {
   RitzSelection<T> sel;
   if (values.size() != residuals.size()) {
     return sel;
@@ -103,34 +103,11 @@ RitzSelection<T> classify_ritz_by(const std::span<const T> values,
   sel.residuals.assign(residuals.begin(), residuals.end());
   sel.converged.reserve(values.size());
   for (std::size_t i = 0; i < values.size(); ++i) {
-    const bool ok = residuals[i] <= threshold(values[i]);
+    const bool ok = residuals[i] <= tolerance * std::max(std::abs(values[i]), scale);
     sel.converged.push_back(ok);
     sel.converged_count += ok ? 1 : 0;
   }
   return sel;
-}
-
-} // namespace calaman::detail
-
-export namespace calaman {
-
-/// @brief Classify each pair: converged iff residuals[i] <= tolerance *
-///        max(|values[i]|, @p scale). Host only; index is left empty.
-/// @return Empty when @p values and @p residuals differ in length.
-template<calaman::real_fp T>
-RitzSelection<T> classify_ritz(const std::span<const T> values, const std::span<const T> residuals,
-                               const T tolerance, const T scale) {
-  return detail::classify_ritz_by<T>(values, residuals, [&](const T value) {
-    return tolerance * std::max(std::abs(value), scale);
-  });
-}
-
-/// @brief The absolute form, no scale: converged iff residuals[i] <= @p tolerance
-///        (davidson's test). Otherwise as the scaled overload.
-template<calaman::real_fp T>
-RitzSelection<T> classify_ritz(const std::span<const T> values, const std::span<const T> residuals,
-                               const T tolerance) {
-  return detail::classify_ritz_by<T>(values, residuals, [&](const T) { return tolerance; });
 }
 
 /**

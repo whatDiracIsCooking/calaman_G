@@ -259,3 +259,46 @@ absolute path:
 The last row is correct behaviour rather than a misconfiguration: a miss there
 is the cache declining to reuse a BMI that would not validate. Sharing the store
 still dedups everything each tree rebuilds on its own.
+
+## 8. One `tolerance`, two meanings: relative for lanczos and davidson, backward error for feast
+
+**Decided 2026-10-07** (#240), toolchain as above.
+
+**Decision.** lanczos and davidson share one convergence predicate,
+`calaman::classify_ritz`: a Ritz pair converges when its residual is at or below
+`tol * max(|theta|, scale)`, with `scale` the 2-norm of the solver's projected
+matrix — `max |theta|` over the current subspace spectrum, which both already
+hold after their `syevd`/`sygvd`. feast keeps its normwise backward error. There
+is no scale-free form of `classify_ritz`.
+
+| Solver | Option | Residual `r` | Converged when |
+|---|---|---|---|
+| `lanczos` | `LanczosOptions::tolerance` | the estimate `\|beta_m s_{m,i}\|`; with `verify_residuals`, also `\|\|A x - theta x\|\|_2` | `r <= tol * max(\|theta\|, \|\|T\|\|_2)` |
+| `davidson` | `DavidsonOptions::residual_tolerance` | `\|\|A x - theta x\|\|_2`; on the metric path the M-norm `sqrt(r^T M r)` | `r <= tol * max(\|theta\|, \|\|H\|\|_2)` |
+| `feast` | `FeastOptions::tol` | `\|\|A x - lambda x\|\|_1` | `r / ((\|\|A\|\|_1 + \|lambda\|) \|\|x\|\|_1) < tol`, and the count `m` repeats |
+
+**Context.** Before this, davidson's test was absolute (`r <= tol`) while
+lanczos computed the same `||A x - theta x||_2` and compared it to the relative
+bound, so the same `1e-8` meant different accuracy in the two, and nothing on a
+badly scaled operator. A backward error everywhere was the alternative: davidson
+cannot compute one, because it knows the operator only through its `sigma`
+callback and never has `||A||_1` — it would need a caller-supplied norm
+estimate, a real API addition. feast's backward error is already scale-free and
+is reduced on device in the 1-norm; routing it through the host-side
+`classify_ritz` would add a sync per iteration for no change in meaning.
+
+**Consequences.**
+
+- The same `tol` asks lanczos and davidson for the same relative accuracy, and
+  feast's `tol` is not interchangeable with it. Ritz values lie inside `A`'s
+  spectrum, so the relative bound is at most `tol * ||A||_2`; the davidson suite
+  asserts exactly that.
+- davidson's effective threshold moved from `tol` to
+  `tol * max(|theta|, ||H||_2)`: looser on a spectrum larger than 1 in
+  magnitude, tighter on a smaller one. On its own suite's problems (`||H||_2`
+  between 3.9 and 34 at convergence), iterations fell by one in three of four
+  converged cases, converged residuals rose to the new bound, and the
+  eigenvalue errors against `LAPACKE_?syevd`/`?sygvd` stayed where they were
+  (#240's PR has the per-case numbers, both cards).
+- feast compares strictly (`<`), the shared predicate inclusively (`<=`); the
+  difference only matters at equality and is left as it was.

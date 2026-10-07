@@ -24,8 +24,9 @@ using LanczosWhich = RitzWhich;
 /// @brief Convergence/restart knobs for one lanczos_solve call.
 template<calaman::real_fp T>
 struct LanczosOptions {
-  /// @brief A Ritz pair is converged when its residual estimate |beta_m s_{m,i}|
-  ///        is at or below tolerance * max(|theta_i|, ||T||).
+  /// @brief Relative: a pair converges when |beta_m s_{m,i}| (and, verified,
+  ///        ||A x - theta x||_2) <= tol * max(|theta|, ||T||_2), ||T||_2 = max |theta|
+  ///        over the subspace spectrum (classify_ritz). Compared: architecture.md §8.
   T tolerance = T{1e-8};
   /// @brief Thick restarts before giving up (0: a single cycle of ncv steps).
   int max_iterations = 100;

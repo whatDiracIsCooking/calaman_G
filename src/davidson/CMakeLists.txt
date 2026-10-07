@@ -21,7 +21,7 @@
 # guard the solve forces host mode with (wwr.extension.blas), and
 #   calaman.error_handling  Status, the cross-domain return type
 #   calaman.iterative       IterationInfo, DavidsonInfo's base (re-exported)
-#   calaman.ritz            classify_ritz (absolute form), ritz_rotate
+#   calaman.ritz            classify_ritz, ritz_rotate
 # (every entry point returns it).
 calaman_add_cxx_module_library(
   NAME

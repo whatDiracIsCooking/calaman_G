@@ -112,7 +112,9 @@ not an error (the project-wide rule, `src/iterative/README.md`): every row but
 
 The residual is each pair's normwise backward error,
 `‖Ax − λx‖₁ / ((‖A‖₁ + |λ|) ‖x‖₁)`, so a tolerance on it means the same whatever
-the scale of `A`. Defaults: `1e-5` in float, `1e-12` in double.
+the scale of `A`. Defaults: `1e-5` in float, `1e-12` in double. It is not the
+relative test lanczos and davidson share through `classify_ritz`; the three are
+compared in [`docs/architecture.md` §8](../../docs/architecture.md).
 
 Convergence needs `m` seen twice running, so a solve takes at least two
 iterations. That is deliberate: from a random start, a Ritz value that has not

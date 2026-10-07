@@ -48,8 +48,10 @@ Per `solve`:
    `A X = Sigma_V S_k` come from the same rotation (`ritz_rotate`) — no second
    `sigma`.
 3. **Residuals and locking.** `R = A X - X diag(theta)`; the per-root norms are
-   classified by `calaman.ritz`'s absolute `classify_ritz`, and a converged root
-   is locked (its correction computed but discarded).
+   classified by `calaman.ritz`'s `classify_ritz`, relative to
+   `max(|theta_i|, ||H||_2)` with `||H||_2 = max |theta|` over the subspace
+   spectrum ([`docs/architecture.md` §8](../../docs/architecture.md)), and a
+   converged root is locked (its correction computed but discarded).
 4. **Collapse.** Before expanding past `max_subspace`, `V`/`Sigma_V` reset to the
    current Ritz pairs; `make_davidson_slices` requires `max_subspace >= 2*n_roots`
    so a post-collapse subspace always has room for a full new block.
@@ -64,7 +66,7 @@ stops on its own, and `DavidsonInfo::reason` says how —
 
 | `DavidsonStopReason` | When |
 |---|---|
-| `Converged` | every root's residual norm is at or below `residual_tolerance` |
+| `Converged` | every root's residual norm is at or below `residual_tolerance * max(\|theta_i\|, \|\|H\|\|_2)` |
 | `MaxIterations` | `max_iterations` subspace expansions ran out |
 | `Stagnated` | no correction survived re-orthogonalization, so the subspace cannot grow |
 | `NumericalFailure` | a BLAS/solver/runtime call or a callback failed; the `Status` says which |
@@ -101,7 +103,7 @@ davidson_solve<double>(cublas, cusolver, stream, n, n_roots, max_subspace,
                        d_guess, guess_count, s, sigma, precondition,
                        d_eigenvalues, d_eigenvectors, &info);
 // d_eigenvalues[0 .. n_roots) are the lowest Ritz values, ascending (device),
-// and converged(info) says whether they met residual_tolerance.
+// and converged(info) says whether they met the residual_tolerance bound.
 ```
 
 Both handles must already be set to `stream`.

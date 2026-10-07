@@ -212,8 +212,8 @@ Status lanczos_restart_basis(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t 
 }
 
 /**
- * @brief The true-residual check: ||A x_j - theta_j x_j||_2 <= tolerance *
- *        max(|theta_j|, t_norm) for x_j = V(:, @p cols[j]), one matvec each
+ * @brief The true-residual check (classify_ritz): ||A x_j - theta_j x_j||_2 <=
+ *        tolerance * max(|theta_j|, t_norm) for x_j = V(:, @p cols[j]), one matvec each
  *        into the spare V(:, ncv) and one sync. Call after lanczos_restart_basis.
  */
 template<calaman::real_fp T, lanczos_matvec<T> Matvec>
@@ -242,10 +242,7 @@ Status lanczos_true_residuals(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t
   CLM_TRY(wwr::wwrMemcpyAsync(norms.data(), s.coeffs, sizeof(T) * norms.size(),
                               wwr::wwrMemcpyDeviceToHost, stream));
   CLM_TRY(wwr::wwrStreamSynchronize(stream));
-  *all_ok = true;
-  for (std::size_t j = 0; j < norms.size(); ++j) {
-    *all_ok = *all_ok && norms[j] <= bound_scale * std::max(std::abs(theta[j]), t_norm);
-  }
+  *all_ok = classify_ritz<T>(theta, norms, bound_scale, t_norm).all_converged();
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

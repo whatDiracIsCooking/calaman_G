@@ -117,8 +117,9 @@ breakdown is recovered, never a stop, so the only other reason is
 
 **True-residual pass** (`options.verify_residuals`, default off). Once the
 estimates pass, each wanted `x_i` is checked by `||A x_i - theta_i x_i||_2`
-against the same bound — `nev` matvecs into the spare `V(:, ncv)` and one sync;
-a miss keeps restarting. Off by default because the estimate equals the true
+against the same bound (`classify_ritz` again, so davidson's test exactly —
+[`docs/architecture.md` §8](../../docs/architecture.md)) — `nev` matvecs into
+the spare `V(:, ncv)` and one sync; a miss keeps restarting. Off by default because the estimate equals the true
 residual up to rounding under full reorthogonalization, and a tolerance near
 `eps` (e.g. the `float` default `1e-8`) that the estimates can reach the true
 residual cannot.
