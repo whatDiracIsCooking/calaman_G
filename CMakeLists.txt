@@ -405,6 +405,7 @@ endif()
 # ctest entry in compute-sanitizer through CMAKE_TEST_LAUNCHER. Wrapping per
 # test rather than around ctest keeps labels, -R and per-suite verdicts, and
 # needs no --target-processes. AMD has no counterpart, so HIP refuses it.
+# Every scope or flag that narrows a check is registered in docs/sanitizers.md.
 option(CALAMAN_COMPUTE_SANITIZER
        "Run each ctest entry under NVIDIA compute-sanitizer (CUDA only)" OFF
 )

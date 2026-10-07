@@ -344,9 +344,9 @@ Two things to get right when adding one:
 
 - **A second label must APPEND.** `set_tests_properties(... PROPERTIES LABELS
   x)` *replaces* the property, so on a `REQUIRES_GPU` target it silently strips
-  `gpu`. Use `set_property(TEST ... APPEND PROPERTY LABELS x)` — see
-  `test/extension/memory_buffer/CMakeLists.txt`, where two suites carry both
-  `gpu` and `no_sanitizer`.
+  `gpu`. Use `set_property(TEST ... APPEND PROPERTY LABELS x)`. No calaman
+  suite carries `no_sanitizer` today; one that does is a suppression, and is
+  registered in `docs/sanitizers.md` (S5).
 - **The `SuiteListIsComplete` guard is deliberately left unlabeled**, even for
   a `REQUIRES_GPU` target. `--gtest_list_tests` enumerates the registry without
   constructing a fixture, so it needs the binary to load but never touches a

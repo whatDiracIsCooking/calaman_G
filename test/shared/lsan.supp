@@ -5,5 +5,8 @@
 # ROCm's HSA runtime frees its per-agent tables lazily and never at exit, so
 # every process that touches a device leaks the same ~6KB (ROCm 7.2.4,
 # gfx1200). The CUDA driver needs no entry today.
+#
+# Every line here is registered, with its evidence and re-verify trigger, in
+# docs/sanitizers.md (S1). Add nothing that is not.
 leak:libhsa-runtime64.so
 leak:libamdhip64.so

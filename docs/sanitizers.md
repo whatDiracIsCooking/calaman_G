@@ -1,0 +1,220 @@
+# Sanitizer registry
+
+Every sanitizer check this project turns off, narrows, or loosens, and every
+check it never runs, in one place, so that nothing is off silently.
+
+## The policy
+
+- **A suppression is scoped to vendor code.** It names a vendor library, a
+  vendor kernel, or a filter that selects only calaman's own code — never a
+  pattern that could match a calaman or WarpWraps frame.
+- **It is registered here**, with every field below filled, before it merges.
+  A suppression, filter, or loosened threshold that is not in this file is a
+  bug.
+- **It is proven not to hide calaman code** — by a canary that must still fail
+  with the suppression in place (milestone 6, #230). Until that lands, every
+  *Proven by* reads "none yet", and that is the honest state.
+
+A **coverage gap** is a check that never runs at all. Gaps are listed too,
+because an unchecked class of bug is as invisible in a green run as a
+suppressed one.
+
+## Fields
+
+| Field | What it records |
+|---|---|
+| **What is off** | the exact setting, and where it lives |
+| **Symptom** | what failed without it |
+| **Observed on** | the versions it was seen on — the claim is only as fresh as these |
+| **Why vendor-side** | why the finding is not ours (for a gap: why it is still open) |
+| **Evidence** | the stack, kernel, or measurement that shows it |
+| **Re-verify** | the change that should trigger checking it again |
+| **Upstream** | the vendor report, if one was filed |
+| **Proven by** | the canary that shows calaman code is still checked |
+
+**Toolchain for every entry unless it says otherwise:** CUDA 13.0.88 (nvcc),
+driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
+7.2.4, AMD `gfx1200`; clang 20.1.8 with libc++. Dated 2026-10-06 (PR #228).
+
+## Suppressions and narrowed scope
+
+### S1. LSan: ROCm runtime leaks at exit
+
+- **What is off:** `leak:libhsa-runtime64.so` and `leak:libamdhip64.so` in
+  `test/shared/lsan.supp`, loaded by the `asan` and `hip-asan` test presets
+  through `LSAN_OPTIONS` (`CMakePresets.json`).
+- **Symptom:** `hip-asan` failed 94 suites on LeakSanitizer at process exit.
+- **Observed on:** ROCm 7.2.4, gfx1200, clang 20.1.8.
+- **Why vendor-side:** a fixed ~6KB per process that touches a device,
+  independent of what the suite does; the HSA runtime frees its per-agent
+  tables lazily and never at exit.
+- **Evidence:** every frame of every reported leak stack is inside
+  `libhsa-runtime64` or `libamdhip64`; no calaman or WarpWraps frame appears.
+  The CUDA driver needs no entry.
+- **Re-verify:** any ROCm bump — drop both lines and run `hip-asan`; delete
+  them if it is green.
+- **Upstream:** none yet.
+- **Proven by:** none yet (#230: an LSan canary leaking from calaman code).
+
+### S2. racecheck and synccheck scoped to calaman's kernels
+
+- **What is off:** `--kernel-name kns=calaman` on the compute-sanitizer
+  launcher when `CALAMAN_COMPUTE_SANITIZER_TOOL` is `racecheck` or `synccheck`
+  (`CMakeLists.txt`, compute-sanitizer block). cuBLAS, cuSOLVER and every other
+  vendor kernel go unchecked by those two tools. memcheck and initcheck stay
+  unscoped.
+- **Symptom:** racecheck unscoped spent >20 min in cuBLAS/cuSOLVER on a suite
+  memcheck clears in 8s. synccheck unscoped reported a divergent barrier.
+- **Observed on:** the default toolchain above (CUDA only).
+- **Why vendor-side:** racecheck and synccheck judge a kernel's own shared
+  memory and barriers, which in a vendor kernel we can neither read nor fix.
+  The synccheck report is inside cuBLAS's own single-precision kernel; memcheck
+  and initcheck are clean on the same call and the result matches the
+  reference LAPACK.
+- **Evidence:** synccheck: `trsm_ln_up_kernel` (float/float2 instantiations
+  only), reached by the unit-triangular `wwr::trsm` at
+  `src/lapack/sytrs2/sytrs2.cppm:290` and `src/lapack/hetrs2/hetrs2.cppm:285`.
+  racecheck: wall time only, no finding.
+- **Re-verify:** any CUDA toolkit or driver bump — run synccheck unscoped on
+  the sytrs2/hetrs2 suites. The filter itself is only sound while every calaman
+  `__global__` mangles `calaman`; #230 adds the build-time check.
+- **Upstream:** none yet.
+- **Proven by:** none yet (#230: racecheck and synccheck canary kernels in
+  `calaman::`).
+
+### S3. `ASAN_OPTIONS=protect_shadow_gap=0`
+
+- **What is off:** ASan's protection of the shadow gap, set in the `asan` and
+  `hip-asan` test presets and the compose `asan` service
+  (`docker/compose.yaml`).
+- **Symptom:** under `asan`, every GPU suite died with
+  `cudaErrorMemoryAllocation`.
+- **Observed on:** the default toolchain above. Set on `hip-asan` too; whether
+  ROCm needs it is not verified.
+- **Why vendor-side:** the CUDA driver reserves virtual address ranges that
+  fall in the gap ASan otherwise maps inaccessible. A wild access into the gap
+  now lands in mapped memory instead of faulting.
+- **Evidence:** the allocation failure disappears with this option alone, and
+  `asan` then ran 208/208.
+- **Re-verify:** any driver bump, and any clang bump that changes ASan's
+  x86_64 memory layout. Also try `hip-asan` without it.
+- **Upstream:** none — known ASan/CUDA interaction, not a bug.
+- **Proven by:** none yet (#230: the ASan heap-overflow canary shows
+  instrumentation still fires).
+
+### S4. `CALAMAN_TEST_TIMEOUT_MULTIPLIER` (loosened timing)
+
+- **What is off:** no check — every test TIMEOUT is multiplied, 3 in `asan` and
+  `hip-asan`, 10 in `compute-sanitizer` (`CMakePresets.json`; compose forwards
+  `TIMEOUT_MULTIPLIER`). Listed because a hang hides longer behind it.
+- **Symptom:** `SteqrOracleTests` overran its 120s TIMEOUT under `hip-asan` at
+  1x.
+- **Observed on:** ROCm 7.2.4, gfx1200 (the overrun); the factors were sized on
+  both cards.
+- **Why vendor-side:** not a vendor fault — instrumentation is slower by design.
+  The multiplier is 1 in every non-sanitized preset.
+- **Evidence:** the overrun above; PR #228's runs at these factors, 208/208.
+- **Re-verify:** whenever a suite's TIMEOUT changes, or a sanitized run nears a
+  multiplied limit.
+- **Upstream:** n/a.
+- **Proven by:** n/a — a timing allowance, not a filter.
+
+### S5. The `no_sanitizer` ctest label
+
+- **What is off:** any ctest entry labeled `no_sanitizer` is excluded by the
+  `asan`, `hip-asan` and `compute-sanitizer` test presets and by both compose
+  sanitizer services (`-LE no_sanitizer`); the pytest marker of the same name is
+  deselected by the compose `compute-sanitizer` service.
+- **Symptom:** none today — **nothing in calaman carries the label or the
+  marker.** It is mechanism, kept so a case that instrumentation makes
+  intractable is excluded by name rather than skipped.
+- **Observed on:** n/a.
+- **Why vendor-side:** n/a — adding the label is a suppression, and gets its own
+  entry here with the reason.
+- **Evidence:** `grep -rn no_sanitizer test src` is empty.
+- **Re-verify:** any change that adds the label or the marker.
+- **Upstream:** n/a.
+- **Proven by:** n/a while unused.
+
+## Coverage gaps
+
+The fields read the same; for a gap, *Why vendor-side* says why it is open.
+
+### G1. Host code in `.cu` files is not ASan-instrumented
+
+- **What is off:** `CALAMAN_ENABLE_ASAN` adds `-fsanitize=address` to `CXX`
+  units only; every `.cu` (launch wrappers, functor setup) builds without it.
+- **Symptom:** none — a host-side overflow in a `.cu` would pass.
+- **Observed on:** the default toolchain above.
+- **Why vendor-side:** open, not vendor: `CMAKE_CUDA_HOST_COMPILER` is unset,
+  so nvcc's host compiler is not the clang the ASan runtime comes from.
+- **Evidence:** the ASan block in `CMakeLists.txt` is `$<COMPILE_LANGUAGE:CXX>`
+  only; `build-asan/build.ninja` shows no `-fsanitize` on a `.cu` compile.
+- **Re-verify:** n/a.
+- **Upstream:** n/a.
+- **Proven by:** none yet. Tracked by #231.
+
+### G2. No device memory checking on AMD
+
+- **What is off:** HIP device code runs unchecked: `hip-asan` instruments host
+  code only, and `CALAMAN_COMPUTE_SANITIZER` refuses the HIP backend at
+  configure.
+- **Symptom:** none — an out-of-bounds device access on HIP is caught only if
+  it corrupts a result the oracle compares.
+- **Observed on:** ROCm 7.2.4, gfx1200.
+- **Why vendor-side:** ROCm's device ASan needs XNACK, which gfx1200 does not
+  offer (`rocminfo`: `XNACK enabled: NO`), and ROCm has no compute-sanitizer
+  counterpart. Kernels shared by both backends are checked on CUDA.
+- **Evidence:** `rocminfo`; the `FATAL_ERROR` in `CMakeLists.txt`.
+- **Re-verify:** any ROCm bump or new AMD card.
+- **Upstream:** n/a.
+- **Proven by:** n/a.
+
+### G3. memcheck runs without `--leak-check`
+
+- **What is off:** device allocations leaked by a suite are not reported.
+- **Symptom:** none — never enabled.
+- **Observed on:** the default toolchain above.
+- **Why vendor-side:** open, not vendor.
+- **Evidence:** the launcher in `CMakeLists.txt` carries no `--leak-check`.
+- **Re-verify:** n/a.
+- **Upstream:** n/a.
+- **Proven by:** none yet. Tracked by #232.
+
+### G4. No UBSan
+
+- **What is off:** no `-fsanitize=undefined` build on either backend.
+- **Symptom:** none — never run.
+- **Observed on:** n/a.
+- **Why vendor-side:** open, not vendor.
+- **Evidence:** no UBSan option in `CMakeLists.txt` or `CMakePresets.json`.
+- **Re-verify:** n/a.
+- **Upstream:** n/a.
+- **Proven by:** none yet. Tracked by #234.
+
+### G5. No sanitizer in CI
+
+- **What is off:** `.github/workflows/ci.yml` runs no sanitized preset; every
+  sanitizer run is a local one on a box with a card.
+- **Symptom:** none — a host-side memory error in a host-only suite merges
+  green.
+- **Observed on:** n/a.
+- **Why vendor-side:** partly: hosted runners have no GPU, so device checking
+  cannot run there. Host-only ASan can, and does not yet.
+- **Evidence:** no `asan` job in `ci.yml`.
+- **Re-verify:** n/a.
+- **Upstream:** n/a.
+- **Proven by:** none yet. Tracked by #233.
+
+### G6. Unverified: do racecheck warning-severity hazards fail a run?
+
+- **What is off:** possibly nothing — the launcher passes `--error-exitcode 1`,
+  and it is not established whether a racecheck hazard reported at WARNING
+  severity sets that exit code, or only ERROR does.
+- **Symptom:** none observed.
+- **Observed on:** compute-sanitizer 2025.3.1.
+- **Why vendor-side:** open — a question about the tool's contract.
+- **Evidence:** none yet.
+- **Re-verify:** any compute-sanitizer bump.
+- **Upstream:** n/a.
+- **Proven by:** none yet. Settled by #230.

@@ -22,11 +22,11 @@
 #   ctest --preset ci-cuda -LE gpu     everything that does not need a device
 #   ctest --preset default             everything (the dev box, with a card)
 #
-# It is the same mechanism as the no_sanitizer label on the two allocation-
-# failure suites, and deliberately so: an EXCLUDED test is named in the ctest
-# output, where a skipped one blends into a green run. The ci-cuda preset that
-# .github/workflows/ci.yml drives runs the excluding form, because a
-# GitHub-hosted runner has no GPU.
+# It is the same mechanism as the no_sanitizer label (unused today; see
+# docs/sanitizers.md), and deliberately so: an EXCLUDED test is named in the
+# ctest output, where a skipped one blends into a green run. The ci-cuda
+# preset that .github/workflows/ci.yml drives runs the excluding form, because
+# a GitHub-hosted runner has no GPU.
 
 # Internal: registers the drift guard once per target, after every
 # calaman_add_gtest_suite_tests() call in the directory has contributed its
