@@ -478,3 +478,12 @@ add_subdirectory(lansf)
 # ?lanhf). No device code of its own: it runs calaman.lansf's kernel with the
 # Hermitian flag and links calaman.lansf.device, so it follows lansf.
 add_subdirectory(lanhf)
+
+# calaman.lansp -- the norm of a symmetric matrix in packed storage (LAPACK's
+# ?lansp); its device library links tri_index for the packed map.
+add_subdirectory(lansp)
+
+# calaman.lanhp -- the norm of a Hermitian matrix in packed storage (LAPACK's
+# ?lanhp). No device code of its own: it runs calaman.lansp's kernel with the
+# Hermitian flag and links calaman.lansp.device, so it follows lansp.
+add_subdirectory(lanhp)
