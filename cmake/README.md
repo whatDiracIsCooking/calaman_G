@@ -19,8 +19,12 @@ cmake/
 ├── calaman_add_gtest_executable.cmake          # Consolidates GoogleTest executable boilerplate
 ├── calaman_add_gtest_suite_tests.cmake         # Registers a GoogleTest binary with ctest, one entry per suite
 ├── calaman_add_interface_library.cmake         # Macro: INTERFACE libraries
+├── calaman_add_kernel_name_check.cmake         # Build-time check: every device-library __global__ mangles `calaman` (CUDA)
+├── calaman_add_sanitizer_canary.cmake          # Registers a sanitizer canary: passes only when the sanitizer catches it
 ├── calaman_add_test_executable.cmake           # Plain (non-GoogleTest) ctest-registered executables
 ├── calaman_check_gtest_suites.cmake            # Script mode: fails when a suite in the binary is missing from the CMake list
+├── calaman_check_kernel_names.cmake            # Script mode: the cuobjdump half of the kernel-name check
+├── calaman_check_sanitizer_canary.cmake        # Script mode: a canary's verdict (non-zero exit AND the expected report)
 ├── calaman_install.cmake                       # Install rules, the export set and the CMake package
 ├── calamanConfig.cmake.in                      # Template for the installed calamanConfig.cmake
 └── calaman_internal_helpers.cmake              # Internal helpers (alias creation, include dirs, linking)
@@ -354,6 +358,16 @@ Two things to get right when adding one:
   `--gpus`. That keeps the hand-written suite lists honest on the runner too.
   If a target ever grows a static initializer that talks to the driver, label
   the guard rather than deleting it.
+
+### Sanitizer canaries
+
+`calaman_add_sanitizer_canary` registers a deliberately buggy run that passes
+only when its sanitizer reports the bug **and** fails the run — checked by
+`calaman_check_sanitizer_canary.cmake`, not by `WILL_FAIL`, which would credit a
+crash for the wrong reason and miss a report the tool printed but exited 0 on.
+Entries are labeled `sanitizer_canary` (plus `gpu` for a device canary) and
+registered only under their own preset, from `test/sanitizer_canaries/`;
+`docs/sanitizers.md` says which canary proves which entry.
 
 `cuda_compile_tests` is the one entry whose label depends on a cache variable,
 for a reason unrelated to devices — it links the CUDA driver stubs and cannot

@@ -12,8 +12,8 @@ check it never runs, in one place, so that nothing is off silently.
   A suppression, filter, or loosened threshold that is not in this file is a
   bug.
 - **It is proven not to hide calaman code** — by a canary that must still fail
-  with the suppression in place (milestone 6, #230). Until that lands, every
-  *Proven by* reads "none yet", and that is the honest state.
+  with the suppression in place (see [Canaries](#canaries)). An entry whose
+  *Proven by* reads "none yet" is unproven, and says so.
 
 A **coverage gap** is a check that never runs at all. Gaps are listed too,
 because an unchecked class of bug is as invisible in a green run as a
@@ -54,7 +54,9 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 - **Re-verify:** any ROCm bump — drop both lines and run `hip-asan`; delete
   them if it is green.
 - **Upstream:** none yet.
-- **Proven by:** none yet (#230: an LSan canary leaking from calaman code).
+- **Proven by:** `sanitizer_canary.lsan.leak` (`asan`, `hip-asan`): a leak
+  whose stack is calaman's own is still reported with both lines loaded.
+  Widening the file to `leak:*`, or `detect_leaks=0`, turns it red.
 
 ### S2. racecheck and synccheck scoped to calaman's kernels
 
@@ -77,10 +79,15 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
   racecheck: wall time only, no finding.
 - **Re-verify:** any CUDA toolkit or driver bump — run synccheck unscoped on
   the sytrs2/hetrs2 suites. The filter itself is only sound while every calaman
-  `__global__` mangles `calaman`; #230 adds the build-time check.
+  `__global__` mangles `calaman`, which the build enforces: the
+  `calaman_kernel_name_check` target (every CUDA build, `ALL`) runs
+  `cuobjdump -symbols` over every `calaman_add_gpu_device_library` archive and
+  fails on an entry that does not.
 - **Upstream:** none yet.
-- **Proven by:** none yet (#230: racecheck and synccheck canary kernels in
-  `calaman::`).
+- **Proven by:** `sanitizer_canary.compute_sanitizer.{racecheck_error,
+  racecheck_warning,synccheck}`, kernels in `calaman::` that the filter must
+  select. A filter that selects nothing of ours (`kns=nomatch`) turns them red,
+  and a `__global__` outside `calaman::` fails the build.
 
 ### S3. `ASAN_OPTIONS=protect_shadow_gap=0`
 
@@ -99,8 +106,9 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 - **Re-verify:** any driver bump, and any clang bump that changes ASan's
   x86_64 memory layout. Also try `hip-asan` without it.
 - **Upstream:** none — known ASan/CUDA interaction, not a bug.
-- **Proven by:** none yet (#230: the ASan heap-overflow canary shows
-  instrumentation still fires).
+- **Proven by:** `sanitizer_canary.asan.heap_buffer_overflow` (`asan`,
+  `hip-asan`), which runs with this option set: instrumentation still fires.
+  A build without `-fsanitize=address` turns it red.
 
 ### S4. `CALAMAN_TEST_TIMEOUT_MULTIPLIER` (loosened timing)
 
@@ -206,15 +214,45 @@ The fields read the same; for a gap, *Why vendor-side* says why it is open.
 - **Upstream:** n/a.
 - **Proven by:** none yet. Tracked by #233.
 
-### G6. Unverified: do racecheck warning-severity hazards fail a run?
+### G6. Closed: racecheck warning-severity hazards do fail a run
 
-- **What is off:** possibly nothing — the launcher passes `--error-exitcode 1`,
-  and it is not established whether a racecheck hazard reported at WARNING
-  severity sets that exit code, or only ERROR does.
-- **Symptom:** none observed.
-- **Observed on:** compute-sanitizer 2025.3.1.
-- **Why vendor-side:** open — a question about the tool's contract.
-- **Evidence:** none yet.
-- **Re-verify:** any compute-sanitizer bump.
+- **What is off:** nothing. Kept under its number so citations still resolve.
+- **Symptom:** n/a.
+- **Observed on:** compute-sanitizer 2025.3.1, RTX 3080.
+- **Why vendor-side:** n/a — it was a question about the tool's contract.
+- **Evidence:** a shared-memory race confined to one warp is reported as
+  `Warning: Race reported` (`RACECHECK SUMMARY: ... 0 errors, 1 warning`) and
+  the run exits 1 under `--error-exitcode 1`, the same as an ERROR-graded one.
+- **Re-verify:** any compute-sanitizer bump — the canary below does it.
 - **Upstream:** n/a.
-- **Proven by:** none yet. Settled by #230.
+- **Proven by:** `sanitizer_canary.compute_sanitizer.racecheck_warning`.
+
+## Canaries
+
+A canary is a deliberately buggy run that must fail under the check it guards
+(`test/sanitizer_canaries/`, registered by `calaman_add_sanitizer_canary`). It
+passes only when the run exits non-zero **and** prints the expected report, so
+a crash for another reason, or a report the tool printed without failing the
+run, is red. Each is configured only under its own preset and is absent from
+every other; all carry the `sanitizer_canary` label.
+
+| Canary | Preset | Defect | Expected report |
+|---|---|---|---|
+| `asan.heap_buffer_overflow` | `asan`, `hip-asan` | host write one past a `new[]` | `AddressSanitizer: heap-buffer-overflow` |
+| `lsan.leak` | `asan`, `hip-asan` | host `new[]` dropped in `calaman::canary` | `LeakSanitizer: detected memory leaks` |
+| `compute_sanitizer.memcheck` | `compute-sanitizer`, tool `memcheck` | global write one past the allocation | `Invalid __global__ write` |
+| `compute_sanitizer.initcheck` | tool `initcheck` | read of never-written device memory | `Uninitialized __global__ memory read` |
+| `compute_sanitizer.racecheck_error` | tool `racecheck` | cross-warp shared-memory race | `Error: Race reported` |
+| `compute_sanitizer.racecheck_warning` | tool `racecheck` | intra-warp shared-memory race | `Warning: Race reported` |
+| `compute_sanitizer.synccheck` | tool `synccheck` | `__syncthreads` reached by one warp of two | `Barrier error` |
+
+Names are prefixed `sanitizer_canary.` in ctest. compute-sanitizer registers
+only the selected tool's canaries, so covering all four is four reconfigures:
+
+```bash
+for t in memcheck initcheck racecheck synccheck; do
+  cmake --preset compute-sanitizer -DCALAMAN_COMPUTE_SANITIZER_TOOL=$t
+  cmake --build --preset compute-sanitizer
+  ctest --preset compute-sanitizer -L sanitizer_canary
+done
+```
