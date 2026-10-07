@@ -47,6 +47,7 @@ import wwr.wrappers.solver; // syevd, sygvd
 import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the solve)
 import :buffer_size;        // DavidsonSlices
 import calaman.common;      // kOne, kZero, kNegativeOne, real_fp
+import calaman.ritz;        // RitzSelection, classify_ritz, ritz_rotate
 export import calaman.error_handling; // Status, PointerModeStatus
 export import calaman.iterative;      // IterationInfo, stop_reason, converged
 
@@ -235,12 +236,12 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
     // devInfo's domain and code: calaman::devinfo_verdict (calaman.error_handling).
     CLM_TRY(devinfo_verdict(info_host));
 
-    // 3. Ritz vectors X = V S_k and their operator images A X = Sigma_V S_k.
-    CLM_TRY((wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n_roots, dim,
-                               &kOne<T>, s.v, n, s.h, max_subspace, &kZero<T>, eigenvectors_out,
-                               n)));
-    CLM_TRY((wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, n_roots, dim,
-                               &kOne<T>, s.av, n, s.h, max_subspace, &kZero<T>, s.ritz_av, n)));
+    // 3. Ritz vectors X = V S_k and their operator images A X = Sigma_V S_k (the
+    //    lowest n_roots: the leading columns of S, ld max_subspace).
+    CLM_TRY(ritz_rotate<T>(cublas_handle, n, dim, n_roots, s.v, n, s.h, max_subspace,
+                           eigenvectors_out, n));
+    CLM_TRY(ritz_rotate<T>(cublas_handle, n, dim, n_roots, s.av, n, s.h, max_subspace, s.ritz_av,
+                           n));
     CLM_TRY(wwr::wwrMemcpyAsync(theta.data(), s.ritz, sizeof(T) * static_cast<std::size_t>(n_roots),
                                 wwr::wwrMemcpyDeviceToHost, stream));
     CLM_TRY(wwr::wwrStreamSynchronize(stream));
@@ -259,8 +260,6 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
     if constexpr (use_metric) {
       CLM_TRY(metric(stream, n_roots, s.residual, s.metric_scratch));
     }
-    bool all_converged = true;
-    info->max_residual_norm = T{0};
     for (int i = 0; i < n_roots; ++i) {
       const std::size_t col = static_cast<std::size_t>(i) * nz;
       T norm{};
@@ -273,12 +272,13 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
         CLM_TRY((wwr::nrm2<T, int>(cublas_handle, n, s.residual + col, 1, &norm)));
       }
       residual_norms[static_cast<std::size_t>(i)] = norm;
-      info->max_residual_norm = std::max(info->max_residual_norm, norm);
-      if (norm > options.residual_tolerance) {
-        all_converged = false;
-      }
     }
-    if (all_converged) {
+    // Absolute test (residual <= residual_tolerance): the scale-free classify_ritz.
+    const RitzSelection<T> sel =
+        classify_ritz<T>(theta, residual_norms, options.residual_tolerance);
+    info->max_residual_norm = std::ranges::fold_left(
+        sel.residuals, T{0}, [](const T a, const T b) { return std::max(a, b); });
+    if (sel.all_converged()) {
       return finish(iter, DavidsonStopReason::Converged);
     }
 
@@ -332,7 +332,7 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
     //    candidate with no component left outside the retained subspace.
     int kept = 0;
     for (int i = 0; i < n_roots; ++i) {
-      if (residual_norms[static_cast<std::size_t>(i)] <= options.residual_tolerance) {
+      if (sel.converged[static_cast<std::size_t>(i)]) {
         continue;
       }
       const std::size_t ci = static_cast<std::size_t>(i) * nz;
