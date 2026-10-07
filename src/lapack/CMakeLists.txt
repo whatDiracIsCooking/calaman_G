@@ -91,6 +91,10 @@ add_subdirectory(larnv)
 # lib uses it.
 add_subdirectory(lange)
 
+# calaman.langb -- the norm of a general band matrix in band storage (LAPACK's
+# ?langb). Links only calaman.common and calaman.error_handling.
+add_subdirectory(langb)
+
 # calaman.lanst -- the norm of a symmetric tridiagonal (LAPACK's ?lanst), plus
 # the header-only per-thread lanst_max_abs (calaman::lanst::header) that the
 # ?sterf/?steqr kernels include, so it must precede both. Links only
