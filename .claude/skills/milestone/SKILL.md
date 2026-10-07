@@ -200,7 +200,8 @@ and log one line per edge so a failed POST is visible rather than silent.
 Finish with the milestone URL and a short wave summary: which issues (by number
 now) are in each wave, and the explicit **"ready now"** list — the wave-0
 issues with no blocker. That is the answer to "what can we work on
-simultaneously." If step 6a ran, confirm the edge count wired with no failures.
+simultaneously." To execute the milestone, point the user at
+`/milestone-run <milestone URL>`. If step 6a ran, confirm the edge count wired with no failures.
 
 ## Undo, if it came out wrong
 

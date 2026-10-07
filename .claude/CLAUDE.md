@@ -150,6 +150,7 @@ file is the map; reach for the skill when you act.
 | [workspace](skills/workspace/SKILL.md) | write or review a routine's device workspace — the carve-once convention (`slices_for` + `carve_workspace` + `WorkspaceLayout`), the canonical `XSlices`/`make_X_slices`/`*_bufferSize` shape, fixed-vs-scratch rules, and the review checklist. |
 | [audit](skills/audit/SKILL.md) | verify that documentation (skills, READMEs, this file, memory) still matches reality — extract each claim, check it against the tree, report drift. |
 | [milestone](skills/milestone/SKILL.md) | turn a plan into a GitHub milestone plus a DAG of PR-sized issues wired for parallel work. |
+| [milestone-run](skills/milestone-run/SKILL.md) | execute a milestone — `/milestone-run <url> [max=N] [both] [dry-run]`: fan out up to N subagents, one per ready issue in its own `.claude/worktrees/` checkout, each tested on one card (alternating CUDA/HIP; `both` requires both); the orchestrator merges their PRs one at a time and launches whatever becomes unblocked (invoking it is the merge grant for that milestone's PRs). |
 
 ## Containers: four files, one diamond
 
