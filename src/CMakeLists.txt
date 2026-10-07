@@ -109,6 +109,12 @@ add_subdirectory(davidson)
 # davidson as the other callback-driven eigensolver.
 add_subdirectory(lanczos)
 
+# calaman.shifted_cocg -- multi-shift block COCG for complex-symmetric shifted
+# systems (z_e I - A) X_e = B over a linear_operator. Links only common,
+# error_handling, iterative and linear_operator from src/, so its placement is
+# free; grouped with lanczos as the other Krylov method.
+add_subdirectory(shifted_cocg)
+
 # calaman.diis -- Pulay DIIS extrapolation over a device-resident ring of
 # (vector, residual) pairs. Links only common and error_handling from src/, so
 # its placement is free; grouped with the iterative-solver helpers.

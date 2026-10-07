@@ -45,6 +45,7 @@ constexpr bool converged(const IterationInfo<Reason> &i) noexcept;
 | `calaman.nnls` | `NnlsInfo : IterationInfo<NnlsStopReason>` | — |
 | `calaman.davidson` | `DavidsonInfo : IterationInfo<DavidsonStopReason>` | `Stagnated` |
 | `calaman.lanczos` | `LanczosInfo : IterationInfo<LanczosStopReason>` (`iterations` = thick restarts) | — |
+| `calaman.shifted_cocg` | `ShiftedCocgInfo : IterationInfo<ShiftedCocgStopReason>` (`iterations` = block applies; per-shift counts too) | — |
 
 Each re-exports `calaman.iterative`, so importing the method is enough to call
 `converged(info)`.
