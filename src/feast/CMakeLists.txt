@@ -48,6 +48,8 @@ calaman_add_gpu_device_library(
 # with (wwr.extension.blas) and
 #   calaman.error_handling  Status, the cross-domain return type
 #   calaman.iterative       IterationInfo, FeastInfo's base (re-exported)
+#   calaman.linear_operator linear_operator, feast_resolvent's base
+#                           (re-exported)
 # (every entry point returns it). wwr.complex is not listed: no partition names
 # the vendor complex type, and RealToComplexType's target is reachable
 # transitively through calaman.common.
@@ -65,7 +67,7 @@ calaman_add_cxx_module_library(
   quadrature.cppm
   compute_quadrature.cppm
   buffer_size.cppm
-  contour_filter.cppm
+  resolvent.cppm
   rayleigh_ritz.cppm
   driver.cppm
   LINK_PUBLIC
@@ -80,6 +82,7 @@ calaman_add_cxx_module_library(
   calaman::ritz
   calaman::error_handling
   calaman::iterative
+  calaman::linear_operator
   LINK_PRIVATE
   wwr::backend
   INCLUDE_DIRS_PRIVATE

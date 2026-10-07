@@ -3,13 +3,11 @@
  * @brief Shared types and device-launcher declarations for calaman.feast's
  *        interface units and its device-compiled translation unit
  *
- * Included by the module partitions in their GLOBAL MODULE FRAGMENT, and by
- * feast.cu directly -- the same split lacpy_bridge.h / gebal_bridge.h use: the
- * declarations live in the GMF, not the module purview, so a purview name's
- * module linkage cannot stop them binding to the definitions compiled in the
- * plain .cu translation unit. FeastContour / FeastStatus and kFeastMaxNodes are
- * ordinary external-linkage header entities, so every partition that names them
- * (and feast.cu) shares one definition.
+ * Included by the module partitions in their GLOBAL MODULE FRAGMENT and by
+ * feast.cu directly, as lacpy_bridge.h / gebal_bridge.h are: declared in the
+ * GMF, a launcher keeps external linkage and binds to its definition in the .cu.
+ * FeastContour / FeastStatus and kFeastMaxNodes are ordinary header entities, so
+ * every partition (and feast.cu) shares one definition.
  *
  * COMPLEX TYPES DO NOT APPEAR HERE, for the reason gebal_bridge.h spells out:
  * this header is parsed in host GMFs that cannot `import wwr.complex`, and
@@ -21,11 +19,9 @@
  * wwrFloatComplex / wwrDoubleComplex only in its explicit instantiations, in
  * device context.
  *
- * wwrStream_t arrives from runtime.h, an include-only header rather than an
- * `import`, since a GMF cannot import; it is the SAME type wwr.runtime_api
- * exports, so the module passes its handle's stream straight through. Reading
- * the backend define that header needs is why the module links wwr_backend
- * PRIVATE -- see this directory's CMakeLists.txt.
+ * wwrStream_t comes from runtime.h (a GMF cannot import), the same type
+ * wwr.runtime_api exports; that header's backend define is why the module links
+ * wwr_backend PRIVATE (this directory's CMakeLists.txt).
  */
 
 #pragma once
@@ -58,19 +54,19 @@ struct FeastContour {
 
 /// @brief What one FEAST iteration leaves on the device for the host to decide on.
 ///
-/// The solver's batched-LU and eigensolver info outputs point into this block,
-/// and the solver's kernels fill in the rest, so one device-to-host copy of it
-/// per iteration is the loop's only synchronization.
+/// The solver's QR and eigensolver info outputs point into this block, and the
+/// solver's kernels fill in the rest, so one device-to-host copy of it per
+/// iteration is the loop's only synchronization. The resolvent model's own
+/// factorization info lives with the model.
 ///
 /// @tparam R Real floating-point type (float or double).
 template<typename R>
 struct FeastStatus {
-  int lu_info[kFeastMaxNodes]; ///< getrfBatched, one per node; written once per solve
-  int qr_info[2];              ///< geqrf, orgqr
-  int eig_info;                ///< syevd
-  int m;                       ///< Ritz values in [Emin, Emax]
-  int lo;                      ///< where the first of them sat in syevd's ascending order
-  R max_residual;              ///< largest relative residual among those m
+  int qr_info[2]; ///< geqrf, orgqr
+  int eig_info;   ///< syevd
+  int m;          ///< Ritz values in [Emin, Emax]
+  int lo;         ///< where the first of them sat in syevd's ascending order
+  R max_residual; ///< largest relative residual among those m
 };
 
 /// @brief (Z_e I - A) for every node, into packed n x n blocks @p stride elements apart.

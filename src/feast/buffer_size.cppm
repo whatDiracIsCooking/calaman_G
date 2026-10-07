@@ -4,20 +4,20 @@
  *
  * The :buffer_size partition of calaman.feast.
  *
- * One caller-provided buffer, laid out by the single FeastSlices::carve through
- * calaman::carve_workspace (null base sizes, real base carves), so the size
- * query and the carving cannot drift apart. Every region starts 256-byte
- * aligned.
+ * FeastSlices is the driver's own O(n m0) part: the Rayleigh-Ritz blocks and
+ * the per-iteration status. A resolvent model carves its own workspace beside
+ * it; DenseFeastWorkspace composes the two for the dense feast entry point, so
+ * one caller buffer is laid out by one carve through calaman::carve_workspace
+ * (null base sizes, real base carves) and the size query and the carving
+ * cannot drift apart. Every region starts 256-byte aligned.
  *
- * The Ne resolvents dominate: Ne n^2 complex elements, 32 MiB at n = 512 in
- * double with Ne = 8. Everything else is O(n m0). The QR and eigensolver
- * workspaces are never live at the same time, so they share one region -- the
- * single SCRATCH region in the layout, the rest being FIXED.
+ * The dense model's Ne resolvents dominate: Ne n^2 complex elements, 32 MiB at
+ * n = 512 in double with Ne = 8. The QR and eigensolver workspaces are never
+ * live at the same time, so they share the layout's one SCRATCH region.
  *
- * STATUS TYPE. make_feast_slices / feast_bufferSize return a @ref calaman::Status,
- * like every other calaman.feast entry point: an argument fault surfaces as a BLAS
- * INVALID_VALUE / ALLOC_FAILED, and a non-success solver query (orthogonalize/syevd
- * bufferSize) flows through CLM_TRY in its own solver domain.
+ * make_feast_slices / feast_bufferSize return a @ref calaman::Status: an
+ * argument fault is a BLAS INVALID_VALUE, and a failing solver lwork query
+ * flows through CLM_TRY in its own solver domain.
  */
 
 module;
@@ -37,30 +37,19 @@ import wwr.blas;            // WWRBLAS_STATUS_*, wwrblasFillMode_t, WWRBLAS_FILL
 import wwr.solver;          // wwrsolverDnHandle_t, wwrsolverEigMode_t, WWRSOLVER_EIG_MODE_VECTOR
 import wwr.wrappers.solver; // syevd_bufferSize
 import calaman.common;      // align_up, WorkspaceLayout, member_ptr, carve_workspace, real_fp, ...
-import calaman.orthogonalize; // orthogonalize_bufferSize
+import calaman.orthogonalize;         // orthogonalize_bufferSize
+import :resolvent;                    // DenseResolventSlices
 export import calaman.error_handling; // Status -- the cross-domain return type
 
 namespace calaman {
 
 /**
- * @brief Pointers into the solver's single workspace buffer.
+ * @brief Pointers into the driver's own workspace: Rayleigh-Ritz and status.
  *
- * Built once per solve by make_feast_slices and passed to each step, so the
- * steps allocate nothing and the sizing lives in one place.
+ * Built once per solve and passed to each step, so the steps allocate nothing.
  */
 template<calaman::real_fp T>
 struct FeastSlices {
-  using C = calaman::RealToComplexType<T>;
-
-  // ── the contour filter ─────────────────────────────────────────────────
-  C *resolvents = nullptr;          ///< Ne packed n x n blocks: Z_e I - A, then its LU factors
-  C *rhs = nullptr;                 ///< Ne n x m0 blocks: Y, then (Z_e I - A)^{-1} Y
-  std::size_t resolvent_stride = 0; ///< elements from one resolvent block to the next
-  std::size_t rhs_stride = 0;       ///< elements from one rhs block to the next
-  C **resolvent_ptrs = nullptr;     ///< device array of the Ne resolvent addresses
-  C **rhs_ptrs = nullptr;           ///< device array of the Ne rhs addresses
-  int *ipiv = nullptr;              ///< Ne x n LU pivots, contiguous as getrfBatched wants
-
   // ── Rayleigh-Ritz ──────────────────────────────────────────────────────
   T *basis = nullptr;     ///< n x m0: the filtered subspace, orthonormalized in place
   T *a_basis = nullptr;   ///< n x m0: A * basis
@@ -69,12 +58,10 @@ struct FeastSlices {
   T *rotated = nullptr;   ///< m0 x m0: those eigenvectors, in-interval columns first
   T *ritz = nullptr;      ///< m0: the Ritz values, ascending, as syevd returns them
   T *residuals = nullptr; ///< m0: relative residual of each returned pair; 0 past status->m
-  T *colsum = nullptr;    ///< n: per-column 1-norms of A
   T *norm_a = nullptr;    ///< one element: ||A||_1
 
   // ── the per-iteration status, and pointers into it ─────────────────────
   device::FeastStatus<T> *status = nullptr;
-  int *lu_info = nullptr;  ///< status->lu_info
   int *qr_info = nullptr;  ///< status->qr_info
   int *eig_info = nullptr; ///< &status->eig_info
 
@@ -83,31 +70,16 @@ struct FeastSlices {
   int lwork_qr = 0;     ///< orthogonalize's lwork, in elements of T
   int lwork_eig = 0;    ///< syevd's lwork, in elements of T
 
-  /// @brief Lay the slices out from @p layout -- the ONLY description of the
-  ///        layout, run for sizing and carving alike (see carve_workspace).
-  ///        The regions are all FIXED except the one shared QR/eigensolver
-  ///        SCRATCH block, carved last. @p qr_len / @p eig_len are the
+  /// @brief Lay the slices out from @p layout: FIXED regions, then the one
+  ///        shared QR/eigensolver SCRATCH block. @p qr_len / @p eig_len are the
   ///        orthogonalize / syevd lworks, in elements of T.
-  void carve(WorkspaceLayout &layout, const int n, const int m0, const int ne,
-             const int qr_len, const int eig_len) {
-    constexpr std::size_t kAlign = 256;
-
+  void carve(WorkspaceLayout &layout, const int n, const int m0, const int qr_len,
+             const int eig_len) {
     const std::size_t nz = static_cast<std::size_t>(n);
     const std::size_t m0z = static_cast<std::size_t>(m0);
-    const std::size_t nez = static_cast<std::size_t>(ne);
 
     lwork_qr = qr_len;
     lwork_eig = eig_len;
-
-    // Every block starts on the alignment, which sizeof(C) divides, so the
-    // strides are whole elements.
-    resolvent_stride = align_up(nz * nz * sizeof(C), kAlign) / sizeof(C);
-    rhs_stride = align_up(nz * m0z * sizeof(C), kAlign) / sizeof(C);
-    resolvents = layout.fixed<C>(resolvent_stride * nez);
-    rhs = layout.fixed<C>(rhs_stride * nez);
-    resolvent_ptrs = layout.fixed<C *>(nez);
-    rhs_ptrs = layout.fixed<C *>(nez);
-    ipiv = layout.fixed<int>(nez * nz);
 
     basis = layout.fixed<T>(nz * m0z);
     a_basis = layout.fixed<T>(nz * m0z);
@@ -116,11 +88,9 @@ struct FeastSlices {
     rotated = layout.fixed<T>(m0z * m0z);
     ritz = layout.fixed<T>(m0z);
     residuals = layout.fixed<T>(m0z);
-    colsum = layout.fixed<T>(nz);
     norm_a = layout.fixed<T>(1);
 
     status = layout.fixed_struct<device::FeastStatus<T>>();
-    lu_info = member_ptr(status, &device::FeastStatus<T>::lu_info);
     qr_info = member_ptr(status, &device::FeastStatus<T>::qr_info);
     eig_info = member_ptr(status, &device::FeastStatus<T>::eig_info);
 
@@ -130,13 +100,27 @@ struct FeastSlices {
   }
 };
 
+/// @brief The dense feast entry point's one buffer: the DenseResolvent model's
+///        regions (all FIXED) first, then the driver's FeastSlices.
+template<calaman::real_fp T>
+struct DenseFeastWorkspace {
+  DenseResolventSlices<T> resolvent;
+  FeastSlices<T> rr;
+
+  void carve(WorkspaceLayout &layout, const int n, const int m0, const int ne, const int qr_len,
+             const int eig_len) {
+    resolvent.carve(layout, n, m0, ne);
+    rr.carve(layout, n, m0, qr_len, eig_len);
+  }
+};
+
 } // namespace calaman
 
 namespace calaman {
 
 /**
- * @brief Carve @p d_work into FeastSlices for an n x n problem with an m0-column
- *        subspace and Ne quadrature nodes.
+ * @brief Carve @p d_work into a DenseFeastWorkspace for an n x n problem with an
+ *        m0-column subspace and Ne quadrature nodes.
  *
  * @param d_work      Workspace, or null to size it only.
  * @param slices      Out, may be null.
@@ -145,7 +129,7 @@ namespace calaman {
 template<calaman::real_fp T, std::size_t Ne>
   requires(Ne == 4 || Ne == 8)
 Status make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int m0,
-                         void *d_work, FeastSlices<T> *slices, std::size_t *lwork_bytes) {
+                         void *d_work, DenseFeastWorkspace<T> *slices, std::size_t *lwork_bytes) {
   if (n < 1 || m0 < 1 || m0 > n) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }

@@ -15,15 +15,13 @@
  *
  * One iteration:
  *
- *   1. basis = rho(A) Q = sum_e Re[ w_e (Z_e I - A)^{-1} Q ]      :contour_filter
+ *   1. basis = rho(A) Q = sum_e Re[ w_e (Z_e I - A)^{-1} Q ]      r.filter, :resolvent
  *   2. Rayleigh-Ritz on span(basis): Ritz pairs (lambda, Q)        :rayleigh_ritz
  *   3. residuals of the pairs inside [Emin, Emax]                  :rayleigh_ritz
  *   4. stop once the count m repeats and every residual is below tol
  *
- * All on one stream. The Ne shifted systems go to the batched BLAS as one
- * factorization per solve and one solve per iteration, and each iteration ends
- * in a single device-to-host copy of a small status block -- the only
- * synchronization in the loop.
+ * feast_iterate runs it over any feast_resolvent model; feast, over DenseResolvent.
+ * One stream; one small status copy per iteration is the loop's only sync.
  */
 
 module;
@@ -39,14 +37,14 @@ module;
 export module calaman.feast:driver;
 
 import std;
-import wwr.runtime_api;     // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize, wwrMemcpyDeviceToHost, wwrSuccess
-import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*, wwrblasFillMode_t
-import wwr.solver;          // wwrsolverDnHandle_t
-import calaman.common;  // real_fp
+import wwr.runtime_api; // wwrStream_t, wwrMemcpyAsync, wwrStreamSynchronize, wwrMemcpyDeviceToHost, wwrSuccess
+import wwr.blas;                 // wwrblasHandle_t, WWRBLAS_*, wwrblasFillMode_t
+import wwr.solver;               // wwrsolverDnHandle_t
+import calaman.common;           // real_fp
 export import calaman.iterative; // IterationInfo, stop_reason, converged
 import :buffer_size;
 import :compute_quadrature;
-import :contour_filter;
+import :resolvent;
 import :rayleigh_ritz;
 export import calaman.error_handling; // Status -- the cross-domain return type
 
@@ -78,6 +76,111 @@ struct FeastInfo : IterationInfo<FeastStopReason> {
   int m = 0;             ///< eigenvalues found in [Emin, Emax]: the leading m of d_lambda, d_Q
   T max_residual = T(0); ///< largest relative residual among those m, at the last iteration
 };
+
+} // namespace calaman
+
+namespace calaman {
+
+/**
+ * @brief The FEAST iteration over the resolvent model @p r, on carved slices.
+ *
+ * The arguments are already validated. Besides feast_resolvent, @p r supplies
+ * r.norm1(stream, d_out): ||A||_1 into a device scalar, the residuals' scale.
+ */
+template<calaman::real_fp T, std::size_t Ne, class R>
+  requires(Ne == 4 || Ne == 8) && feast_resolvent<R, T> &&
+          requires(R &r, wwr::wwrStream_t stream, T *d_out) {
+            { r.norm1(stream, d_out) } -> std::convertible_to<Status>;
+          }
+Status feast_iterate(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
+                     wwr::wwrStream_t stream, R &r, const int n, const T Emin, const T Emax,
+                     const int m0, T *d_lambda, T *d_Q, const FeastSlices<T> &s,
+                     const FeastOptions<T> &opts, FeastInfo<T> *info) {
+  FeastInfo<T> local{};
+  const auto publish = [&](const FeastStopReason reason, const Status st) {
+    local.reason = reason;
+    if (info != nullptr) {
+      *info = local;
+    }
+    return st;
+  };
+
+  const device::FeastContour<T> contour = make_feast_contour<T, Ne>(Emin, Emax);
+
+  // ── once per solve: prepare the model, and ||A||_1 ──────────────────────
+  // NumericalFailure steps publish the reason before returning the step's own
+  // Status, so they keep the check-and-publish shape rather than a bare CLM_TRY.
+  Status status = r.prepare(stream, contour);
+  if (!status.ok()) {
+    return publish(FeastStopReason::NumericalFailure, status);
+  }
+
+  status = r.norm1(stream, s.norm_a);
+  if (!status.ok()) {
+    return publish(FeastStopReason::NumericalFailure, status);
+  }
+
+  device::FeastStatus<T> h{};
+  int m_prev = -1; // no count yet
+
+  for (int k = 0; k < opts.max_iterations; ++k) {
+    status = r.filter(stream, contour, m0, d_Q, s.basis);
+    if (!status.ok()) {
+      return publish(FeastStopReason::NumericalFailure, status);
+    }
+
+    status = rayleigh_ritz<T>(cublas_handle, cusolver_handle, stream, r, n, m0, Emin, Emax, s,
+                              d_lambda, d_Q);
+    if (!status.ok()) {
+      return publish(FeastStopReason::NumericalFailure, status);
+    }
+
+    status = residuals<T>(stream, n, m0, d_Q, d_lambda, s);
+    if (!status.ok()) {
+      return publish(FeastStopReason::NumericalFailure, status);
+    }
+
+    // The loop's one synchronization: everything the host decides on. A failed
+    // copy or sync is published with its own runtime-domain Status.
+    if (const Status copy =
+            wwr::wwrMemcpyAsync(&h, s.status, sizeof(h), wwr::wwrMemcpyDeviceToHost, stream);
+        !copy.ok()) {
+      return publish(FeastStopReason::NumericalFailure, copy);
+    }
+    if (const Status sync = wwr::wwrStreamSynchronize(stream); !sync.ok()) {
+      return publish(FeastStopReason::NumericalFailure, sync);
+    }
+
+    local.iterations = k + 1;
+    local.m = h.m;
+    local.max_residual = h.max_residual;
+
+    // Each devInfo field through calaman::devinfo_verdict (calaman.error_handling);
+    // a failure is published as NumericalFailure, never returned bare.
+    for (const int dev_info : {h.qr_info[0], h.qr_info[1], h.eig_info}) {
+      if (const Status verdict = devinfo_verdict(dev_info); !verdict.ok()) {
+        return publish(FeastStopReason::NumericalFailure, verdict);
+      }
+    }
+
+    // Not judged on the first iteration, whose Ritz values from a random start
+    // can crowd into the interval before they settle.
+    if (k > 0 && h.m == m0) {
+      return publish(FeastStopReason::SubspaceTooSmall, wwr::WWRBLAS_STATUS_SUCCESS);
+    }
+
+    if (h.m == m_prev && h.max_residual < opts.tol) {
+      return publish(FeastStopReason::Converged, wwr::WWRBLAS_STATUS_SUCCESS);
+    }
+    m_prev = h.m;
+  }
+
+  return publish(FeastStopReason::MaxIterations, wwr::WWRBLAS_STATUS_SUCCESS);
+}
+
+} // namespace calaman
+
+export namespace calaman {
 
 /**
  * @brief The eigenpairs of the real symmetric A with eigenvalues in [Emin, Emax].
@@ -131,15 +234,6 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
              const int lda, const T Emin, const T Emax, const int m0, T *d_lambda, T *d_Q,
              void *d_work, const std::size_t lwork_bytes, const FeastOptions<T> &opts = {},
              FeastInfo<T> *info = nullptr) {
-  FeastInfo<T> local{};
-  const auto publish = [&](const FeastStopReason reason, const Status st) {
-    local.reason = reason;
-    if (info != nullptr) {
-      *info = local;
-    }
-    return st;
-  };
-
   if (n < 1 || m0 < 1 || m0 > n || lda < n) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
@@ -153,89 +247,16 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 
-  FeastSlices<T> s;
+  DenseFeastWorkspace<T> ws;
   std::size_t required = 0;
-  CLM_TRY(make_feast_slices<T, Ne>(cusolver_handle, n, m0, d_work, &s, &required));
+  CLM_TRY(make_feast_slices<T, Ne>(cusolver_handle, n, m0, d_work, &ws, &required));
   if (lwork_bytes < required) {
     return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
   }
 
-  const device::FeastContour<T> contour = make_feast_contour<T, Ne>(Emin, Emax);
-
-  // ── once per solve: factor the resolvents, and ||A||_1 ──────────────────
-  // NumericalFailure steps publish the reason before returning the step's own
-  // Status, so they keep the check-and-publish shape rather than a bare CLM_TRY.
-  Status status = factor_resolvents<T>(cublas_handle, stream, uplo, n, d_A, lda, contour, s);
-  if (!status.ok()) {
-    return publish(FeastStopReason::NumericalFailure, status);
-  }
-
-  status = matrix_norm<T>(stream, uplo, n, d_A, lda, s);
-  if (!status.ok()) {
-    return publish(FeastStopReason::NumericalFailure, status);
-  }
-
-  device::FeastStatus<T> h{};
-  int m_prev = -1; // no count yet
-
-  for (int k = 0; k < opts.max_iterations; ++k) {
-    status = apply_filter<T>(cublas_handle, stream, n, m0, d_Q, contour, s, s.basis);
-    if (!status.ok()) {
-      return publish(FeastStopReason::NumericalFailure, status);
-    }
-
-    status = rayleigh_ritz<T>(cublas_handle, cusolver_handle, stream, uplo, n, d_A, lda, m0, Emin,
-                              Emax, s, d_lambda, d_Q);
-    if (!status.ok()) {
-      return publish(FeastStopReason::NumericalFailure, status);
-    }
-
-    status = residuals<T>(stream, n, m0, d_Q, d_lambda, s);
-    if (!status.ok()) {
-      return publish(FeastStopReason::NumericalFailure, status);
-    }
-
-    // The loop's one synchronization: everything the host decides on. A failed
-    // copy or sync is published with its own runtime-domain Status.
-    if (const Status copy = wwr::wwrMemcpyAsync(&h, s.status, sizeof(h),
-                                                wwr::wwrMemcpyDeviceToHost, stream);
-        !copy.ok()) {
-      return publish(FeastStopReason::NumericalFailure, copy);
-    }
-    if (const Status sync = wwr::wwrStreamSynchronize(stream); !sync.ok()) {
-      return publish(FeastStopReason::NumericalFailure, sync);
-    }
-
-    local.iterations = k + 1;
-    local.m = h.m;
-    local.max_residual = h.max_residual;
-
-    // Each devInfo field through calaman::devinfo_verdict (calaman.error_handling);
-    // a failure is published as NumericalFailure, never returned bare.
-    for (std::size_t e = 0; e < Ne; ++e) {
-      if (const Status verdict = devinfo_verdict(h.lu_info[e]); !verdict.ok()) {
-        return publish(FeastStopReason::NumericalFailure, verdict);
-      }
-    }
-    for (const int info : {h.qr_info[0], h.qr_info[1], h.eig_info}) {
-      if (const Status verdict = devinfo_verdict(info); !verdict.ok()) {
-        return publish(FeastStopReason::NumericalFailure, verdict);
-      }
-    }
-
-    // Not judged on the first iteration, whose Ritz values from a random start
-    // can crowd into the interval before they settle.
-    if (k > 0 && h.m == m0) {
-      return publish(FeastStopReason::SubspaceTooSmall, wwr::WWRBLAS_STATUS_SUCCESS);
-    }
-
-    if (h.m == m_prev && h.max_residual < opts.tol) {
-      return publish(FeastStopReason::Converged, wwr::WWRBLAS_STATUS_SUCCESS);
-    }
-    m_prev = h.m;
-  }
-
-  return publish(FeastStopReason::MaxIterations, wwr::WWRBLAS_STATUS_SUCCESS);
+  DenseResolvent<T> resolvent{cublas_handle, uplo, n, d_A, lda, ws.resolvent};
+  return feast_iterate<T, Ne>(cublas_handle, cusolver_handle, stream, resolvent, n, Emin, Emax, m0,
+                              d_lambda, d_Q, ws.rr, opts, info);
 }
 
 } // namespace calaman
