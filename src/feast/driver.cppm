@@ -66,7 +66,9 @@ struct FeastOptions {
 
   /// @brief Backward error: a pair converges when ||A x - lambda x||_1 /
   ///        ((||A||_1 + |lambda|) ||x||_1) < tol, strictly, and m repeats. Not
-  ///        classify_ritz's relative test. Compared: architecture.md §8.
+  ///        classify_ritz's relative test. Compared: architecture.md §8. With a
+  ///        model that estimates ||A||_1 (no norm1_estimate hook: lacn2), the
+  ///        scale is a lower bound, so the test is no looser than stated.
   T tol = std::is_same_v<T, float> ? T(1e-5) : T(1e-12);
 };
 
@@ -75,6 +77,7 @@ template<calaman::real_fp T>
 struct FeastInfo : IterationInfo<FeastStopReason> {
   int m = 0;             ///< eigenvalues found in [Emin, Emax]: the leading m of d_lambda, d_Q
   T max_residual = T(0); ///< largest relative residual among those m, at the last iteration
+  T norm_a = T(0);       ///< the residuals' ||A||_1: exact, or lacn2's lower bound on it
 };
 
 } // namespace calaman
@@ -84,14 +87,11 @@ namespace calaman {
 /**
  * @brief The FEAST iteration over the resolvent model @p r, on carved slices.
  *
- * The arguments are already validated. Besides feast_resolvent, @p r supplies
- * r.norm1(stream, d_out): ||A||_1 into a device scalar, the residuals' scale.
+ * The arguments are already validated. The residuals' scale is @p r's
+ * feast_norm1_hook if it has one, else lacn2's estimate (residual_scale).
  */
 template<calaman::real_fp T, std::size_t Ne, class R>
-  requires(Ne == 4 || Ne == 8) && feast_resolvent<R, T> &&
-          requires(R &r, wwr::wwrStream_t stream, T *d_out) {
-            { r.norm1(stream, d_out) } -> std::convertible_to<Status>;
-          }
+  requires(Ne == 4 || Ne == 8) && feast_resolvent<R, T>
 Status feast_iterate(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                      wwr::wwrStream_t stream, R &r, const int n, const T Emin, const T Emax,
                      const int m0, T *d_lambda, T *d_Q, const FeastSlices<T> &s,
@@ -115,7 +115,7 @@ Status feast_iterate(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_
     return publish(FeastStopReason::NumericalFailure, status);
   }
 
-  status = r.norm1(stream, s.norm_a);
+  status = residual_scale<T>(cublas_handle, stream, r, n, s, local.norm_a);
   if (!status.ok()) {
     return publish(FeastStopReason::NumericalFailure, status);
   }
@@ -211,6 +211,9 @@ export namespace calaman {
  * @param lwork_bytes     Its size.
  * @param opts            Tuning.
  * @param info            Host out, may be null.
+ * @param wrap            Maps the dense model to the feast_resolvent iterated
+ *                        over; identity by default. A seam for decorating it,
+ *                        e.g. hiding its norm1_estimate hook.
  *
  * @return A Status: success whenever the iteration reached one of its own
  *         stopping conditions -- including MaxIterations and SubspaceTooSmall,
@@ -227,13 +230,13 @@ export namespace calaman {
  * iteration after the first: the interval may hold more eigenvalues than m0 can
  * carry, and the ones returned cannot be trusted to be all of them. Raise m0.
  */
-template<calaman::real_fp T, std::size_t Ne = 8>
-  requires(Ne == 4 || Ne == 8)
+template<calaman::real_fp T, std::size_t Ne = 8, class Wrap = std::identity>
+  requires(Ne == 4 || Ne == 8) && std::invocable<Wrap &, DenseResolvent<T> &>
 Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
              wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
              const int lda, const T Emin, const T Emax, const int m0, T *d_lambda, T *d_Q,
              void *d_work, const std::size_t lwork_bytes, const FeastOptions<T> &opts = {},
-             FeastInfo<T> *info = nullptr) {
+             FeastInfo<T> *info = nullptr, Wrap wrap = {}) {
   if (n < 1 || m0 < 1 || m0 > n || lda < n) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
@@ -255,7 +258,8 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
   }
 
   DenseResolvent<T> resolvent{cublas_handle, uplo, n, d_A, lda, ws.resolvent};
-  return feast_iterate<T, Ne>(cublas_handle, cusolver_handle, stream, resolvent, n, Emin, Emax, m0,
+  auto &&model = std::invoke(wrap, resolvent);
+  return feast_iterate<T, Ne>(cublas_handle, cusolver_handle, stream, model, n, Emin, Emax, m0,
                               d_lambda, d_Q, ws.rr, opts, info);
 }
 

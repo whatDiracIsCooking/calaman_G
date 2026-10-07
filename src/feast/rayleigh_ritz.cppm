@@ -1,6 +1,6 @@
 /**
  * @file rayleigh_ritz.cppm
- * @brief Rayleigh-Ritz on the filtered subspace, and the residuals of its Ritz pairs
+ * @brief Rayleigh-Ritz on the filtered subspace; its pairs' residuals and their scale
  *
  * The :rayleigh_ritz partition of calaman.feast.
  *
@@ -46,7 +46,9 @@ import calaman.common;          // kOne, kZero, real_fp
 import calaman.orthogonalize;   // orthogonalize
 import calaman.ritz;            // ritz_rotate
 import calaman.linear_operator; // linear_operator
+import calaman.lacn2;           // lacn2, the hook-less model's ||A||_1 estimate
 import :buffer_size;
+import :resolvent; // feast_norm1_hook
 export import calaman.error_handling; // Status, PointerModeStatus
 
 namespace calaman {
@@ -91,6 +93,45 @@ Status rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_
   CLM_TRY(ritz_rotate<T>(cublas_handle, n, m0, m0, s.basis, n, s.rotated, m0, d_X, n));
   CLM_TRY(ritz_rotate<T>(cublas_handle, n, m0, m0, s.a_basis, n, s.rotated, m0, s.a_ritz, n));
 
+  return wwr::WWRBLAS_STATUS_SUCCESS;
+}
+
+/**
+ * @brief ||A||_1 into s.norm_a, the residuals' scale, and onto the host in @p norm.
+ *
+ * A feast_norm1_hook model supplies it; any other gets lacn2's lower bound,
+ * driven by op.apply (A symmetric, so A^T x = A x) in the Rayleigh-Ritz blocks,
+ * which are free before the loop. Synchronizes @p stream once per solve.
+ */
+template<calaman::real_fp T, linear_operator<T> Op>
+Status residual_scale(wwr::wwrblasHandle_t cublas_handle, wwr::wwrStream_t stream, Op &op,
+                      const int n, const FeastSlices<T> &s, T &norm) {
+  if constexpr (feast_norm1_hook<Op, T>) {
+    CLM_TRY(op.norm1_estimate(stream, s.norm_a));
+    CLM_TRY(wwr::wwrMemcpyAsync(&norm, s.norm_a, sizeof(T), wwr::wwrMemcpyDeviceToHost, stream));
+  } else {
+    wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
+    const wwr::extension::ScopedPointerMode mode{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
+                                                 PointerModeStatus{&pm_status}};
+    CLM_TRY(pm_status);
+
+    T *const x = s.basis;    // lacn2's x; op.apply cannot write it in place,
+    T *const ax = s.a_basis; // so A x lands here and is copied back
+    int kase = 0;
+    std::array<int, 3> isave{};
+    norm = T(0);
+    do {
+      CLM_TRY(lacn2<T>(cublas_handle, n, s.a_ritz, x, s.norm_work, s.norm_work_bytes, norm, kase,
+                       isave));
+      if (kase != 0) {
+        CLM_TRY(op.apply(stream, 1, x, ax));
+        CLM_TRY(wwr::wwrMemcpyAsync(x, ax, sizeof(T) * static_cast<std::size_t>(n),
+                                    wwr::wwrMemcpyDeviceToDevice, stream));
+      }
+    } while (kase != 0);
+    CLM_TRY(wwr::wwrMemcpyAsync(s.norm_a, &norm, sizeof(T), wwr::wwrMemcpyHostToDevice, stream));
+  }
+  CLM_TRY(wwr::wwrStreamSynchronize(stream));
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

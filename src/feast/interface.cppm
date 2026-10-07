@@ -10,7 +10,8 @@
  * built for either backend.
  *
  * Exported: feast, feast_bufferSize, FeastOptions/FeastInfo/
- * FeastStopReason, feast_rational_filter, the feast_resolvent concept, and
+ * FeastStopReason, feast_rational_filter, the feast_resolvent concept and its
+ * optional feast_norm1_hook, and
  * linear_operator (calaman.linear_operator). The other partitions' declarations
  * are module-internal; they are re-exported only because every interface
  * partition must be.

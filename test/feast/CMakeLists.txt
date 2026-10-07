@@ -55,5 +55,6 @@ calaman_add_gtest_suite_tests(
   FeastDiagonalTests
   FeastReferenceTests
   FeastEmptyIntervalTests
+  FeastHiddenNormTests
   REQUIRES_GPU
 )

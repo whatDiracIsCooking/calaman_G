@@ -24,8 +24,8 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 | `:driver` | the iteration |
 
 Only `feast`, `feast_bufferSize`, `FeastOptions`, `FeastInfo`,
-`FeastStopReason`, `feast_rational_filter` and the `feast_resolvent` concept
-(with `linear_operator`, re-exported from `calaman.linear_operator`) are
+`FeastStopReason`, `feast_rational_filter`, the `feast_resolvent` concept and
+its optional `feast_norm1_hook` (with `linear_operator`, re-exported from `calaman.linear_operator`) are
 exported. The rest — the per-iteration steps, `DenseResolvent`, `FeastSlices`,
 the contour and quadrature tables — are
 module-internal: reachable from the header-only `feast` template when an
@@ -80,6 +80,18 @@ model carves its own workspace; the driver's `FeastSlices` is only the
 model, `DenseResolvent`, behind the original signatures. The plan for
 matrix-free models is `docs/architecture.md` §9.
 
+The residuals' scale `‖A‖₁` is the driver's last use of `A`'s entries, so it
+too goes through the model. A model may carry the optional
+`norm1_estimate(stream, d_out)` hook (the `feast_norm1_hook` concept);
+`DenseResolvent`'s computes `‖A‖₁` exactly with a column-sum kernel. A model
+without it gets `calaman.lacn2`'s Hager–Higham estimate, driven by `apply`
+(`A` is symmetric, so `Aᵀx = Ax`) once per solve — a few `k = 1` products. That
+estimate is a **lower bound** on `‖A‖₁`, so with it the tolerance is relative to
+a lower bound: the test is never looser than with the exact norm, and can be
+stricter. `info.norm_a` reports the scale used. `feast`'s last argument, `wrap`
+(identity by default), maps `DenseResolvent` to the model actually iterated
+over; the tests use it to hide the hook.
+
 ## One stream
 
 The `Ne` shifted systems are independent, and each stage over them is a single
@@ -126,7 +138,8 @@ not an error (the project-wide rule, `src/iterative/README.md`): every row but
 
 The residual is each pair's normwise backward error,
 `‖Ax − λx‖₁ / ((‖A‖₁ + |λ|) ‖x‖₁)`, so a tolerance on it means the same whatever
-the scale of `A`. Defaults: `1e-5` in float, `1e-12` in double. It is not the
+the scale of `A` (with a hook-less model, `‖A‖₁` is lacn2's lower bound — see
+*Resolvent models*). Defaults: `1e-5` in float, `1e-12` in double. It is not the
 relative test lanczos and davidson share through `classify_ritz`; the three are
 compared in [`docs/architecture.md` §8](../../docs/architecture.md).
 
