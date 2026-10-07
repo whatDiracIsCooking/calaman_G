@@ -98,7 +98,12 @@ Things that will bite:
   suppression, the racecheck/synccheck kernel filter, the timeout multiplier
   and the gaps (no `.cu` host ASan, no AMD device checking, no `--leak-check`,
   no UBSan) are all in `docs/sanitizers.md`. Report a sanitized run against
-  that list, and register any new suppression there before adding it.
+  that list, and register any new suppression there before adding it. Each
+  sanitized preset also runs its **canaries** (label `sanitizer_canary`,
+  `test/sanitizer_canaries/`): a red canary means the check went dark, not
+  that a canary needs fixing. compute-sanitizer registers only the selected
+  tool's canaries, so all four tools take four `-DCALAMAN_COMPUTE_SANITIZER_TOOL`
+  reconfigures.
 - `default` and `workstation` are the **same configuration**, differing only in
   `binaryDir` (`build/` vs `build-workstation/`), so a container build and a
   host build can coexist instead of reconfiguring each other.

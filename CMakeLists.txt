@@ -368,6 +368,11 @@ include(cmake/calaman_add_gtest_suite_tests.cmake)
 # GPU Environment's main.cpp/link list, libstdc++)
 include(cmake/calaman_add_gtest_executable.cmake)
 
+# Sanitizer canaries (test/sanitizer_canaries/) and the build-time check that
+# keeps the racecheck/synccheck kernel filter sound (docs/sanitizers.md)
+include(cmake/calaman_add_sanitizer_canary.cmake)
+include(cmake/calaman_add_kernel_name_check.cmake)
+
 # Install rules, the export set and the CMake package. Included HERE rather than
 # next to calaman_install_package()'s call at the bottom of this file, because
 # it defines the CALAMAN_INSTALL_*DIR variables that src/ and the library macros
@@ -440,7 +445,8 @@ if(CALAMAN_COMPUTE_SANITIZER)
       --require-cuda-init no
   )
   # racecheck and synccheck judge a kernel's own barriers and shared memory,
-  # so they are scoped to ours (every one mangles `calaman` in). Unscoped,
+  # so they are scoped to ours (every one mangles `calaman`, which
+  # calaman_add_kernel_name_check enforces at build time). Unscoped,
   # racecheck runs >15x slower in cuBLAS/cuSOLVER and synccheck flags
   # cuBLAS's own Strsm. memcheck/initcheck stay unscoped: a bad argument we
   # pass faults inside the vendor's kernel.
@@ -576,6 +582,10 @@ endif()
 if(NOT CALAMAN_COMPILE_TIME_ONLY)
   add_subdirectory(test)
 endif()
+
+# After every directory that can define a device library: it reads their list
+# back from calaman_device_libraries. CUDA only; a no-op under HIP.
+calaman_add_kernel_name_check()
 
 # ========================================================================
 # Install rules and the CMake package
