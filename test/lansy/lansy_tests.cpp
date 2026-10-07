@@ -1,6 +1,6 @@
-// Oracle test for calaman.lansy -- the ?lansy norm of a real symmetric matrix
-// read from one triangle. The oracle is the reference ?lansy (LAPACKE_?lansy)
-// in the SAME precision on the host.
+// Oracle test for calaman.lansy -- the ?lansy norm of a symmetric matrix (real,
+// or complex symmetric) read from one triangle. The oracle is the reference
+// ?lansy (LAPACKE_?lansy, s/d/c/z) in the SAME precision on the host.
 //
 // Every case fills the triangle `uplo` does NOT name, and the lda > n padding
 // rows, with garbage (NaN and the largest finite value): a single read of either
@@ -15,6 +15,7 @@
 import std;
 
 import wwr.runtime_api;
+import wwr.complex;
 import wwr.extension.memory_buffer;
 import calaman.lansy;
 import calaman.test.shared.abort_policy;
@@ -220,6 +221,141 @@ TEST(LansyOracleTests, NaNInStoredTrianglePropagates) {
       }
     }
   }
+}
+
+// ========================================================================
+// Complex symmetric (clansy/zlansy): a real norm of A = A^T
+// ========================================================================
+//
+// The oracle is LAPACKE_?lansy in the same precision over the same buffer (the
+// wwr complex types are layout-compatible with lapack_complex_*). Entries have
+// non-trivial imaginary parts, so |z| is an inexact hypot and every norm --
+// max_abs included -- takes the shared tolerance, as lange's complex suite does.
+
+template<typename C>
+struct complex_elem;
+
+template<>
+struct complex_elem<wwr::wwrFloatComplex> {
+  using R = float;
+  static wwr::wwrFloatComplex make(double re, double im) {
+    return wwr::make_wwrFloatComplex(static_cast<float>(re), static_cast<float>(im));
+  }
+  static float ref(char norm, char uplo, std::size_t n, const wwr::wwrFloatComplex *a,
+                   std::size_t lda) {
+    return LAPACKE_clansy(LAPACK_COL_MAJOR, norm, uplo, static_cast<lapack_int>(n),
+                          reinterpret_cast<const lapack_complex_float *>(a),
+                          static_cast<lapack_int>(lda));
+  }
+};
+
+template<>
+struct complex_elem<wwr::wwrDoubleComplex> {
+  using R = double;
+  static wwr::wwrDoubleComplex make(double re, double im) {
+    return wwr::make_wwrDoubleComplex(re, im);
+  }
+  static double ref(char norm, char uplo, std::size_t n, const wwr::wwrDoubleComplex *a,
+                    std::size_t lda) {
+    return LAPACKE_zlansy(LAPACK_COL_MAJOR, norm, uplo, static_cast<lapack_int>(n),
+                          reinterpret_cast<const lapack_complex_double *>(a),
+                          static_cast<lapack_int>(lda));
+  }
+};
+
+// Every LAPACK NORM char lansy accepts, with the MatrixNorm it maps to ('O' is
+// the 1-norm's synonym).
+struct NormCase {
+  char c;
+  MatrixNorm which;
+};
+constexpr NormCase kNormCases[] = {{'M', MatrixNorm::max_abs},
+                                   {'1', MatrixNorm::one},
+                                   {'O', MatrixNorm::one},
+                                   {'I', MatrixNorm::inf},
+                                   {'F', MatrixNorm::frobenius}};
+
+// The stored triangle holds random complex entries; the unstored triangle and
+// the padding rows alternate NaN and the largest finite component, as above.
+template<typename C>
+std::vector<C> make_complex_matrix(Uplo uplo, std::size_t n, std::size_t lda,
+                                   std::uint32_t seed) {
+  using R = typename complex_elem<C>::R;
+  std::mt19937 gen(seed);
+  std::uniform_real_distribution<double> dist(-4.0, 4.0);
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double big = std::numeric_limits<R>::max();
+  std::vector<C> a(lda * n);
+  for (std::size_t j = 0; j < n; ++j) {
+    for (std::size_t i = 0; i < lda; ++i) {
+      const bool in = i < n && stored(uplo, i, j);
+      a[i + j * lda] = in                ? complex_elem<C>::make(dist(gen), dist(gen))
+                       : (i + j) % 2 == 0 ? complex_elem<C>::make(nan, nan)
+                                          : complex_elem<C>::make(big, big);
+    }
+  }
+  return a;
+}
+
+template<typename C>
+void expect_complex_matches_reference(const NormCase nc, Uplo uplo, std::size_t n,
+                                      std::size_t lda) {
+  using R = typename complex_elem<C>::R;
+  const auto a =
+      make_complex_matrix<C>(uplo, n, lda, static_cast<std::uint32_t>(53 * n + 11 * lda + 3));
+  const R oracle = complex_elem<C>::ref(nc.c, uplo_char(uplo), n, a.data(), lda);
+  ASSERT_TRUE(std::isfinite(oracle)) << "the oracle read the garbage";
+
+  auto d_A = to_device(a);
+  DeviceBuffer<R> d_result(1, shared_device());
+  const Status s = lansy<C>(shared_device()->stream().get(), nc.which, uplo, n, d_A.data(), lda,
+                            d_result.data());
+  ASSERT_TRUE(s.ok()) << "lansy returned " << s.name() << ": " << s.message();
+  EXPECT_NEAR(scalar_from_device(d_result), oracle, factorization_tol<R>(oracle, n, n))
+      << "norm=" << nc.c << " uplo=" << uplo_char(uplo) << " n=" << n << " lda=" << lda;
+}
+
+template<typename C>
+void run_complex_sizes() {
+  // n = 1 edge, small orders, around one block's stride, and many strides, each
+  // with lda == n and a padded lda > n.
+  for (const NormCase nc : kNormCases) {
+    for (const Uplo uplo : kUplos) {
+      for (const std::size_t n : {1u, 2u, 3u, 17u, 255u, 257u, 600u}) {
+        expect_complex_matches_reference<C>(nc, uplo, n, n);
+        expect_complex_matches_reference<C>(nc, uplo, n, n + 5);
+      }
+    }
+  }
+}
+
+TEST(LansyOracleTests, ComplexFloat) {
+  run_complex_sizes<wwr::wwrFloatComplex>();
+}
+TEST(LansyOracleTests, ComplexDouble) {
+  run_complex_sizes<wwr::wwrDoubleComplex>();
+}
+
+// n == 0 writes a real 0 for every norm and both triangles, over a sentinel.
+template<typename C>
+void expect_complex_empty_writes_zero() {
+  using R = typename complex_elem<C>::R;
+  auto dummy = to_device(std::vector<C>{complex_elem<C>::make(42.0, 1.0)});
+  for (const NormCase nc : kNormCases) {
+    for (const Uplo uplo : kUplos) {
+      auto d_result = to_device(std::vector<R>{R(-12345)});
+      ASSERT_TRUE(lansy<C>(shared_device()->stream().get(), nc.which, uplo, 0, dummy.data(), 1,
+                           d_result.data())
+                      .ok());
+      EXPECT_EQ(scalar_from_device(d_result), R{0})
+          << "norm=" << nc.c << " uplo=" << uplo_char(uplo);
+    }
+  }
+}
+
+TEST(LansyOracleTests, ComplexEmptyWritesZero) {
+  expect_complex_empty_writes_zero<wwr::wwrFloatComplex>();
+  expect_complex_empty_writes_zero<wwr::wwrDoubleComplex>();
 }
 
 } // namespace
