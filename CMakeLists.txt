@@ -465,6 +465,10 @@ if(CALAMAN_COMPUTE_SANITIZER)
   if(CALAMAN_COMPUTE_SANITIZER_TOOL MATCHES "^(racecheck|synccheck)$")
     list(APPEND CMAKE_TEST_LAUNCHER --kernel-name kns=calaman)
   endif()
+  # memcheck also reports device allocations still live at context teardown.
+  if(CALAMAN_COMPUTE_SANITIZER_TOOL STREQUAL "memcheck")
+    list(APPEND CMAKE_TEST_LAUNCHER --leak-check full)
+  endif()
 endif()
 
 # Scales every TIMEOUT the calaman_add_* test macros set; a sanitized run is
