@@ -129,6 +129,12 @@ endif()
 
 if(CALAMAN_GPU_BACKEND STREQUAL "CUDA")
   set(_calaman_languages CXX CUDA)
+  # nvcc's host compiler is the same clang as CXX, not whatever g++ is on PATH:
+  # one compiler for all host code, and one ASan runtime for both halves of a
+  # `.cu` under CALAMAN_ENABLE_ASAN. -DCMAKE_CUDA_HOST_COMPILER overrides it.
+  if(NOT CMAKE_CUDA_HOST_COMPILER)
+    set(CMAKE_CUDA_HOST_COMPILER "${CMAKE_CXX_COMPILER}")
+  endif()
 else()
   set(_calaman_languages CXX)
 endif()
@@ -390,14 +396,20 @@ include(cmake/calaman_install.cmake)
 # level, before add_subdirectory(deps), so it already reaches WarpWraps's
 # targets -- we deliberately do NOT set WWR_ENABLE_ASAN, which would add
 # -fsanitize=address a second time.
+#
+# Host code is CXX units AND the host side of every `.cu`: under CUDA through
+# -Xcompiler to nvcc's clang host compiler (set before project()); under HIP a
+# `.cu` is already a CXX unit. Device code stays uninstrumented.
 option(CALAMAN_ENABLE_ASAN
-       "Enable AddressSanitizer instrumentation for host (CXX) code" OFF
+       "Enable AddressSanitizer instrumentation for host code" OFF
 )
 if(CALAMAN_ENABLE_ASAN)
   message(STATUS "AddressSanitizer enabled (host code only)")
   add_compile_options(
     $<$<COMPILE_LANGUAGE:CXX>:-fsanitize=address>
     $<$<COMPILE_LANGUAGE:CXX>:-fno-omit-frame-pointer>
+    "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fsanitize=address>"
+    "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fno-omit-frame-pointer>"
   )
   add_link_options(-fsanitize=address)
 endif()
@@ -465,8 +477,8 @@ set(CALAMAN_TEST_TIMEOUT_MULTIPLIER
 # ========================================================================
 # Coverage (clang source-based, host code only)
 # ========================================================================
-# Instruments CXX -- and only CXX, like ASAN above -- so nvcc's .cu units are
-# left alone. The .profraw the instrumented binaries drop is merged by
+# Instruments CXX -- and only CXX, unlike ASAN above -- so nvcc's .cu units
+# are left alone. The .profraw the instrumented binaries drop is merged by
 # llvm-profdata and read by llvm-cov, both of which must match the clang
 # version; devtools/coverage.sh drives that post-processing and the 'coverage'
 # preset turns this on in build-coverage/.

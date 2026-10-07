@@ -96,7 +96,7 @@ Things that will bite:
   that there is nothing to ctest — which is not the same as passing.
 - **A green sanitizer preset is green only for what it checks.** The LSan
   suppression, the racecheck/synccheck kernel filter, the timeout multiplier
-  and the gaps (no `.cu` host ASan, no AMD device checking, no `--leak-check`,
+  and the gaps (no AMD device checking, no `--leak-check`,
   no UBSan) are all in `docs/sanitizers.md`. Report a sanitized run against
   that list, and register any new suppression there before adding it. Each
   sanitized preset also runs its **canaries** (label `sanitizer_canary`,
