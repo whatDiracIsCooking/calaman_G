@@ -68,6 +68,13 @@ add_subdirectory(lascl2)
 # it only for readability.
 add_subdirectory(lascl)
 
+# calaman.rscl -- LAPACK's ?rscl: scale a strided VECTOR by 1/a through the same
+# host-side guarded multiplier chain lascl runs for cto/cfrom (?rscl's loop is
+# ?lascl's with cto = 1). Its own kernel is one per-element functor through
+# wwr.extension.parallel_for, so it shares no build edge with lascl -- added
+# next to it only for readability.
+add_subdirectory(rscl)
+
 # calaman.lartg is lacgv's structural sibling (a single per-element functor
 # through wwr.extension.parallel_for), here the batched lift of LAPACK's ?lartg:
 # n plane rotations (c, s, r) from n pairs (f, g). It links only
@@ -119,6 +126,13 @@ add_subdirectory(lansy)
 # ?lanhe). No device code of its own: it runs calaman.lansy's kernel with the
 # Hermitian flag and links calaman.lansy.device, so it follows lansy.
 add_subdirectory(lanhe)
+
+# calaman.lassq -- LAPACK's ?lassq: the over/underflow-safe scaled sum of
+# squares of a vector, accumulated into a caller-held (scale, sumsq) pair. The
+# accumulator the lan* Frobenius norms above take a plain-sum shortcut over, so
+# it is added after them; it shares no build edge with any of them, linking only
+# calaman.common and calaman.error_handling (added one level up).
+add_subdirectory(lassq)
 
 # calaman.lasr -- apply a sequence of plane rotations (LAPACK's ?lasr), plus the
 # block-cooperative lasr_block header (calaman::lasr::header) that the ?steqr
