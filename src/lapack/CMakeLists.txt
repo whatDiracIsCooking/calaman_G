@@ -469,3 +469,12 @@ add_subdirectory(tpttf)
 
 # calaman.tfttp -- RFP (tf) to packed (tp) triangular storage; links tri_index.
 add_subdirectory(tfttp)
+
+# calaman.lansf -- the norm of a symmetric matrix in RFP storage (LAPACK's
+# ?lansf); its device library links tri_index for the RFP map.
+add_subdirectory(lansf)
+
+# calaman.lanhf -- the norm of a Hermitian matrix in RFP storage (LAPACK's
+# ?lanhf). No device code of its own: it runs calaman.lansf's kernel with the
+# Hermitian flag and links calaman.lansf.device, so it follows lansf.
+add_subdirectory(lanhf)
