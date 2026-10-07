@@ -1,6 +1,6 @@
 /**
  * @file interface.cppm
- * @brief Primary interface for calaman.aberth -- every root of a batch of
+ * @brief Primary interface for calaman.polynomial_roots -- every root of a batch of
  *        polynomials, by the Aberth-Ehrlich iteration
  *
  * One device routine over @p batch polynomials of one degree @p n, each solved
@@ -13,7 +13,7 @@
  * with instantiations.cpp, as in calaman.lartg.
  *
  * Usage:
- *   import calaman.aberth;    // also re-exports calaman::Status
+ *   import calaman.polynomial_roots;    // also re-exports calaman::Status
  *   // d_coeffs: batch*(n+1) ascending coefficients; d_roots: batch*n; d_iters: batch
  *   calaman::aberth(stream, n, batch, d_coeffs, d_roots, d_iters, 1e-14, 100);
  */
@@ -25,7 +25,7 @@ module;
 
 #include "aberth_bridge.h"
 
-export module calaman.aberth;
+export module calaman.polynomial_roots;
 
 import std;
 import wwr.runtime_api;

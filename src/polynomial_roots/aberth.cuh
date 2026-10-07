@@ -15,11 +15,11 @@
  *   - Cost is O(n^2 / kWarpSize) per lane per iteration (the Aberth sum).
  *
  * #include'd into a .cu (CUDA) or -x hip device-compiled (HIP) TU: no module
- * face, reached root-relative as "aberth/aberth.cuh". Link calaman.common for
+ * face, reached root-relative as "polynomial_roots/aberth.cuh". Link calaman.common for
  * the src/ root and, through it, wwr.device.
  *
  * Usage:
- *   #include "aberth/aberth.cuh"
+ *   #include "polynomial_roots/aberth.cuh"
  *
  *   __shared__ wwrDoubleComplex roots[2 * kMaxDegree];
  *   auto tile = cg::tiled_partition<kWarpSize>(cg::this_thread_block());
@@ -48,6 +48,22 @@
 namespace calaman::device {
 
 namespace cg = cooperative_groups;
+
+/// @brief 1 / d, pre-scaled by |re|+|im| so |d|^2 cannot overflow or underflow
+///
+/// cuCdiv's guard with the numerator fixed at 1; hipCdiv has no guard at all.
+/// d == 0 gives NaN, as a general complex division would.
+template<complex_fp CT>
+__device__ __forceinline__ CT aberth_recip(const CT d) {
+  using R = ComplexToRealType<CT>;
+  const R re = elem_ops<CT>::real_part(d);
+  const R im = elem_ops<CT>::imag_part(d);
+  const R rs = kOne<R> / (wwr::fabs(re) + wwr::fabs(im));
+  const R br = re * rs;
+  const R bi = im * rs;
+  const R u = rs / (br * br + bi * bi);
+  return make_complex(br * u, -bi * u);
+}
 
 /// @brief Every root of a_0 + a_1 z + ... + a_n z^n, iterated across @p warp_tile
 ///
@@ -126,7 +142,7 @@ __device__ int aberth_warp(cg::thread_block_tile<kWarpSize, ParentT> &warp_tile,
       CT s = kZero<CT>;
       for (int j = 0; j < n; ++j) {
         if (j != i) {
-          s = elem_ops<CT>::add(s, elem_ops<CT>::div(kOne<CT>, elem_ops<CT>::sub(zi, z[j])));
+          s = elem_ops<CT>::add(s, aberth_recip(elem_ops<CT>::sub(zi, z[j])));
         }
       }
       // w = N / (1 - N s) with N = num / den, rearranged so den == 0 is no special case.
