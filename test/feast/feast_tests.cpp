@@ -303,7 +303,12 @@ TEST(FeastArgCheckTests, RejectsBadArgumentsBeforeTouchingTheDevice) {
   EXPECT_EQ(call(n, m0, n, 2.0, 1.0, lower), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "Emin >= Emax";
   EXPECT_EQ(call(n, m0, n, std::nan(""), 2.0, lower), wwr::WWRBLAS_STATUS_INVALID_VALUE)
       << "non-finite Emin";
-  EXPECT_EQ(call(n, m0, n, 1.0, 2.0, static_cast<wwr::wwrblasFillMode_t>(999)),
+  // Neither LOWER nor UPPER, but inside both enums' value ranges (cuBLAS 0..3,
+  // hipBLAS 0..127): a value outside the range, like 999, is UB to load.
+  constexpr auto bad_uplo = static_cast<wwr::wwrblasFillMode_t>(2);
+  static_assert(bad_uplo != wwr::WWRBLAS_FILL_MODE_LOWER &&
+                bad_uplo != wwr::WWRBLAS_FILL_MODE_UPPER);
+  EXPECT_EQ(call(n, m0, n, 1.0, 2.0, bad_uplo),
             wwr::WWRBLAS_STATUS_INVALID_VALUE)
       << "bad uplo";
 

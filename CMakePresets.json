@@ -55,6 +55,17 @@
       }
     },
     {
+      "name": "ubsan",
+      "displayName": "UBSAN Config",
+      "description": "UndefinedBehaviorSanitizer build for host code -- CXX units and the host side of every .cu (Debug + UBSAN with -fno-sanitize-recover, so the first finding aborts the test; separate build-ubsan/ dir)",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-ubsan",
+      "cacheVariables": {
+        "CALAMAN_ENABLE_UBSAN": "ON",
+        "CALAMAN_TEST_TIMEOUT_MULTIPLIER": "3"
+      }
+    },
+    {
       "name": "compute-sanitizer",
       "displayName": "Compute Sanitizer Config",
       "description": "Debug CUDA build whose ctest entries each run under NVIDIA compute-sanitizer (CALAMAN_COMPUTE_SANITIZER_TOOL, default memcheck; reconfigure with -D to switch tool without a rebuild). CUDA only: AMD has no counterpart, and a HIP configure refuses the option.",
@@ -95,6 +106,18 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CALAMAN_ENABLE_ASAN": "ON",
+        "CALAMAN_TEST_TIMEOUT_MULTIPLIER": "3"
+      }
+    },
+    {
+      "name": "hip-ubsan",
+      "binaryDir": "${sourceDir}/build-hip-ubsan",
+      "displayName": "HIP backend, UBSAN",
+      "description": "The ubsan preset against ROCm/HIP: Debug + UndefinedBehaviorSanitizer on host code (CXX units and the host side of every .cu), device code left uninstrumented.",
+      "inherits": "hip",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CALAMAN_ENABLE_UBSAN": "ON",
         "CALAMAN_TEST_TIMEOUT_MULTIPLIER": "3"
       }
     },
@@ -154,6 +177,10 @@
       "configurePreset": "asan"
     },
     {
+      "name": "ubsan",
+      "configurePreset": "ubsan"
+    },
+    {
       "name": "compute-sanitizer",
       "configurePreset": "compute-sanitizer"
     },
@@ -168,6 +195,10 @@
     {
       "name": "hip-asan",
       "configurePreset": "hip-asan"
+    },
+    {
+      "name": "hip-ubsan",
+      "configurePreset": "hip-ubsan"
     },
     {
       "name": "ci-cuda",
@@ -228,6 +259,21 @@
       }
     },
     {
+      "name": "ubsan",
+      "configurePreset": "ubsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "no_sanitizer"
+        }
+      },
+      "environment": {
+        "UBSAN_OPTIONS": "print_stacktrace=1"
+      }
+    },
+    {
       "name": "compute-sanitizer",
       "configurePreset": "compute-sanitizer",
       "output": {
@@ -260,6 +306,21 @@
         "exclude": {
           "label": "no_sanitizer"
         }
+      }
+    },
+    {
+      "name": "hip-ubsan",
+      "configurePreset": "hip-ubsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "no_sanitizer"
+        }
+      },
+      "environment": {
+        "UBSAN_OPTIONS": "print_stacktrace=1"
       }
     },
     {
