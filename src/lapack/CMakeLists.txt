@@ -97,6 +97,11 @@ add_subdirectory(lange)
 # calaman.common and calaman.error_handling (added one level up).
 add_subdirectory(lanst)
 
+# calaman.lanht -- the norm of a Hermitian tridiagonal (LAPACK's ?lanht). No
+# device code of its own: it runs calaman.lanst's kernel with a complex
+# off-diagonal and links calaman.lanst.device, so it follows lanst.
+add_subdirectory(lanht)
+
 # calaman.lansy -- the norm of a symmetric matrix from one triangle (LAPACK's
 # ?lansy), which ?syev scales by. Links only calaman.common and
 # calaman.error_handling (added one level up).

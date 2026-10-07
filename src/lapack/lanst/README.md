@@ -20,7 +20,9 @@ Templated over `float` and `double`.
   (`import calaman.lanst;`, link `calaman::lanst`). One single-block launch:
   each thread folds a contiguous chunk of rows, then `common/block_reduce.cuh`
   folds the partials. One block suffices because the input is only `2n-1`
-  numbers.
+  numbers. The kernel is templated on the off-diagonal type too, so
+  `calaman.lanht` (`?lanht`, a complex `e`) runs it through `lanst_bridge.h`
+  and links `calaman.lanst.device` rather than owning device code.
 - **`calaman::lanst_max_abs<T>(n, d, e)`** — `lanst.h`, header-only and
   `CLM_HOST_DEVICE`, for a kernel that needs `?lanst('M')` of a sub-block from
   one thread, as `?sterf` and `?steqr` do on each unreduced block. A `.cu`

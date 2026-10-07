@@ -63,7 +63,7 @@ Status lanst(const wwr::wwrStream_t stream, const MatrixNorm which, const std::s
   if (n == 0) {
     return wwr::wwrMemsetAsync(d_result, 0, sizeof(T), stream);
   }
-  device::lanst<T>(stream, which, n, d_d, d_e, d_result);
+  device::lanst<T, T>(stream, which, n, d_d, d_e, d_result);
   return wwr::wwrGetLastError();
 }
 

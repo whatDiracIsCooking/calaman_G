@@ -16,9 +16,10 @@ target_include_directories(
             $<INSTALL_INTERFACE:${CALAMAN_INSTALL_INCLUDEDIR}>
 )
 
-# The device-kernel library: one single-block kernel. calaman.common carries the
-# src/ root for common/block_reduce.cuh and common/enums.h plus, through it,
-# wwr.device (runtime.h, cooperative_groups.h, the runtime libs).
+# The device-kernel library: one single-block kernel, also calaman.lanht's (a
+# complex off-diagonal). calaman.common carries the src/ root for
+# common/block_reduce.cuh, common/elem_ops.cuh and common/enums.h plus, through
+# it, wwr.device (runtime.h, cooperative_groups.h, complex.h, the runtime libs).
 calaman_add_gpu_device_library(
   NAME
   calaman.lanst.device
