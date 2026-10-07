@@ -510,3 +510,14 @@ add_subdirectory(lansb)
 # ?lanhb). No device code of its own: it runs calaman.lansb's kernel with the
 # Hermitian flag and links calaman.lansb.device, so it follows lansb.
 add_subdirectory(lanhb)
+
+# calaman.lantr -- the norm of a triangular (trapezoidal) matrix (LAPACK's
+# ?lantr); its device library, templated on the storage layout, links tri_index
+# for the packed map and also serves lantp and lantb.
+add_subdirectory(lantr)
+
+# calaman.lantp / calaman.lantb -- the norm of a triangular matrix in packed /
+# band storage (LAPACK's ?lantp / ?lantb). No device code of their own: they
+# run calaman.lantr's kernel and link calaman.lantr.device, so they follow it.
+add_subdirectory(lantp)
+add_subdirectory(lantb)
