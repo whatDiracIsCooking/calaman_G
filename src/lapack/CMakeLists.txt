@@ -102,6 +102,11 @@ add_subdirectory(lanst)
 # calaman.error_handling (added one level up).
 add_subdirectory(lansy)
 
+# calaman.lanhe -- the norm of a Hermitian matrix from one triangle (LAPACK's
+# ?lanhe). No device code of its own: it runs calaman.lansy's kernel with the
+# Hermitian flag and links calaman.lansy.device, so it follows lansy.
+add_subdirectory(lanhe)
+
 # calaman.lasr -- apply a sequence of plane rotations (LAPACK's ?lasr), plus the
 # block-cooperative lasr_block header (calaman::lasr::header) that the ?steqr
 # kernel includes, so it must precede it. Links only calaman.common and

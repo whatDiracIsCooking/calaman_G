@@ -1,8 +1,8 @@
 # Oracle suite for calaman.lansy -- the ?lansy norm of a symmetric matrix from
-# one triangle. The oracle is the reference ?lansy through LAPACKE, which
-# arrives with calaman::lapack_reference; return early when absent so a missing
-# oracle is a missing TIER named in the configure output, not a silent pass
-# (docs/architecture.md §3).
+# one triangle, s/d/c/z. The oracle is the reference ?lansy through LAPACKE,
+# which arrives with calaman::lapack_reference; return early when absent so a
+# missing oracle is a missing TIER named in the configure output, not a silent
+# pass (docs/architecture.md §3).
 if(NOT TARGET calaman::lapack_reference)
   message(STATUS "calaman::lapack_reference not found; skipping lansy tests")
   return()
@@ -21,6 +21,7 @@ calaman_add_gtest_executable(
   calaman::test::utils::shared_device
   calaman::lapack_reference
   wwr::runtime_api
+  wwr::complex
   wwr::extension::memory_buffer
 )
 
