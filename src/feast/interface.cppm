@@ -10,9 +10,10 @@
  * built for either backend.
  *
  * Exported: feast, feast_bufferSize, FeastOptions/FeastInfo/
- * FeastStopReason, feast_rational_filter. The other partitions' declarations are
- * module-internal; they are re-exported only because every interface partition
- * must be.
+ * FeastStopReason, feast_rational_filter, the feast_resolvent concept, and
+ * linear_operator (calaman.linear_operator). The other partitions' declarations
+ * are module-internal; they are re-exported only because every interface
+ * partition must be.
  *
  * Usage:
  *   import calaman.feast;
@@ -24,6 +25,6 @@ export module calaman.feast;
 export import :quadrature;
 export import :compute_quadrature;
 export import :buffer_size;
-export import :contour_filter;
+export import :resolvent;
 export import :rayleigh_ritz;
 export import :driver;

@@ -312,8 +312,10 @@ plan, not yet code: nothing below is implemented.
 
 - **One concept.** The block operator `op.apply(stream, k, X, Y)`, `Y = A X`
   (n x k, device-resident, ld n), that milestone 11's #301 introduces is defined
-  once, as `linear_operator<Op, T>` in a shared `calaman.operator` module, not
-  as `feast_operator` inside `calaman.feast`.
+  once, as `linear_operator<Op, T>` in a shared `calaman.linear_operator`
+  module, not as `feast_operator` inside `calaman.feast`. (Planned as
+  `calaman.operator`; `operator` is a keyword, so no module name can contain
+  it as a component.)
   lanczos, davidson and feast all constrain on it. `lanczos_matvec` and
   `davidson_sigma` become adapters over it (a single-vector callable is a
   `k = 1` operator), so their existing callers do not change.
@@ -342,7 +344,7 @@ Davidson, which tolerates inexact solves, may be the better home for that case.
 
 **Consequences.**
 
-- #301 (amended 2026-10-07) creates `calaman.operator`, so the Lanczos work
+- #301 (amended 2026-10-07) creates `calaman.linear_operator`, so the Lanczos work
   imports the concept instead of unifying after the fact.
 - The dense shifted solve is backward stable, so §8's relative `tolerance`
   keeps its meaning — applied to `theta`, the transformed Ritz values, not to

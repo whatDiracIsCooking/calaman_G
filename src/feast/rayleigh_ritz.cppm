@@ -5,20 +5,15 @@
  * The :rayleigh_ritz partition of calaman.feast.
  *
  *   basis <- Q from qr(basis)                    orthogonalize
- *   W      = A basis                             symm
+ *   W      = A basis                             op.apply
  *   H      = basis^T W                           gemm, m0 x m0
  *   H      = Y diag(ritz) Y^T                    syevd
  *   pairs inside [Emin, Emax] rotated first      device::feast_select
  *   X      = basis Y,   A X = W Y                two ritz_rotates
  *
- * The filtered subspace is not orthonormal -- rho(A) shrinks each eigenvector
- * direction by a different factor -- so it is orthonormalized before projecting.
- * The paper instead solves the reduced generalized problem
- * H y = lambda (basis^T basis) y; but basis^T basis is only as well conditioned
- * as rho is flat across the subspace -- its smallest eigenvalues go like
- * rho(lambda)^2 for the eigenvalues farthest outside the interval that the
- * subspace still carries -- so it worsens as the filter sharpens or m0 grows. QR
- * never squares that.
+ * The filtered subspace is orthonormalized before projecting, not handled as the
+ * paper's H y = lambda (basis^T basis) y: that Gram matrix's conditioning goes
+ * like rho^2 and worsens as the filter sharpens (README, departure 1).
  *
  * A X comes from W Y rather than a second product with A: the same vectors, at
  * n m0^2 flops instead of n^2 m0.
@@ -41,15 +36,16 @@ module;
 export module calaman.feast:rayleigh_ritz;
 
 import std;
-import wwr.runtime_api;     // wwrStream_t, wwrGetLastError, wwrSuccess
-import wwr.blas;            // wwrblasHandle_t, WWRBLAS_*
-import wwr.solver;          // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
-import wwr.wrappers.blas;   // symm, gemm
-import wwr.wrappers.solver; // syevd
-import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the BLAS calls)
-import calaman.common;      // kOne, kZero, real_fp
-import calaman.orthogonalize; // orthogonalize
-import calaman.ritz;          // ritz_rotate
+import wwr.runtime_api;         // wwrStream_t, wwrGetLastError, wwrSuccess
+import wwr.blas;                // wwrblasHandle_t, WWRBLAS_*
+import wwr.solver;              // wwrsolverDnHandle_t, WWRSOLVER_EIG_MODE_VECTOR
+import wwr.wrappers.blas;       // gemm
+import wwr.wrappers.solver;     // syevd
+import wwr.extension.blas;      // ScopedPointerMode (forces host mode for the BLAS calls)
+import calaman.common;          // kOne, kZero, real_fp
+import calaman.orthogonalize;   // orthogonalize
+import calaman.ritz;            // ritz_rotate
+import calaman.linear_operator; // linear_operator
 import :buffer_size;
 export import calaman.error_handling; // Status, PointerModeStatus
 
@@ -63,14 +59,13 @@ namespace calaman {
  * the other m0 - m pairs follow. Factorization failures land in s.qr_info and
  * s.eig_info; the count lands in s.status.
  *
- * @param uplo Which triangle of @p d_A is stored.
+ * @param op   A, applied once to the m0-column basis.
  * @param d_X  Out: n x m0, leading dimension n.
  */
-template<calaman::real_fp T>
+template<calaman::real_fp T, linear_operator<T> Op>
 Status rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
-                     wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
-                     const T *d_A, const int lda, const int m0, const T Emin, const T Emax,
-                     const FeastSlices<T> &s, T *d_lambda, T *d_X) {
+                     wwr::wwrStream_t stream, Op &op, const int n, const int m0, const T Emin,
+                     const T Emax, const FeastSlices<T> &s, T *d_lambda, T *d_X) {
   wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
   const wwr::extension::ScopedPointerMode mode{cublas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
                                                PointerModeStatus{&pm_status}};
@@ -79,8 +74,7 @@ Status rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_
   orthogonalize<T>(cusolver_handle, n, m0, s.basis, s.scratch, s.lwork_qr, s.qr_info,
                    s.qr_info + 1);
 
-  CLM_TRY(wwr::symm<T, int>(cublas_handle, wwr::WWRBLAS_SIDE_LEFT, uplo, n, m0, &kOne<T>, d_A, lda,
-                            s.basis, n, &kZero<T>, s.a_basis, n));
+  CLM_TRY(op.apply(stream, m0, s.basis, s.a_basis));
 
   CLM_TRY(wwr::gemm<T, int>(cublas_handle, wwr::WWRBLAS_OP_T, wwr::WWRBLAS_OP_N, m0, m0, n,
                             &kOne<T>, s.basis, n, s.a_basis, n, &kZero<T>, s.projected, m0));
@@ -97,19 +91,6 @@ Status rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_
   CLM_TRY(ritz_rotate<T>(cublas_handle, n, m0, m0, s.basis, n, s.rotated, m0, d_X, n));
   CLM_TRY(ritz_rotate<T>(cublas_handle, n, m0, m0, s.a_basis, n, s.rotated, m0, s.a_ritz, n));
 
-  return wwr::WWRBLAS_STATUS_SUCCESS;
-}
-
-/**
- * @brief ||A||_1 into s.norm_a, the scale residuals() measures against.
- *        Once per solve.
- */
-template<calaman::real_fp T>
-Status matrix_norm(wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n,
-                   const T *d_A, const int lda, const FeastSlices<T> &s) {
-  device::feast_sym_norm1(stream, uplo == wwr::WWRBLAS_FILL_MODE_LOWER, n, d_A, lda, s.colsum,
-                          s.norm_a);
-  CLM_TRY(wwr::wwrGetLastError());
   return wwr::WWRBLAS_STATUS_SUCCESS;
 }
 

@@ -18,14 +18,16 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 |---|---|
 | `:quadrature` | Gauss–Legendre nodes and weights, `N = 4, 8` |
 | `:compute_quadrature` | the contour `Z_e, w_e` for an interval, and the rational filter `ρ` it defines |
-| `:buffer_size` | the single-buffer workspace layout and its sizing |
-| `:contour_filter` | `ρ(A) Y`, as `Ne` shifted solves in batched BLAS calls |
+| `:buffer_size` | the driver's `O(n·m0)` workspace, the dense entry point's single-buffer layout, and its sizing |
+| `:resolvent` | the `feast_resolvent` concept, and `DenseResolvent`: `ρ(A) Y` as `Ne` shifted solves in batched BLAS calls |
 | `:rayleigh_ritz` | QR, projection, `syevd`, selection, residuals |
 | `:driver` | the iteration |
 
 Only `feast`, `feast_bufferSize`, `FeastOptions`, `FeastInfo`,
-`FeastStopReason` and `feast_rational_filter` are exported. The rest — the
-per-iteration steps, `FeastSlices`, the contour and quadrature tables — are
+`FeastStopReason`, `feast_rational_filter` and the `feast_resolvent` concept
+(with `linear_operator`, re-exported from `calaman.linear_operator`) are
+exported. The rest — the per-iteration steps, `DenseResolvent`, `FeastSlices`,
+the contour and quadrature tables — are
 module-internal: reachable from the header-only `feast` template when an
 importer instantiates it, but not nameable by that importer.
 
@@ -61,11 +63,22 @@ the result extracts them.
 ```
 1. basis = ρ(A) Q = Σ_e Re[ w_e (Z_e I − A)⁻¹ Q ]      Ne shifted solves
 2. basis ← Q-factor of qr(basis)
-3. H = basisᵀ A basis;  H = Y diag(ritz) Yᵀ             symm, gemm, syevd
+3. H = basisᵀ A basis;  H = Y diag(ritz) Yᵀ             op.apply, gemm, syevd
 4. rotate the pairs with ritz ∈ [Emin, Emax] to the front
 5. Q = basis Y;  residuals of the pairs inside
 6. stop once m repeats and every residual is below tol
 ```
+
+## Resolvent models
+
+The driver (`feast_iterate`) never reads `A`: it is generic over a
+`feast_resolvent` model, a `linear_operator` (`Y = A X`, used by Rayleigh–Ritz)
+that also has `prepare(stream, contour)`, once per solve, and
+`filter(stream, contour, k, Y, out)`, `out = ρ(A) Y`, once per iteration. Each
+model carves its own workspace; the driver's `FeastSlices` is only the
+`O(n·m0)` Rayleigh–Ritz part. `feast` and `feast_bufferSize` are the dense
+model, `DenseResolvent`, behind the original signatures. The plan for
+matrix-free models is `docs/architecture.md` §9.
 
 ## One stream
 
@@ -87,9 +100,10 @@ components go through `complex.h`'s `wwrCreal*`/`make_wwr*Complex` accessors
 (never `.x`/`.y`, which `hipComplex` lacks), and the block reductions are
 shared-memory tree-reduces rather than warp shuffles or the float-bits
 `atomicMax` trick — both CUDA-only spellings. Everything the host needs to decide
-an iteration's outcome — the count, the largest residual, every factorization's
+an iteration's outcome — the count, the largest residual, the QR and `syevd`
 info — lands in one small status block, so the loop synchronizes once per
-iteration.
+iteration. The `Ne` LU infos are read once, by `DenseResolvent::prepare`, which
+synchronizes once per solve.
 
 `getrfBatched` is aimed at many small matrices. With only `Ne ≤ 8` large ones it
 is not the fastest LU available, but the factorization happens once per solve,
