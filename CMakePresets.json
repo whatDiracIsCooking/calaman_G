@@ -46,7 +46,7 @@
     {
       "name": "asan",
       "displayName": "ASAN Config",
-      "description": "AddressSanitizer build for host code memory error detection (Debug + ASAN, separate build-asan/ dir)",
+      "description": "AddressSanitizer build for host code memory error detection -- CXX units and the host side of every .cu (Debug + ASAN, separate build-asan/ dir)",
       "inherits": "debug",
       "binaryDir": "${sourceDir}/build-asan",
       "cacheVariables": {
@@ -90,7 +90,7 @@
       "name": "hip-asan",
       "binaryDir": "${sourceDir}/build-hip-asan",
       "displayName": "HIP backend, ASAN",
-      "description": "The asan preset against ROCm/HIP: Debug + AddressSanitizer on host (CXX) code, device code left uninstrumented.",
+      "description": "The asan preset against ROCm/HIP: Debug + AddressSanitizer on host code (CXX units and the host side of every .cu), device code left uninstrumented.",
       "inherits": "hip",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",

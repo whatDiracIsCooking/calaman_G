@@ -4,7 +4,8 @@
 # preset and is absent everywhere else; docs/sanitizers.md lists which canary
 # proves which entry.
 #
-#   asan / hip-asan      host: heap-buffer-overflow (ASan), leak (LSan)
+#   asan / hip-asan      host: heap-buffer-overflow in a .cpp and in a .cu's
+#                        host pass (ASan), leak (LSan)
 #   compute-sanitizer    device: the canary for CALAMAN_COMPUTE_SANITIZER_TOOL
 
 if(CALAMAN_ENABLE_ASAN)
@@ -31,6 +32,31 @@ if(CALAMAN_ENABLE_ASAN)
     leak
     EXPECT
     "ERROR: LeakSanitizer: detected memory leaks"
+  )
+
+  # A host-side overflow inside a .cu, in a device library like any module's so
+  # it gets the flags their host passes get. Its own binary, so the one above
+  # stays free of the GPU runtime.
+  calaman_add_gpu_device_library(
+    NAME
+    calaman.sanitizer_canaries.host_cu.device
+    SOURCES
+    host_cu_canary.cu
+    LINK_PRIVATE
+    wwr::device
+  )
+  add_executable(sanitizer_canary_host_cu host_cu_main.cpp)
+  target_link_libraries(
+    sanitizer_canary_host_cu PRIVATE calaman.sanitizer_canaries.host_cu.device
+  )
+  _calaman_disable_cuda_device_linking(sanitizer_canary_host_cu)
+  calaman_add_sanitizer_canary(
+    NAME
+    sanitizer_canary.asan.cu_heap_buffer_overflow
+    TARGET
+    sanitizer_canary_host_cu
+    EXPECT
+    "ERROR: AddressSanitizer: heap-buffer-overflow"
   )
 endif()
 

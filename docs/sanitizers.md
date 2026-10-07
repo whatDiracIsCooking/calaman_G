@@ -148,19 +148,27 @@ driver 580.126.20, compute-sanitizer 2025.3.1, NVIDIA RTX 3080 (`sm_86`); ROCm
 
 The fields read the same; for a gap, *Why vendor-side* says why it is open.
 
-### G1. Host code in `.cu` files is not ASan-instrumented
+### G1. Closed: host code in `.cu` files is ASan-instrumented
 
-- **What is off:** `CALAMAN_ENABLE_ASAN` adds `-fsanitize=address` to `CXX`
-  units only; every `.cu` (launch wrappers, functor setup) builds without it.
-- **Symptom:** none — a host-side overflow in a `.cu` would pass.
-- **Observed on:** the default toolchain above.
-- **Why vendor-side:** open, not vendor: `CMAKE_CUDA_HOST_COMPILER` is unset,
-  so nvcc's host compiler is not the clang the ASan runtime comes from.
-- **Evidence:** the ASan block in `CMakeLists.txt` is `$<COMPILE_LANGUAGE:CXX>`
-  only; `build-asan/build.ninja` shows no `-fsanitize` on a `.cu` compile.
-- **Re-verify:** n/a.
+- **What is off:** nothing. Kept under its number so citations still resolve.
+  It was: under CUDA, `CALAMAN_ENABLE_ASAN` reached `CXX` units only, and every
+  `.cu` (launch wrappers, functor setup) built without `-fsanitize`.
+- **Symptom:** n/a — before #231, a host-side overflow in a `.cu` passed.
+- **Observed on:** the default toolchain above (nvcc 13.0.88 with a clang
+  20.1.8 host compiler); ROCm 7.2.4 for HIP.
+- **Why vendor-side:** n/a. The fix: on CUDA, `CMAKE_CUDA_HOST_COMPILER`
+  defaults to the CXX clang in every build, not only sanitized ones, so one
+  ASan runtime serves both halves, and the ASan block passes
+  `-Xcompiler=-fsanitize=address` / `-fno-omit-frame-pointer` to CUDA units
+  (`CMakeLists.txt`). HIP never had the gap: a `.cu` there is a `CXX` unit
+  (`-x hip`), so the CXX-gated flags already reached its host pass.
+- **Evidence:** `build-asan/build.ninja` shows `-Xcompiler=-fsanitize=address`
+  on every `.cu` compile, `build-hip-asan/build.ninja` `-fsanitize=address`;
+  the canary below goes red (exit 0) when the CUDA flags are dropped.
+- **Re-verify:** any CUDA bump — nvcc's supported clang range is per release —
+  and any clang bump.
 - **Upstream:** n/a.
-- **Proven by:** none yet. Tracked by #231.
+- **Proven by:** `sanitizer_canary.asan.cu_heap_buffer_overflow`.
 
 ### G2. No device memory checking on AMD
 
@@ -239,6 +247,7 @@ every other; all carry the `sanitizer_canary` label.
 | Canary | Preset | Defect | Expected report |
 |---|---|---|---|
 | `asan.heap_buffer_overflow` | `asan`, `hip-asan` | host write one past a `new[]` | `AddressSanitizer: heap-buffer-overflow` |
+| `asan.cu_heap_buffer_overflow` | `asan`, `hip-asan` | host write one past a `new[]` in a `.cu` launch wrapper | `AddressSanitizer: heap-buffer-overflow` |
 | `lsan.leak` | `asan`, `hip-asan` | host `new[]` dropped in `calaman::canary` | `LeakSanitizer: detected memory leaks` |
 | `compute_sanitizer.memcheck` | `compute-sanitizer`, tool `memcheck` | global write one past the allocation | `Invalid __global__ write` |
 | `compute_sanitizer.initcheck` | tool `initcheck` | read of never-written device memory | `Uninitialized __global__ memory read` |
