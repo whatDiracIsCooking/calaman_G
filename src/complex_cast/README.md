@@ -122,5 +122,6 @@ instantiations survive. Template instantiations are declared `extern template` i
 `test/complex_cast/` (`ComplexCastSpecTests`, REQUIRES_GPU) checks the spec
 directly, bit for bit: the flat round-trip, `set_*` preserving the other
 component, the `count == 0` no-op, and the strided `split_planes` /
-`merge_planes` round-trip with its padding untouched. `calaman.lacrm`'s oracle
-suite exercises the strided pair against the reference LAPACK.
+`merge_planes` round-trip with its padding untouched. The `calaman.lacrm` and
+`calaman.larcm` oracle suites exercise the strided pair against the reference
+LAPACK.

@@ -530,3 +530,7 @@ add_subdirectory(lagtm)
 # real gemms around calaman.complex_cast's split_planes / merge_planes (added
 # one level up), which calaman.larcm reuses.
 add_subdirectory(lacrm)
+
+# calaman.larcm -- real times complex matrix multiply (LAPACK's ?larcm): the
+# mirror of calaman.lacrm, splitting the complex B instead of A.
+add_subdirectory(larcm)
