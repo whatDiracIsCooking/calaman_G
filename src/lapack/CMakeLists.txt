@@ -541,3 +541,5 @@ add_subdirectory(larcm)
 # is the first of them and follows it.
 add_subdirectory(rfp_blocks)
 add_subdirectory(hfrk)
+# calaman.tfsm -- triangular solve with A in RFP (?tfsm), the second consumer.
+add_subdirectory(tfsm)
