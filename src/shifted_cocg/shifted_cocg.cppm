@@ -220,12 +220,19 @@ Status shifted_cocg_run(wwr::wwrStream_t stream, Op &op, const int n, const int 
   const auto all_done = [&] {
     return std::ranges::all_of(done, [](const int d) { return d != -1; });
   };
+  const auto failed = [&] {
+    return std::ranges::any_of(res, [](const T r) { return std::isnan(r); });
+  };
 
   info->iterations = 0;
   info->reason = ShiftedCocgStopReason::MaxIterations;
   info->convergence_checks = 0;
   CLM_TRY(read_back());
-  for (int step = 1; !all_done() && step <= options.max_iterations; ++step) {
+  // A non-finite column of B starts with a NaN residual (see cocg_start).
+  if (failed()) {
+    info->reason = ShiftedCocgStopReason::NumericalFailure;
+  }
+  for (int step = 1; !failed() && !all_done() && step <= options.max_iterations; ++step) {
     CLM_TRY(op.apply(stream, k, v_cur, v_next));
     device::cocg_lanczos<T>(stream, n, k, v_prev, v_cur, v_next, beta_cur, alpha, beta_next);
     device::cocg_shift<T>(stream, k, ne, step, options.tolerance, s.shift_re, s.shift_im, alpha,
@@ -242,7 +249,7 @@ Status shifted_cocg_run(wwr::wwrStream_t stream, Op &op, const int n, const int 
       continue;
     }
     CLM_TRY(read_back());
-    if (std::ranges::any_of(res, [](const T r) { return std::isnan(r); })) {
+    if (failed()) {
       info->reason = ShiftedCocgStopReason::NumericalFailure;
       break;
     }

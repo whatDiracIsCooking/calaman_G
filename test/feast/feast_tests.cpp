@@ -931,6 +931,30 @@ TEST(FeastKrylovResolventTests, InnerNaNIsNumericalFailure) {
   destroy_handles(h);
 }
 
+TEST(FeastKrylovResolventTests, StartBlockNaNIsNumericalFailure) {
+  const int n = 24;
+  const auto a = random_symmetric<double>(n, 7);
+  const int m0 = 6;
+
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  KrylovFixture<double> fx(handle, h.blas, n, a, m0);
+  ShiftedCocgOptions<double> inner;
+  inner.tolerance = 1e-12;
+  inner.max_iterations = 20 * n;
+  KrylovResolvent<SymmOperator<double>, double> krylov{fx.op, n, fx.slices, inner};
+
+  auto q0 = random_matrix<double>(n, m0, 8);
+  q0[static_cast<std::size_t>(2 * n + 5)] = std::numeric_limits<double>::quiet_NaN();
+  const auto r = run_feast_model<double, 8>(handle, h, krylov, n, -0.5, 0.5, m0, q0);
+
+  EXPECT_EQ(r.status, wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
+  EXPECT_EQ(r.info.reason, FeastStopReason::NumericalFailure);
+  EXPECT_EQ(krylov.last_solve().reason, ShiftedCocgStopReason::NumericalFailure);
+  EXPECT_EQ(r.info.iterations, 0) << "failed inside the first filter";
+  destroy_handles(h);
+}
+
 // ========================================================================
 // The residual form (IFEAST): filter_residual against the dense filter
 // ========================================================================

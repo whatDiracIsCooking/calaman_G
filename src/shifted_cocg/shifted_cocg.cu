@@ -78,7 +78,7 @@ __global__ void start_columns_kernel(const int n, const T *B, T *v_prev, T *v_cu
     sum += b * b;
   }
   const T norm = sqrt_(block_reduce<kBlock>(sum, AddOp{}));
-  const T scale = norm > T(0) ? T(1) / norm : T(0);
+  const T scale = norm > T(0) && isfinite(norm) ? T(1) / norm : T(0);
   for (std::size_t i = threadIdx.x; i < nz; i += blockDim.x) {
     v_cur[off + i] = B[off + i] * scale;
     v_prev[off + i] = T(0);
@@ -90,6 +90,8 @@ __global__ void start_columns_kernel(const int n, const T *B, T *v_prev, T *v_cu
 }
 
 /// One thread per pair: eta = 1, zeta = bnorm_j (step 1 reads it as zeta_1).
+/// A zero column is done at step 0 with residual 0; a non-finite one is done
+/// at step 0 with residual NaN, which the host reads as a numerical failure.
 template<typename T>
 __global__ void start_pairs_kernel(const int k, const int pairs_count, const T *bnorm,
                                    CocgPairs<T> pairs) {
@@ -104,8 +106,9 @@ __global__ void start_pairs_kernel(const int k, const int pairs_count, const T *
   pairs.ieta_i[p] = T(0);
   pairs.zeta_r[p] = b;
   pairs.zeta_i[p] = T(0);
-  pairs.res[p] = b > T(0) ? T(1) : T(0);
-  pairs.done_step[p] = b > T(0) ? -1 : 0;
+  const bool live = b > T(0) && isfinite(b);
+  pairs.res[p] = live ? T(1) : (b == T(0) ? T(0) : T(NAN));
+  pairs.done_step[p] = live ? -1 : 0;
 }
 
 /// One block per column: the three-term Lanczos step on w = A v_cur.
