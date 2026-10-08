@@ -1,7 +1,9 @@
 # calaman.lanczos
 
 Thick-restart **Lanczos** for the `nev` extreme eigenpairs of a real symmetric
-operator known only through a single-vector matrix-vector-product callback.
+operator known only as a [`linear_operator`](../linear_operator/linear_operator.cppm)
+(the block-operator concept shared with davidson and feast) or a single-vector
+matrix-vector-product callback.
 
 Not a LAPACK routine, so it is its own module rather than a partition of a
 LAPACK-named one, like `calaman.davidson` and `calaman.feast`.
@@ -25,16 +27,23 @@ deferred — [`docs/architecture.md` §9](../../docs/architecture.md) says why.
 
 | Partition | Contents |
 |---|---|
-| `:types` | `LanczosWhich` (alias of `calaman.ritz`'s `RitzWhich`), `LanczosOptions`, `LanczosStopReason`, `LanczosInfo`, the `lanczos_matvec` concept |
+| `:types` | `LanczosWhich` (alias of `calaman.ritz`'s `RitzWhich`), `LanczosOptions`, `LanczosStopReason`, `LanczosInfo`, the `lanczos_matvec` concept and its `LanczosMatvecOperator` adapter |
 | `:buffer_size` | `LanczosSlices`, `lanczos_shape_ok`, `lanczos_restart_keep`, `make_lanczos_slices` / `lanczos_bufferSize` |
 | `:ritz` | `LanczosRitz`, `lanczos_ritz_extract` / `_select` / `_compact` / `_vectors` |
 | `:solve` | `lanczos_solve` |
 
 ## The idea
 
-The operator enters as a callable constrained by `lanczos_matvec` (`y = A x`,
-one device vector) — a template parameter, not a `std::function`, so a lambda is
-passed and inlined with no type erasure. Each cycle runs `ncv` Lanczos steps: a matvec, `alpha_j = v_j^T w`,
+The operator enters as a model of `calaman.linear_operator`'s
+`linear_operator<Op, T>` (`op.apply(stream, k, X, Y)`, `Y = A X`), which the
+driver always applies with `k = 1` — a template parameter, not a
+`std::function`, so the call inlines with no type erasure. `op` is taken by
+non-const lvalue reference: a model may hold state. A plain single-vector
+callable constrained by `lanczos_matvec` (`y = A x`, one device vector) still
+works: an overload of `lanczos_solve` wraps it in `LanczosMatvecOperator`
+(one callback call per column) and forwards, so the matvec count and the call
+sequence are the operator path's exactly. A type that models both concepts
+takes the operator path. Each cycle runs `ncv` Lanczos steps: a matvec, `alpha_j = v_j^T w`,
 full reorthogonalization of `w` against the basis `V` by classical Gram–Schmidt
 applied twice (CGS2), `beta_j = ||w||`, and `v_{j+1} = w / beta_j`. The scalars
 stay on the device (pointer mode DEVICE); one status read per cycle is the only
@@ -81,9 +90,9 @@ exported) that the restart loop reuses:
 | `lanczos_cycle_ritz` | `lanczos_ritz_extract`; after an early breakdown, recovery and a re-extract | 1, plus 2 per recovery |
 | `lanczos_restart_basis` | the thick restart below; run every cycle, so the wanted vectors are columns of `V` whether or not the loop goes on | 0, or 1 after a last-step breakdown |
 
-The matvec callback always runs with the BLAS handle in **host** pointer mode;
-the caller's mode is restored on return. Every callback call counts in
-`LanczosInfo::matvecs`.
+`op.apply` (and so a wrapped matvec callback) always runs with the BLAS handle
+in **host** pointer mode; the caller's mode is restored on return. Every
+`k = 1` apply counts in `LanczosInfo::matvecs`.
 
 **Breakdown recovery.** The status block is read only at the cycle's sync, so
 a breakdown at step `j < ncv - 1` still runs the remaining steps (on a frozen,
@@ -162,7 +171,8 @@ make_lanczos_slices<double>(solver, n, nev, ncv, d_work, &s, &lwork);
 
 LanczosInfo info;
 lanczos_solve<double>(blas, solver, stream, n, nev, ncv, LanczosWhich::smallest, s,
-                      matvec, d_eigenvalues, d_eigenvectors, &info);
+                      op, d_eigenvalues, d_eigenvectors, &info);
+// op: any linear_operator<double> lvalue, or a lanczos_matvec<double> callable
 // converged(info), or info.reason == LanczosStopReason::MaxIterations
 ```
 
@@ -170,7 +180,7 @@ lanczos_solve<double>(blas, solver, stream, n, nev, ncv, LanczosWhich::smallest,
 
 | File | Role |
 |------|------|
-| `types.cppm` | `:types` — options, result, end selection, matvec callback |
+| `types.cppm` | `:types` — options, result, end selection, matvec callback and its operator adapter |
 | `buffer_size.cppm` | `:buffer_size` — slices, workspace layout, sizing |
 | `ritz.cppm` | `:ritz` — `syevd` on `T`, end selection, residual estimates, compaction, Ritz vectors |
 | `solve.cppm` | `:solve` — `lanczos_solve`, its cycle stages, the thick restart and breakdown recovery |

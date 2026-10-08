@@ -27,7 +27,7 @@ add_subdirectory(iterative)
 
 # calaman.linear_operator -- linear_operator, the block-operator concept the
 # matrix-free solvers share. Links only error_handling from src/; it must
-# precede feast, which links it.
+# precede feast and lanczos, which link it.
 add_subdirectory(linear_operator)
 
 # calaman.ritz -- ritz_select/classify_ritz/ritz_rotate, the Ritz-pair layer
@@ -111,9 +111,9 @@ add_subdirectory(feast)
 add_subdirectory(davidson)
 
 # calaman.lanczos -- thick-restart Lanczos for the extreme eigenpairs of a
-# symmetric operator given as a single-vector matvec callback. Links only
-# common and error_handling from src/, so its placement is free; grouped with
-# davidson as the other callback-driven eigensolver.
+# symmetric linear_operator (or a single-vector matvec callback). After the
+# iterative, linear_operator and ritz layers it links; grouped with davidson
+# as the other matrix-free eigensolver.
 add_subdirectory(lanczos)
 
 # calaman.diis -- Pulay DIIS extrapolation over a device-resident ring of

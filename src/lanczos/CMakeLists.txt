@@ -1,5 +1,5 @@
 # calaman.lanczos -- thick-restart Lanczos for the extreme eigenpairs of a real
-# symmetric operator given as a single-vector matvec callback. Not a LAPACK
+# symmetric linear_operator (or a single-vector matvec callback). Not a LAPACK
 # routine, so it is its own module, like calaman.davidson.
 
 # The device-kernel library behind lanczos_bridge.h: the step write/normalise,
@@ -16,7 +16,8 @@ calaman_add_gpu_device_library(
   calaman::common
 )
 
-# The module: :types holds the options/result/which/callback; :buffer_size the
+# The module: :types holds the options/result/which/callback and its operator
+# adapter; :buffer_size the
 # workspace; :ritz the Ritz extraction; :solve the driver. Header-only
 # templates, so no instantiations.cpp.
 #
@@ -26,9 +27,10 @@ calaman_add_gpu_device_library(
 # (wwr.wrappers.solver), ScopedPointerMode (wwr.extension.blas), the random
 # start (wwr.extension.init_state, wwr.extension.random_normal), real_fp and
 # the workspace carving (calaman.common), Status (calaman.error_handling),
-# IterationInfo, LanczosInfo's base (calaman.iterative, re-exported), and
-# RitzWhich/RitzSelection/ritz_select/classify_ritz/ritz_rotate (calaman.ritz,
-# re-exported).
+# IterationInfo, LanczosInfo's base (calaman.iterative, re-exported),
+# linear_operator, what lanczos_solve constrains on (calaman.linear_operator,
+# re-exported), and RitzWhich/RitzSelection/ritz_select/classify_ritz/
+# ritz_rotate (calaman.ritz, re-exported).
 #
 # LINK_PRIVATE wwr::backend and INCLUDE_DIRS_PRIVATE are for lanczos_bridge.h,
 # which :buffer_size, :ritz and :solve include in their GMF: a GMF cannot
@@ -57,6 +59,7 @@ calaman_add_cxx_module_library(
   calaman::common
   calaman::error_handling
   calaman::iterative
+  calaman::linear_operator
   calaman::ritz
   LINK_PRIVATE
   wwr::backend

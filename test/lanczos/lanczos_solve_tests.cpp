@@ -13,7 +13,8 @@
 // reason MaxIterations, eigenvalues still written), the true-residual pass, breakdown recovery
 // (an invariant subspace from e_0, and one per distinct eigenvalue of a
 // low-rank-spectrum A), a repeated eigenvalue found once (the documented
-// single-vector limitation), and a zero start vector rejected. REQUIRES_GPU.
+// single-vector limitation), a zero start vector rejected, and a
+// linear_operator model taking the matvec lambda's exact path. REQUIRES_GPU.
 
 #include <gtest/gtest.h>
 
@@ -68,6 +69,35 @@ auto symv_matvec(wwr::wwrblasHandle_t blas, int n, const T *d_a) {
                              1);
   };
 }
+
+/// The same A as a linear_operator model: one symv per column, counting its
+/// applies and noting any made outside HOST pointer mode.
+template<typename T>
+struct SymvOperator {
+  wwr::wwrblasHandle_t blas;
+  int n;
+  const T *d_a;
+  int applies = 0;
+  bool host_mode = true;
+
+  Status apply(wwr::wwrStream_t stream, int k, const T *X, T *Y) {
+    ++applies;
+    wwr::wwrblasPointerMode_t mode{};
+    const Status got = wwr::wwrblasGetPointerMode(blas, &mode);
+    host_mode = host_mode && got.ok() && mode == wwr::WWRBLAS_POINTER_MODE_HOST;
+    const auto matvec = symv_matvec<T>(blas, n, d_a);
+    const auto nz = static_cast<std::size_t>(n);
+    for (std::size_t j = 0; j < static_cast<std::size_t>(k); ++j) {
+      const Status st = matvec(stream, X + j * nz, Y + j * nz);
+      if (!st.ok()) {
+        return st;
+      }
+    }
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+};
+static_assert(linear_operator<SymvOperator<float>, float>);
+static_assert(linear_operator<SymvOperator<double>, double>);
 
 // ── host side ────────────────────────────────────────────────────────────────
 
@@ -191,6 +221,11 @@ struct Rig {
     return lanczos_solve<T>(h.blas, h.solver, stream, n, nev, ncv, which, s,
                             symv_matvec<T>(h.blas, n, d_a.data()), d_w.data(), d_x.data(), info,
                             options);
+  }
+  Status solve(LanczosWhich which, const LanczosOptions<T> &options, SymvOperator<T> &op,
+               LanczosInfo *info) {
+    return lanczos_solve<T>(h.blas, h.solver, stream, n, nev, ncv, which, s, op, d_w.data(),
+                            d_x.data(), info, options);
   }
   std::vector<T> eigenvalues() { return download(d_w.data(), static_cast<std::size_t>(nev)); }
 };
@@ -415,6 +450,48 @@ TEST(LanczosSolveReferenceTests, TrueResidualPassDouble) {
 }
 TEST(LanczosSolveReferenceTests, TrueResidualPassFloat) {
   check_verified<float>();
+}
+
+// ── linear_operator model ────────────────────────────────────────────────────
+
+// A linear_operator model and the matvec lambda over the same A take the same
+// path: restarts and the true-residual pass included, the same iterations and
+// matvecs, one k = 1 apply per matvec, every one in HOST pointer mode.
+template<typename T>
+void check_operator_model() {
+  constexpr int n = 100;
+  constexpr int nev = 3;
+  constexpr int ncv = 16;
+  const auto a = from_spectrum<T>(clustered_spectrum(n), 31u);
+  const auto expected = reference_selection(a, n, nev, LanczosWhich::smallest);
+  auto options = tight_options<T>();
+  options.verify_residuals = true;
+  Rig<T> rig(a, n, nev, ncv);
+
+  LanczosInfo by_matvec;
+  ASSERT_TRUE(rig.solve(LanczosWhich::smallest, options, &by_matvec).ok());
+  SymvOperator<T> op{rig.h.blas, n, rig.d_a.data()};
+  LanczosInfo by_operator;
+  const Status st = rig.solve(LanczosWhich::smallest, options, op, &by_operator);
+  EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
+  EXPECT_CONVERGED(by_operator);
+  EXPECT_EQ(by_operator.iterations, by_matvec.iterations);
+  EXPECT_EQ(by_operator.matvecs, by_matvec.matvecs);
+  EXPECT_EQ(op.applies, by_operator.matvecs);
+  EXPECT_TRUE(op.host_mode);
+
+  const auto w = rig.eigenvalues();
+  const T tol = factorization_tol<T>(frobenius_norm(a), n, n);
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_NEAR(w[i], expected[i], tol) << i;
+  }
+}
+
+TEST(LanczosSolveReferenceTests, OperatorModelMatchesMatvecDouble) {
+  check_operator_model<double>();
+}
+TEST(LanczosSolveReferenceTests, OperatorModelMatchesMatvecFloat) {
+  check_operator_model<float>();
 }
 
 // ── breakdown recovery ───────────────────────────────────────────────────────
