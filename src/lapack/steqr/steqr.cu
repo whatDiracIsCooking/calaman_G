@@ -13,9 +13,11 @@
 // The machine constants (DLAMCH 'E'/'S' and the ssfmin/ssfmax scaling bounds)
 // and ?lartg's thresholds are computed on the host and passed in. COMPZ = N
 // sorts by the same selection sort with no swaps instead of DLASRT: the sorted
-// eigenvalues are identical. Shared unchanged between both backends.
+// eigenvalues are identical. ZSTEQR is the same chase: (d, e) and the rotations
+// stay real (R), only Z is complex (T). Shared unchanged between both backends.
 #include "steqr_bridge.h"
 
+#include "common/elem_ops.cuh"
 #include "lapack/lanst/lanst.h"
 #include "lapack/lartg/lartg.cuh"
 #include "lapack/lasr/lasr.h"
@@ -389,11 +391,13 @@ __device__ Cmd advance(Chase<T> &st, const SteqrConsts<T> &k, const LartgThresho
   }
 }
 
-/// @brief [kernel] ?steqr on (d, e), Z updated by the whole block
-template<typename T>
-__global__ void steqr_kernel(const CompZ compz, const int n, T *const d, T *const e, T *const z,
-                             const int ldz, T *const work, int *const info,
-                             const SteqrConsts<T> consts, const LartgThresholds<T> th) {
+/// @brief [kernel] ?steqr on the real (d, e), Z (real or complex) updated by
+///        the whole block
+template<typename T, typename R>
+__global__ void steqr_kernel(const CompZ compz, const int n, R *const d, R *const e, T *const z,
+                             const int ldz, R *const work, int *const info,
+                             const SteqrConsts<R> consts, const LartgThresholds<R> th) {
+  using ops = elem_ops<T>;
   const unsigned int tid = threadIdx.x;
   const bool wantz = compz != CompZ::N;
   const std::size_t ld = static_cast<std::size_t>(ldz);
@@ -406,7 +410,7 @@ __global__ void steqr_kernel(const CompZ compz, const int n, T *const d, T *cons
     for (std::size_t idx = tid; idx < nn * nn; idx += blockDim.x) {
       const std::size_t i = idx % nn;
       const std::size_t j = idx / nn;
-      z[i + j * ld] = i == j ? T{1} : T{0};
+      z[i + j * ld] = ops::from_real(i == j ? R{1} : R{0});
     }
   }
   if (n <= 1) {
@@ -414,7 +418,7 @@ __global__ void steqr_kernel(const CompZ compz, const int n, T *const d, T *cons
   }
 
   __shared__ Cmd cmd;
-  Chase<T> st{};
+  Chase<R> st{};
   st.label = Label::split;
   st.l1 = 1;
   st.nmaxit = n * kMaxIt;
@@ -446,18 +450,27 @@ __global__ void steqr_kernel(const CompZ compz, const int n, T *const d, T *cons
 
 } // namespace
 
-template<typename T>
-void steqr(const wwr::wwrStream_t stream, const CompZ compz, const int n, T *const d, T *const e,
-           T *const z, const int ldz, T *const work, int *const info) {
-  steqr_kernel<T><<<1, kBlock, 0, stream>>>(compz, n, d, e, z, ldz, work, info,
-                                            steqr_consts<T>(), lartg_thresholds<T>());
+template<typename T, typename R>
+void steqr(const wwr::wwrStream_t stream, const CompZ compz, const int n, R *const d, R *const e,
+           T *const z, const int ldz, R *const work, int *const info) {
+  steqr_kernel<T, R><<<1, kBlock, 0, stream>>>(compz, n, d, e, z, ldz, work, info,
+                                               steqr_consts<R>(), lartg_thresholds<R>());
 }
 
+// complex.h (via elem_ops.cuh) puts the neutral complex types in namespace wwr;
+// pull them in so the instantiations below can spell them bare.
+using wwr::wwrDoubleComplex;
+using wwr::wwrFloatComplex;
+
 // One per supported type, matching steqr_bridge.h and interface.cppm's
-// `extern template` list -- float and double.
-template void steqr<float>(wwr::wwrStream_t, CompZ, int, float *, float *, float *, int, float *,
-                           int *);
-template void steqr<double>(wwr::wwrStream_t, CompZ, int, double *, double *, double *, int,
-                            double *, int *);
+// `extern template` list.
+template void steqr<float, float>(wwr::wwrStream_t, CompZ, int, float *, float *, float *, int,
+                                  float *, int *);
+template void steqr<double, double>(wwr::wwrStream_t, CompZ, int, double *, double *, double *,
+                                    int, double *, int *);
+template void steqr<wwrFloatComplex, float>(wwr::wwrStream_t, CompZ, int, float *, float *,
+                                            wwrFloatComplex *, int, float *, int *);
+template void steqr<wwrDoubleComplex, double>(wwr::wwrStream_t, CompZ, int, double *, double *,
+                                              wwrDoubleComplex *, int, double *, int *);
 
 } // namespace calaman::device

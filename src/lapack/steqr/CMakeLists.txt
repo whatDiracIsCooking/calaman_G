@@ -22,8 +22,9 @@ calaman_add_gpu_device_library(
 # The module: host C++23 over the launcher declared in steqr_bridge.h, which
 # interface.cppm includes in its GMF (hence INCLUDE_DIRS_PRIVATE, and
 # wwr_backend PRIVATE for the selected_backend.h behind runtime.h there).
-# PUBLIC links are what the exported surface names: wwrStream_t, CompZ and the
-# workspace carve (calaman.common) and Status (calaman.error_handling).
+# PUBLIC links are what the exported surface names: wwrStream_t, CompZ,
+# ComplexToRealType and the workspace carve (calaman.common), wwrFloatComplex/
+# wwrDoubleComplex (wwr.complex) and Status (calaman.error_handling).
 calaman_add_cxx_module_library(
   NAME
   calaman.steqr
@@ -33,6 +34,7 @@ calaman_add_cxx_module_library(
   instantiations.cpp
   LINK_PUBLIC
   wwr::runtime_api
+  wwr::complex
   calaman::common
   calaman::error_handling
   LINK_PRIVATE
