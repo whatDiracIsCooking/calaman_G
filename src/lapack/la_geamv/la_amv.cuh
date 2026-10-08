@@ -3,9 +3,9 @@
  * @brief The per-y(i) body every ?la_*amv kernel shares: beta * |y(i)| plus
  *        alpha * sum |op(A)(i,j)| * |x(j)|, with the symbolic-zero nudge
  *
- * Header-only `__device__` helpers for calaman.la_geamv and calaman.la_gbamv;
- * a kernel supplies only its storage scheme, as the j range and an accessor
- * for op(A)(i, j). |.| is CABS1 (|re| + |im|) for a complex element.
+ * Header-only `__device__` helpers for calaman.la_geamv, calaman.la_gbamv and
+ * calaman.la_syamv (hence la_heamv); a kernel supplies only its storage
+ * scheme, as the j range and an accessor for op(A)(i, j). |.| is CABS1 (|re| + |im|) for a complex element.
  *
  * Every multiply and add is rounded on its own, never contracted into an FMA,
  * so the result is bitwise the reference loop's (la_geamv/README.md, decision

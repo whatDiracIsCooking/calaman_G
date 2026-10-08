@@ -2,8 +2,9 @@
 # with the symbolic-zero nudge: the GPU counterpart of LAPACK's ?la_geamv.
 
 # calaman.la_amv -- la_amv.cuh, the per-y(i) body shared by every ?la_*amv
-# kernel (la_geamv, la_gbamv). Not a module: a kernel reaches it by #include,
-# as "lapack/la_geamv/la_amv.cuh" off the src/ root calaman.common exports.
+# kernel (la_geamv, la_gbamv, la_syamv). Not a module: a kernel reaches it by
+# #include, as "lapack/la_geamv/la_amv.cuh" off the src/ root calaman.common
+# exports.
 calaman_add_interface_library(
   NAME
   calaman.la_amv

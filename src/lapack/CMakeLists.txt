@@ -545,6 +545,12 @@ add_subdirectory(la_geamv)
 # la_geamv's per-row body (calaman.la_amv) over the band, so it follows it.
 add_subdirectory(la_gbamv)
 
+# calaman.la_syamv -- the same product for a symmetric A held in one triangle
+# (LAPACK's ?la_syamv), over calaman.la_amv; calaman.la_heamv (?la_heamv) runs
+# its kernel and links calaman.la_syamv.device, so it follows.
+add_subdirectory(la_syamv)
+add_subdirectory(la_heamv)
+
 # calaman.lacrm -- complex times real matrix multiply (LAPACK's ?lacrm): two
 # real gemms around calaman.complex_cast's split_planes / merge_planes (added
 # one level up), which calaman.larcm reuses.
