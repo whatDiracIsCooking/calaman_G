@@ -1,6 +1,7 @@
 /**
  * @file types.cppm
- * @brief The Lanczos solver's options, info, end selection and matvec callback
+ * @brief The Lanczos solver's options, info, end selection, and the matvec
+ *        callback with its linear_operator adapter
  *
  * The :types partition of calaman.lanczos: the value types every other partition
  * names, kept apart from :solve so the Ritz-extraction stage can import them
@@ -10,11 +11,13 @@
 export module calaman.lanczos:types;
 
 import std;
+import wwr.blas;        // WWRBLAS_STATUS_SUCCESS
 import wwr.runtime_api; // wwrStream_t
 import calaman.common;  // real_fp
-export import calaman.error_handling; // Status -- the callback's return type
-export import calaman.iterative;      // IterationInfo, stop_reason, converged
-export import calaman.ritz;           // RitzWhich (LanczosWhich), RitzSelection
+export import calaman.error_handling;  // Status -- the callback's return type
+export import calaman.iterative;       // IterationInfo, stop_reason, converged
+export import calaman.linear_operator; // linear_operator -- what the driver applies
+export import calaman.ritz;            // RitzWhich (LanczosWhich), RitzSelection
 
 export namespace calaman {
 
@@ -60,6 +63,25 @@ struct LanczosInfo : IterationInfo<LanczosStopReason> {
 template<typename F, typename T>
 concept lanczos_matvec = requires(const F &f, wwr::wwrStream_t stream, const T *x, T *y) {
   { f(stream, x, y) } -> std::convertible_to<Status>;
+};
+
+/// @brief The linear_operator over a lanczos_matvec: apply calls @p matvec once
+///        per column (lanczos_solve applies k = 1). Holds a reference to it.
+template<calaman::real_fp T, lanczos_matvec<T> F>
+struct LanczosMatvecOperator {
+  const F &matvec;
+  int n; ///< the vector length: the stride between columns of X and of Y
+
+  Status apply(wwr::wwrStream_t stream, const int k, const T *X, T *Y) {
+    const auto nz = static_cast<std::size_t>(n);
+    for (std::size_t j = 0; j < static_cast<std::size_t>(k); ++j) {
+      const Status status = matvec(stream, X + j * nz, Y + j * nz);
+      if (!status.ok()) {
+        return status;
+      }
+    }
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
 };
 
 } // namespace calaman

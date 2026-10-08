@@ -62,6 +62,34 @@ static_assert(lanczos_matvec<MatvecFunction, double>);
 static_assert(!lanczos_matvec<decltype(identity_matvec()), float>);
 static_assert(!lanczos_matvec<Status (*)(wwr::wwrStream_t, const double *), double>);
 
+/// A linear_operator model with apply only, and no call operator.
+struct IdentityOperator {
+  Status apply(wwr::wwrStream_t, int, const double *, double *) {
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+};
+
+// The adapter makes any lanczos_matvec a linear_operator; the two concepts are
+// disjoint for these models, so overload resolution picks exactly one path.
+static_assert(linear_operator<LanczosMatvecOperator<double, MatvecPtr>, double>);
+static_assert(linear_operator<IdentityOperator, double>);
+static_assert(!lanczos_matvec<IdentityOperator, double>);
+static_assert(!linear_operator<decltype(identity_matvec()), double>);
+
+/// lanczos_solve accepts @p Op as an lvalue (a const one for a matvec).
+template<class Op>
+concept solve_accepts = requires(Op &op, const LanczosSlices<double> &s, double *out,
+                                 LanczosInfo *info) {
+  lanczos_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{}, wwr::wwrStream_t{}, 16,
+                        2, 5, LanczosWhich::smallest, s, op, out, out, info);
+};
+static_assert(solve_accepts<IdentityOperator>);
+static_assert(solve_accepts<const decltype(identity_matvec())>);
+static_assert(solve_accepts<decltype(identity_matvec())>);
+static_assert(solve_accepts<const MatvecFunction>);
+static_assert(!solve_accepts<const IdentityOperator>); // apply is non-const
+static_assert(!solve_accepts<int>);
+
 // ── argument checking (host-only; the handles are never dereferenced) ────────
 
 TEST(LanczosArgCheckTests, ShapePredicate) {
@@ -131,6 +159,21 @@ TEST(LanczosArgCheckTests, SolveRejectsBadArguments) {
   EXPECT_EQ(solve_with(8, 4, 9, identity_matvec(), &info).code, kInvalidValue);
   EXPECT_EQ(solve_with(16, 2, 5, identity_matvec(), nullptr).code, kInvalidValue);
   EXPECT_EQ(solve_with(16, 2, 5, identity_matvec(), &info, nullptr).code, kInvalidValue);
+}
+
+TEST(LanczosArgCheckTests, OperatorSolveRejectsBadArguments) {
+  const LanczosSlices<double> s;
+  IdentityOperator op;
+  LanczosInfo info;
+  const auto solve = [&](int n, int nev, int ncv, LanczosInfo *out) {
+    return lanczos_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
+                                 wwr::wwrStream_t{}, n, nev, ncv, LanczosWhich::smallest, s, op,
+                                 g_fake_values, nullptr, out);
+  };
+  EXPECT_EQ(solve(16, 0, 3, &info).code, kInvalidValue);
+  EXPECT_EQ(solve(16, 4, 8, &info).code, kInvalidValue);
+  EXPECT_EQ(solve(8, 4, 9, &info).code, kInvalidValue);
+  EXPECT_EQ(solve(16, 2, 5, nullptr).code, kInvalidValue);
 }
 
 TEST(LanczosArgCheckTests, OptionDefaults) {

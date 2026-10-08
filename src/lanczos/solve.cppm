@@ -3,10 +3,10 @@
  * @brief The thick-restart Lanczos solve entry point
  *
  * The :solve partition of calaman.lanczos. lanczos_solve converges the nev
- * extreme eigenpairs of a symmetric operator known only through a single-vector
- * matvec callback: Lanczos steps with full CGS2 reorthogonalization against V,
- * the projected problem diagonalised by syevd, the :ritz stages, and a thick
- * restart (Wu-Simon) that keeps k = lanczos_restart_keep(nev, ncv) Ritz pairs.
+ * extreme eigenpairs of a symmetric operator known only as a linear_operator
+ * (applied with k = 1) or a lanczos_matvec callback: Lanczos steps with full
+ * CGS2 reorthogonalization against V, the projected problem diagonalised by
+ * syevd, the :ritz stages, and a thick restart (Wu-Simon) that keeps k = lanczos_restart_keep(nev, ncv) Ritz pairs.
  *
  * The cycle stages are module-internal (calaman::detail). One host sync per
  * cycle, plus one per breakdown recovery and one for the start vector's norm.
@@ -37,7 +37,7 @@ import wwr.extension.init_state;    // init_state
 import wwr.extension.random_normal; // random_normal
 import :buffer_size;                // LanczosSlices, lanczos_shape_ok, lanczos_restart_keep
 import :ritz;                       // LanczosRitz, lanczos_ritz_*
-import :types;                      // LanczosWhich, LanczosOptions, LanczosInfo, lanczos_matvec
+import :types;                      // LanczosOptions, LanczosInfo, LanczosMatvecOperator, ...
 import calaman.common;              // kOne, kZero, kNegativeOne, real_fp
 export import calaman.error_handling; // Status, PointerModeStatus
 
@@ -109,16 +109,16 @@ Status lanczos_inject(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t stream,
 
 /**
  * @brief Lanczos steps @p first..ncv-1 of one cycle, after resetting its status
- *        block. No host sync; @p matvec runs with the handle in HOST mode.
+ *        block. No host sync; @p op is applied with the handle in HOST mode.
  *
  * Needs V(:, 0:first+1) orthonormal and T's columns/rows 0..first-1 written
  * (a fresh cycle: first = 0; after a restart: the arrowhead, first = k).
- * @param matvecs In/out: incremented once per @p matvec call.
+ * @param matvecs In/out: incremented once per op.apply (k = 1) call.
  */
-template<calaman::real_fp T, lanczos_matvec<T> Matvec>
+template<calaman::real_fp T, linear_operator<T> Op>
 Status lanczos_extend(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t stream, const int n,
-                      const int ncv, const int first, const LanczosSlices<T> &s,
-                      const Matvec &matvec, int *matvecs) {
+                      const int ncv, const int first, const LanczosSlices<T> &s, Op &op,
+                      int *matvecs) {
   const auto nz = static_cast<std::size_t>(n);
   wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
   const wwr::extension::ScopedPointerMode mode{blas_handle, wwr::WWRBLAS_POINTER_MODE_HOST,
@@ -129,7 +129,7 @@ Status lanczos_extend(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t stream,
   for (int j = first; j < ncv; ++j) {
     const auto jz = static_cast<std::size_t>(j);
     T *w = s.v + (jz + 1) * nz;
-    CLM_TRY(matvec(stream, s.v + jz * nz, w));
+    CLM_TRY(op.apply(stream, 1, s.v + jz * nz, w));
     ++*matvecs;
 
     // CGS2 against V(:, 0:j+1): h = V^T w, w -= V h, twice. T(j,j) = alpha_j is
@@ -166,16 +166,15 @@ Status lanczos_extend(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t stream,
  *        inject a fresh v_{j+1} (T's coupling there is already 0), re-run steps
  *        j+1.. and re-extract. On return any breakdown is at the last step.
  */
-template<calaman::real_fp T, lanczos_matvec<T> Matvec>
+template<calaman::real_fp T, linear_operator<T> Op>
 Status lanczos_cycle_ritz(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t solver_handle,
                           wwr::wwrStream_t stream, const int n, const int ncv,
-                          const LanczosSlices<T> &s, const Matvec &matvec, int *matvecs,
-                          LanczosRitz<T> *ritz) {
+                          const LanczosSlices<T> &s, Op &op, int *matvecs, LanczosRitz<T> *ritz) {
   CLM_TRY(lanczos_ritz_extract<T>(solver_handle, stream, ncv, s, ritz));
   while (ritz->breakdown && ritz->breakdown_step < ncv - 1) {
     const int next = ritz->breakdown_step + 1;
     CLM_TRY(lanczos_inject<T>(blas_handle, stream, n, next, s));
-    CLM_TRY(lanczos_extend<T>(blas_handle, stream, n, ncv, next, s, matvec, matvecs));
+    CLM_TRY(lanczos_extend<T>(blas_handle, stream, n, ncv, next, s, op, matvecs));
     CLM_TRY(lanczos_ritz_extract<T>(solver_handle, stream, ncv, s, ritz));
   }
   return wwr::WWRBLAS_STATUS_SUCCESS;
@@ -216,12 +215,11 @@ Status lanczos_restart_basis(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t 
  *        tolerance * max(|theta_j|, t_norm) for x_j = V(:, @p cols[j]), one matvec each
  *        into the spare V(:, ncv) and one sync. Call after lanczos_restart_basis.
  */
-template<calaman::real_fp T, lanczos_matvec<T> Matvec>
+template<calaman::real_fp T, linear_operator<T> Op>
 Status lanczos_true_residuals(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t stream,
                               const int n, const int ncv, const std::vector<int> &cols,
                               const std::vector<T> &theta, const T bound_scale, const T t_norm,
-                              const LanczosSlices<T> &s, const Matvec &matvec, int *matvecs,
-                              bool *all_ok) {
+                              const LanczosSlices<T> &s, Op &op, int *matvecs, bool *all_ok) {
   const auto nz = static_cast<std::size_t>(n);
   T *w = s.v + static_cast<std::size_t>(ncv) * nz;
   wwr::wwrblasStatus_t pm_status = wwr::WWRBLAS_STATUS_SUCCESS;
@@ -230,7 +228,7 @@ Status lanczos_true_residuals(wwr::wwrblasHandle_t blas_handle, wwr::wwrStream_t
   CLM_TRY(pm_status);
   for (std::size_t j = 0; j < cols.size(); ++j) {
     const T *x = s.v + static_cast<std::size_t>(cols[j]) * nz;
-    CLM_TRY(matvec(stream, x, w));
+    CLM_TRY(op.apply(stream, 1, x, w));
     ++*matvecs;
     const T minus_theta = -theta[j];
     CLM_TRY((wwr::axpy<T, int>(blas_handle, n, &minus_theta, x, 1, w, 1)));
@@ -252,10 +250,11 @@ export namespace calaman {
 
 /**
  * @brief Converge the @p nev eigenpairs at the @p which end(s) of the spectrum of
- *        the symmetric operator behind @p matvec (called in HOST pointer mode),
+ *        the symmetric operator @p op (applied with k = 1, in HOST pointer mode),
  *        thick-restarting up to options.max_iterations times.
  *
- * @param n,nev,ncv         The shape @p s was carved for (make_lanczos_slices).
+ * @param n,nev,ncv         The shape @p s was carved for (make_lanczos_slices);
+ *                          n is also @p op's.
  * @param eigenvalues_out   Out: the nev selected Ritz values, ascending, device;
  *                          written on every successful return, converged or not.
  * @param eigenvectors_out  Out: their Ritz vectors, n x nev device (ld n), in the
@@ -266,10 +265,10 @@ export namespace calaman {
  *         or a zero start vector; else a propagated fault, with info->reason
  *         NumericalFailure.
  */
-template<calaman::real_fp T, lanczos_matvec<T> Matvec>
+template<calaman::real_fp T, linear_operator<T> Op>
 Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t solver_handle,
                      wwr::wwrStream_t stream, const int n, const int nev, const int ncv,
-                     const LanczosWhich which, const LanczosSlices<T> &s, const Matvec &matvec,
+                     const LanczosWhich which, const LanczosSlices<T> &s, Op &op,
                      T *eigenvalues_out, T *eigenvectors_out, LanczosInfo *info,
                      const LanczosOptions<T> &options = {}) {
   CLM_REQUIRE(info != nullptr && eigenvalues_out != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
@@ -281,14 +280,14 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
   // Every early (CLM_TRY) return from here on is a fault; the loop's own stop
   // overwrites the reason.
   info->reason = LanczosStopReason::NumericalFailure;
-  CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, 0, s, matvec, &info->matvecs));
+  CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, 0, s, op, &info->matvecs));
 
   LanczosRitz<T> ritz;
   RitzSelection<T> sel;
   std::vector<int> cols(static_cast<std::size_t>(nev)); // the wanted pairs' columns of V(:, 0:k)
   bool all_passed = false;
   for (;;) {
-    CLM_TRY(detail::lanczos_cycle_ritz<T>(blas_handle, solver_handle, stream, n, ncv, s, matvec,
+    CLM_TRY(detail::lanczos_cycle_ritz<T>(blas_handle, solver_handle, stream, n, ncv, s, op,
                                           &info->matvecs, &ritz));
     // Selections nest, so the wanted pairs sit inside the kept ones; their
     // estimates must be read before the restart compacts S.
@@ -302,14 +301,14 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
     all_passed = sel.all_converged();
     if (all_passed && options.verify_residuals) {
       CLM_TRY(detail::lanczos_true_residuals<T>(blas_handle, stream, n, ncv, cols, sel.values,
-                                                options.tolerance, ritz.t_norm, s, matvec,
+                                                options.tolerance, ritz.t_norm, s, op,
                                                 &info->matvecs, &all_passed));
     }
     if (all_passed || info->iterations >= options.max_iterations) {
       break;
     }
     ++info->iterations;
-    CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, k, s, matvec, &info->matvecs));
+    CLM_TRY(detail::lanczos_extend<T>(blas_handle, stream, n, ncv, k, s, op, &info->matvecs));
   }
 
   if (eigenvectors_out != nullptr) {
@@ -326,6 +325,20 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
   CLM_TRY(wwr::wwrStreamSynchronize(stream));
   info->reason = all_passed ? LanczosStopReason::Converged : LanczosStopReason::MaxIterations;
   return wwr::WWRBLAS_STATUS_SUCCESS;
+}
+
+/// @brief lanczos_solve over a single-vector @p matvec, through
+///        LanczosMatvecOperator: same calls, same matvec count, same contract.
+template<calaman::real_fp T, lanczos_matvec<T> Matvec>
+  requires(!linear_operator<Matvec, T>)
+Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t solver_handle,
+                     wwr::wwrStream_t stream, const int n, const int nev, const int ncv,
+                     const LanczosWhich which, const LanczosSlices<T> &s, const Matvec &matvec,
+                     T *eigenvalues_out, T *eigenvectors_out, LanczosInfo *info,
+                     const LanczosOptions<T> &options = {}) {
+  LanczosMatvecOperator<T, Matvec> op{matvec, n};
+  return lanczos_solve<T>(blas_handle, solver_handle, stream, n, nev, ncv, which, s, op,
+                          eigenvalues_out, eigenvectors_out, info, options);
 }
 
 } // namespace calaman
