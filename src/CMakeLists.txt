@@ -103,6 +103,12 @@ add_subdirectory(shifted_cocg)
 # when linked.
 add_subdirectory(feast)
 
+# calaman.shift_invert -- DenseShiftInvert, the (A - sigma I)^{-1}
+# linear_operator for shift-invert eigensolvers. Pure host over lacpy, laset,
+# sytrs2 and the vendor sytrf; placed after lapack (which carries those) and
+# before davidson and lanczos, which may take it.
+add_subdirectory(shift_invert)
+
 # calaman.davidson -- block-Davidson eigensolver for the lowest n_roots
 # eigenpairs of a symmetric linear_operator (or a block sigma callback). A host
 # driver over wrapped BLAS + the wrapped eigensolver, with no device code of its
