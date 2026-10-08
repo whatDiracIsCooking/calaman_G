@@ -551,6 +551,10 @@ add_subdirectory(la_gbamv)
 add_subdirectory(la_syamv)
 add_subdirectory(la_heamv)
 
+# calaman.la_wwaddw -- double-word accumulate, (x, y) <-- (x, y) + w (LAPACK's
+# ?la_wwaddw), the error-free add every ?la_*rfsx_extended driver calls. A leaf.
+add_subdirectory(la_wwaddw)
+
 # calaman.lacrm -- complex times real matrix multiply (LAPACK's ?lacrm): two
 # real gemms around calaman.complex_cast's split_planes / merge_planes (added
 # one level up), which calaman.larcm reuses.
