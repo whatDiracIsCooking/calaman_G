@@ -42,5 +42,6 @@ calaman_add_gtest_suite_tests(
   shifted_cocg_tests
   SUITES
   ShiftedCocgReferenceTests
+  ShiftedCocgAccumulateTests
   REQUIRES_GPU
 )

@@ -98,13 +98,6 @@ template<typename ComplexT, typename RealT>
 void feast_accumulate(wwr::wwrStream_t stream, std::size_t elems, FeastContour<RealT> contour,
                       const ComplexT *d_X, std::size_t stride, RealT *d_out);
 
-/// @brief feast_accumulate for X_e held split, Re in @p d_Xr and Im in @p d_Xi,
-///        as shifted_cocg returns it.
-template<typename RealT>
-void feast_accumulate_split(wwr::wwrStream_t stream, std::size_t elems,
-                            FeastContour<RealT> contour, const RealT *d_Xr, const RealT *d_Xi,
-                            std::size_t stride, RealT *d_out);
-
 /// @brief Per column, the filter form with the smaller inner-error bound:
 ///        residual ||r_j|| sum_e |w_e| / (Im Z_e |Z_e - lambda_j|) against plain
 ///        ||x_j|| sum_e |w_e| / Im Z_e (README). d_B(:, j) = r_j and d_form[j] = 1
@@ -114,16 +107,15 @@ void feast_residual_select(wwr::wwrStream_t stream, int n, int k, FeastContour<R
                            const RealT *d_X, const RealT *d_lambda, const RealT *d_R,
                            RealT *d_B, RealT *d_form);
 
-/// @brief The filter over X_e solving (Z_e I - A) X_e = B, B from
-///        feast_residual_select: where d_form[j] = 1 the residual form (IFEAST)
-///        out(:, j) = sum_e Re[ w_e / (Z_e - lambda_j) (x_j + X_e(:, j)) ], which
-///        is rho(A) x_j for r_j = A x_j - lambda_j x_j; else sum_e Re[ w_e X_e(:, j) ].
+/// @brief The filter's weights for shifted_cocg_accumulate, c_ej at e * k + j,
+///        and its output's start value. With @p d_form null, or d_form[j] = 0,
+///        the plain form: c_ej = w_e, d_out(:, j) = 0. Where d_form[j] = 1 the
+///        residual form (IFEAST): c_ej = w_e / (Z_e - lambda_j) and
+///        d_out(:, j) = sum_e Re(c_ej) x_j, so the sum ends at rho(A) x_j.
 template<typename RealT>
-void feast_accumulate_residual_split(wwr::wwrStream_t stream, int n, int k,
-                                     FeastContour<RealT> contour, const RealT *d_X,
-                                     const RealT *d_lambda, const RealT *d_form,
-                                     const RealT *d_Xr, const RealT *d_Xi, std::size_t stride,
-                                     RealT *d_out);
+void feast_filter_weights(wwr::wwrStream_t stream, int n, int k, FeastContour<RealT> contour,
+                          const RealT *d_X, const RealT *d_lambda, const RealT *d_form,
+                          RealT *d_cr, RealT *d_ci, RealT *d_out);
 
 /// @brief In place, d_AX(:, j) -= lambda_j d_X(:, j): A x_j becomes the
 ///        eigen-residual r_j of the pair. n x k blocks, ld n.
