@@ -6,9 +6,10 @@
 # The device-kernel library. The kernel is hand-launched (a 2-D grid of 1-D
 # blocks), so it links the pieces directly rather than riding
 # wwr.extension.parallel_for: wwr.device carries WarpWraps's src include root
-# (runtime.h, which lascl_bridge.h and lascl.cu pull in for wwrStream_t and
-# WWR_WARP_SIZE) plus the runtime libs; calaman.common exports the src/ root
-# that resolves "common/align_up.h" (idivup, for the x-direction block count).
+# (runtime.h for wwrStream_t and WWR_WARP_SIZE, complex.h for the neutral
+# complex types) plus the runtime libs; calaman.common exports the src/ root
+# that resolves "common/align_up.h" (idivup) and "common/elem_ops.cuh" (the
+# real-factor scale for either element family).
 # The link is PRIVATE, as every device-library link is.
 calaman_add_gpu_device_library(
   NAME
@@ -31,9 +32,11 @@ calaman_add_gpu_device_library(
 # #include, and selected_backend.h behind it reads WWR_GPU_BACKEND_{CUDA,HIP}
 # with no device pass to read __CUDACC__/__HIP__.
 #
-# calaman.error_handling is PUBLIC: the interface re-exports it (export import)
-# for the Status return type, and its src/ root resolves the
-# "error_handling/error_macros.h" interface.cppm pulls into the GMF for CLM_TRY.
+# PUBLIC links are what the exported surface names: wwrStream_t, the complex
+# element types, ComplexToRealType (calaman.common) and Status
+# (calaman.error_handling, re-exported through `export import`; its src/ root
+# also resolves the "error_handling/error_macros.h" the GMF pulls in for
+# CLM_TRY).
 calaman_add_cxx_module_library(
   NAME
   calaman.lascl
@@ -43,6 +46,8 @@ calaman_add_cxx_module_library(
   instantiations.cpp
   LINK_PUBLIC
   wwr::runtime_api
+  wwr::complex
+  calaman::common
   calaman::error_handling
   LINK_PRIVATE
   wwr::backend

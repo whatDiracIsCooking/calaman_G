@@ -20,6 +20,7 @@ module calaman.lascl;
 // not visible without these.
 import std;
 import wwr.runtime_api;
+import wwr.complex; // wwrFloatComplex, wwrDoubleComplex
 
 namespace calaman {
 
@@ -27,5 +28,9 @@ template Status lascl<float>(wwr::wwrStream_t, float, float, std::size_t, std::s
                              std::size_t);
 template Status lascl<double>(wwr::wwrStream_t, double, double, std::size_t, std::size_t, double *,
                               std::size_t);
+template Status lascl<wwr::wwrFloatComplex>(wwr::wwrStream_t, float, float, std::size_t,
+                                            std::size_t, wwr::wwrFloatComplex *, std::size_t);
+template Status lascl<wwr::wwrDoubleComplex>(wwr::wwrStream_t, double, double, std::size_t,
+                                             std::size_t, wwr::wwrDoubleComplex *, std::size_t);
 
 } // namespace calaman
