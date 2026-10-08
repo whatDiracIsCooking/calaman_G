@@ -19,8 +19,10 @@
  * of the computed iterate, but convergence may take more than n steps.
  * Non-convergence is an outcome, not an error (src/iterative/README.md).
  *
- * One host sync per step (the convergence read-back), plus one at the start.
- * Owns no handle: @p op enqueues on the stream it is given.
+ * Convergence is read back (one host sync) at the start, every check_interval
+ * steps and at the last step; the steps between enqueue without a sync. A pair
+ * freezes at the step it converged, so results do not depend on the interval;
+ * only iterations rounds up to it. Owns no handle: @p op enqueues on @p stream.
  *
  * Usage:
  *   import calaman.shifted_cocg;
@@ -62,6 +64,8 @@ struct ShiftedCocgOptions {
   T tolerance = T{1e-8};
   /// @brief Lanczos steps (block operator applies) before giving up.
   int max_iterations = 1000;
+  /// @brief Steps between convergence read-backs (host syncs); at least 1.
+  int check_interval = 8;
 };
 
 /// @brief Why shifted_cocg stopped.
@@ -72,13 +76,16 @@ enum class ShiftedCocgStopReason {
 };
 static_assert(stop_reason<ShiftedCocgStopReason>);
 
-/// @brief What shifted_cocg did: iterations are Lanczos steps (block applies).
+/// @brief What shifted_cocg did: iterations are Lanczos steps (block applies),
+///        past convergence rounded up to a check (see check_interval).
 template<calaman::real_fp T>
 struct ShiftedCocgInfo : IterationInfo<ShiftedCocgStopReason> {
   /// @brief Per shift: steps until all k columns converged, else iterations.
   std::vector<int> shift_iterations;
   /// @brief Per shift: largest relative residual estimate over the columns.
   std::vector<T> shift_residual;
+  /// @brief Convergence read-backs, each one host sync; the start's included.
+  int convergence_checks = 0;
 };
 
 /// @brief Pointers into the solver's single device workspace buffer.
@@ -169,7 +176,8 @@ Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(s.v != nullptr && s.n == n && k <= s.k_max && ne <= s.shifts_max,
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
-  CLM_REQUIRE(options.tolerance >= T{0} && options.max_iterations >= 0,
+  CLM_REQUIRE(options.tolerance >= T{0} && options.max_iterations >= 0 &&
+                  options.check_interval >= 1,
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
   for (int e = 0; e < ne; ++e) {
     const auto ez = static_cast<std::size_t>(e);
@@ -208,6 +216,7 @@ Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
   std::vector<T> res(pairs_count);
   // Reads back the pair state; true when every pair is done. Syncs the stream.
   const auto read_back = [&]() -> Status {
+    ++info->convergence_checks;
     CLM_TRY(wwr::wwrMemcpyAsync(done.data(), s.done_step, sizeof(int) * pairs_count,
                                 wwr::wwrMemcpyDeviceToHost, stream));
     CLM_TRY(wwr::wwrMemcpyAsync(res.data(), pairs.res, sizeof(T) * pairs_count,
@@ -220,6 +229,7 @@ Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
 
   info->iterations = 0;
   info->reason = ShiftedCocgStopReason::MaxIterations;
+  info->convergence_checks = 0;
   CLM_TRY(read_back());
   for (int step = 1; !all_done() && step <= options.max_iterations; ++step) {
     CLM_TRY(op.apply(stream, k, v_cur, v_next));
@@ -229,16 +239,20 @@ Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
     device::cocg_update<T>(stream, n, k, ne, step, v_cur, beta_cur, pairs, s.p_re, s.p_im, d_Xr,
                            d_Xi);
     CLM_TRY(wwr::wwrGetLastError());
-    CLM_TRY(read_back());
     info->iterations = step;
-    if (std::ranges::any_of(res, [](const T r) { return std::isnan(r); })) {
-      info->reason = ShiftedCocgStopReason::NumericalFailure;
-      break;
-    }
     // v_{m+1} becomes v_m, and beta_{m+1} beta_m; the old v_{m-1} is reused.
     std::swap(v_prev, v_cur);
     std::swap(v_cur, v_next);
     std::swap(beta_cur, beta_next);
+    // Between checks all_done() reads stale flags: the loop runs on to the next.
+    if (step % options.check_interval != 0 && step != options.max_iterations) {
+      continue;
+    }
+    CLM_TRY(read_back());
+    if (std::ranges::any_of(res, [](const T r) { return std::isnan(r); })) {
+      info->reason = ShiftedCocgStopReason::NumericalFailure;
+      break;
+    }
   }
   if (info->reason != ShiftedCocgStopReason::NumericalFailure && all_done()) {
     info->reason = ShiftedCocgStopReason::Converged;
