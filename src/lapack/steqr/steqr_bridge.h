@@ -22,9 +22,10 @@ namespace calaman::device {
 /// (cosines then sines) when @p compz is not CompZ::N, else it may be null;
 /// @p info is a device int (0, or the count of unconverged off-diagonals).
 ///
-/// @tparam T Element type; instantiated for float, double
-template<typename T>
-void steqr(wwr::wwrStream_t stream, CompZ compz, int n, T *d, T *e, T *z, int ldz, T *work,
+/// @tparam T Type of Z; float, double, wwrFloatComplex, wwrDoubleComplex
+/// @tparam R Real component type of T -- the type of d, e and the rotations
+template<typename T, typename R>
+void steqr(wwr::wwrStream_t stream, CompZ compz, int n, R *d, R *e, T *z, int ldz, R *work,
            int *info);
 
 } // namespace calaman::device

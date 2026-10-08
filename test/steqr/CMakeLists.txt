@@ -20,6 +20,7 @@ calaman_add_gtest_executable(
   calaman::test::utils::shared_device
   calaman::lapack_reference
   wwr::runtime_api
+  wwr::complex
   wwr::extension::memory_buffer
 )
 
