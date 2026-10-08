@@ -536,6 +536,11 @@ add_subdirectory(lantb)
 # links only calaman.common and calaman.error_handling.
 add_subdirectory(lagtm)
 
+# calaman.la_geamv -- y := alpha * |op(A)| * |x| + beta * |y| with the
+# symbolic-zero nudge (LAPACK's ?la_geamv), the first extra-precise ?la_*amv
+# kernel. A leaf: links only calaman.common and calaman.error_handling.
+add_subdirectory(la_geamv)
+
 # calaman.lacrm -- complex times real matrix multiply (LAPACK's ?lacrm): two
 # real gemms around calaman.complex_cast's split_planes / merge_planes (added
 # one level up), which calaman.larcm reuses.
