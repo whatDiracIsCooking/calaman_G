@@ -5,7 +5,7 @@ pick the wanted pairs, classify them as converged or not, and rotate the Ritz
 vectors out of the basis. Header-only templates over `real_fp`.
 
 ```cpp
-enum class RitzWhich { smallest, largest, both_ends };
+enum class RitzWhich { smallest, largest, both_ends, largest_magnitude };
 
 template <real_fp T>
 struct RitzSelection {
@@ -17,6 +17,9 @@ struct RitzSelection {
 };
 
 std::vector<int> ritz_select(RitzWhich which, int available, int count);
+template <real_fp T>
+std::vector<int> ritz_select(RitzWhich which, std::span<const T> values,
+                             int count);
 
 template <real_fp T>
 RitzSelection<T> classify_ritz(std::span<const T> values,
@@ -30,7 +33,7 @@ Status ritz_rotate(wwrblasHandle_t blas, int n, int k, int count,
 
 | Routine | Where | Does |
 |---|---|---|
-| `ritz_select` | host | the `count` positions, ascending, of an ascending spectrum of `available` values (`both_ends`: `ceil(count/2)` top, `floor(count/2)` bottom); empty unless `1 <= count <= available` |
+| `ritz_select` | host | the `count` positions, ascending, of an ascending spectrum of `available` values (`both_ends`: `ceil(count/2)` top, `floor(count/2)` bottom); empty unless `1 <= count <= available`. The count-only form is always empty for `largest_magnitude`; the span form (ascending `values`, `available = values.size()`) serves it — the `count` largest `\|value\|`, merged inward from both ends, ties to the top — and matches the count-only form for every other end |
 | `classify_ritz` | host | `converged[i] = residuals[i] <= tolerance * max(\|values[i]\|, scale)`; `index` left empty |
 | `ritz_rotate` | device, no sync | `C = B(:, 0:k) * S(0:k, 0:count)`, one `gemm` in host pointer mode |
 
@@ -46,7 +49,9 @@ Status ritz_rotate(wwrblasHandle_t blas, int n, int k, int count,
   mode, the nested guard costs a get/set pair on the handle and no sync.
 - **Selections nest.** For `count2 >= count1` at one `RitzWhich`, the
   `count2` selection contains the `count1` one, so a restart can keep extra
-  pairs and still test convergence on the wanted ones.
+  pairs and still test convergence on the wanted ones. `largest_magnitude`
+  keeps this because its inward merge only extends a smaller selection, and a
+  `|value|` tie always breaks the same way.
 - **One convergence predicate.** `scale` is the 2-norm of the solver's
   projected matrix, `max |theta|` over its subspace spectrum: lanczos passes
   `||T||_2`, davidson `||H||_2` from the `syevd`/`sygvd` it already runs. So

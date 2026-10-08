@@ -3,7 +3,8 @@
  * @brief The calaman.ritz module -- the Ritz-pair bookkeeping every projection
  *        eigensolver shares: select, classify, rotate
  *
- * ritz_select picks the wanted positions of an ascending spectrum;
+ * ritz_select picks the wanted positions of an ascending spectrum (by count
+ * alone, or by its values for largest_magnitude);
  * classify_ritz turns values plus residual estimates into a RitzSelection under
  * a convergence predicate; ritz_rotate forms the Ritz vectors C = B S with one
  * gemm. calaman.lanczos, calaman.davidson and calaman.feast import it.
@@ -36,13 +37,31 @@ import wwr.extension.blas;            // ScopedPointerMode
 import calaman.common;                // kOne, kZero, real_fp
 export import calaman.error_handling; // Status, PointerModeStatus
 
+namespace calaman::detail {
+
+/// @brief Positions [0, low) and [available - (count - low), available).
+inline std::vector<int> ritz_ends(const int available, const int count, const int low) {
+  std::vector<int> index;
+  index.reserve(static_cast<std::size_t>(count));
+  for (int i = 0; i < low; ++i) {
+    index.push_back(i);
+  }
+  for (int i = available - (count - low); i < available; ++i) {
+    index.push_back(i);
+  }
+  return index;
+}
+
+} // namespace calaman::detail
+
 export namespace calaman {
 
 /// @brief Which end of an ascending spectrum a solver converges.
 enum class RitzWhich {
-  smallest,  ///< the count algebraically smallest values
-  largest,   ///< the count algebraically largest values
-  both_ends, ///< ceil(count / 2) from the top, floor(count / 2) from the bottom
+  smallest,          ///< the count algebraically smallest values
+  largest,           ///< the count algebraically largest values
+  both_ends,         ///< ceil(count / 2) from the top, floor(count / 2) from the bottom
+  largest_magnitude, ///< the count largest |value|; needs the values (ritz_select's span form)
 };
 
 /// @brief Classified Ritz pairs: values, residual estimates and convergence flags.
@@ -60,32 +79,51 @@ struct RitzSelection {
 /// @brief The @p count positions, ascending, of an ascending @p available-long
 ///        spectrum that @p which wants. For count2 >= count1 at one @p which,
 ///        the count2 selection contains the count1 one.
-/// @return Empty unless 1 <= count <= available.
+/// @return Empty unless 1 <= count <= available; always empty for
+///         largest_magnitude, which needs the values (the span overload).
 inline std::vector<int> ritz_select(const RitzWhich which, const int available, const int count) {
-  std::vector<int> index;
   if (count < 1 || count > available) {
-    return index;
+    return {};
   }
-  int low = 0; // how many come from the bottom; the rest from the top
   switch (which) {
   case RitzWhich::smallest:
-    low = count;
-    break;
+    return detail::ritz_ends(available, count, count);
   case RitzWhich::largest:
-    low = 0;
-    break;
+    return detail::ritz_ends(available, count, 0);
   case RitzWhich::both_ends:
-    low = count / 2;
+    return detail::ritz_ends(available, count, count / 2);
+  case RitzWhich::largest_magnitude:
     break;
   }
-  index.reserve(static_cast<std::size_t>(count));
-  for (int i = 0; i < low; ++i) {
-    index.push_back(i);
+  return {};
+}
+
+/// @brief ritz_select over the ascending @p values themselves, the only form
+///        that serves largest_magnitude: |value| ties go to the top end, so
+///        selections still nest. Every other @p which ignores the values.
+/// @return Empty unless 1 <= count <= values.size().
+template<calaman::real_fp T>
+std::vector<int> ritz_select(const RitzWhich which, const std::span<const T> values,
+                             const int count) {
+  const int available = static_cast<int>(values.size());
+  if (which != RitzWhich::largest_magnitude) {
+    return ritz_select(which, available, count);
   }
-  for (int i = available - (count - low); i < available; ++i) {
-    index.push_back(i);
+  if (count < 1 || count > available) {
+    return {};
   }
-  return index;
+  // Ascending, so |value| is largest at the ends: merge inward, one per step.
+  int low = 0;
+  for (int high = 0; low + high < count;) {
+    const auto b = static_cast<std::size_t>(low);
+    const auto t = static_cast<std::size_t>(available - 1 - high);
+    if (std::abs(values[b]) > std::abs(values[t])) {
+      ++low;
+    } else {
+      ++high;
+    }
+  }
+  return detail::ritz_ends(available, count, low);
 }
 
 /// @brief Classify each pair: converged iff residuals[i] <= tolerance *
