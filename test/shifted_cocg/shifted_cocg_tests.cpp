@@ -527,6 +527,42 @@ TEST(ShiftedCocgReferenceTests, AllZeroRightHandSideTakesNoStep) {
   EXPECT_EQ(info.convergence_checks, 1);
 }
 
+/// Solves with column `col` of a random n x k block set to `bad` in one entry,
+/// or every column when col < 0; returns what shifted_cocg reported.
+ShiftedCocgInfo<double> solve_with_bad_column(const int col, const double bad) {
+  const int n = 40;
+  const int k = 3;
+  std::vector<double> b = random_block(static_cast<std::size_t>(n) * k, 17U);
+  for (int j = 0; j < k; ++j) {
+    if (col < 0 || j == col) {
+      b[static_cast<std::size_t>(j * n + n / 2)] = bad;
+    }
+  }
+  Rig<double> rig(random_symmetric(n, 19U), b, n, k, 2);
+  ShiftedCocgOptions<double> options;
+  options.tolerance = 1e-10;
+  ShiftedCocgInfo<double> info;
+  const std::vector<std::complex<double>> z = {{0.1, 0.2}, {-0.3, 0.05}};
+  EXPECT_TRUE(rig.solve(z, options, &info).ok());
+  return info;
+}
+
+TEST(ShiftedCocgReferenceTests, NaNColumnIsNumericalFailure) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const ShiftedCocgInfo<double> some = solve_with_bad_column(1, nan);
+  EXPECT_EQ(some.reason, ShiftedCocgStopReason::NumericalFailure);
+  EXPECT_EQ(some.iterations, 0);
+  const ShiftedCocgInfo<double> all = solve_with_bad_column(-1, nan);
+  EXPECT_EQ(all.reason, ShiftedCocgStopReason::NumericalFailure);
+  EXPECT_EQ(all.iterations, 0);
+}
+
+TEST(ShiftedCocgReferenceTests, InfColumnIsNumericalFailure) {
+  const double inf = std::numeric_limits<double>::infinity();
+  EXPECT_EQ(solve_with_bad_column(0, inf).reason, ShiftedCocgStopReason::NumericalFailure);
+  EXPECT_EQ(solve_with_bad_column(2, -inf).reason, ShiftedCocgStopReason::NumericalFailure);
+}
+
 TEST(ShiftedCocgReferenceTests, InvariantSubspaceIsExactInOneStep) {
   // A diagonal and b = e_0: K(A, b) = span{e_0}, so beta_2 = 0 and step 1 is
   // exact; the steps after it, to the first check, leave X alone.
