@@ -305,8 +305,14 @@ is reduced on device in the 1-norm; routing it through the host-side
 
 ## 9. One operator concept for every matrix-free solver; Lanczos goes interior by exact shift-invert only
 
-**Decided 2026-10-07** (planning after milestone 11, *Matrix-free FEAST*). A
-plan, not yet code: nothing below is implemented.
+**Decided 2026-10-07** (planning after milestone 11, *Matrix-free FEAST*).
+**Shipped 2026-10-08** (milestone *Shift-invert Lanczos*, #313–#318): the shared
+concept is `calaman.linear_operator`, which lanczos, davidson and feast all
+constrain on; the dense model is `calaman.shift_invert`'s `DenseShiftInvert`;
+and the entry point is `calaman.lanczos:shift_invert`'s
+`lanczos_shift_invert_solve` (`src/lanczos/README.md`), checked against
+`LAPACKE_?syevr` over the wanted index window on both cards. The deferrals
+below stand.
 
 **Decision.**
 
@@ -368,7 +374,7 @@ So the three matrix-free solvers split by what they find and what they need:
 
 | | finds | needs from `A` | inexact inner solves |
 |---|---|---|---|
-| `lanczos` | the `nev` extreme pairs | a matvec | none to make (§9: shift-invert, exact solves only) |
+| `lanczos` | the `nev` extreme pairs, or by shift-invert the `nev` nearest a shift | a matvec; for shift-invert, an exact `(A - sigma I)^-1` (dense: `A` itself) | none to make (§9: shift-invert, exact solves only) |
 | `davidson` | the lowest `n_roots` pairs | a block matvec + a preconditioner | tolerated: a correction only has to point the right way |
 | `feast` + `KrylovResolvent` | every pair in `[Emin, Emax]` | a block matvec | tolerated, through the residual form |
 

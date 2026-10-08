@@ -13,8 +13,12 @@
 //     block is orthonormal, and each vector is within the Davis-Kahan angle of
 //     the reference's. Plus: verify_residuals, and an unprepared operator
 //     surfacing as a failing Status.
-//
-// The edge-case and index-range interior suites are #318's.
+//   * LanczosShiftInvertInteriorTests (REQUIRES_GPU): the same checks against
+//     LAPACKE_?syevr over just the wanted index window (plus one neighbour each
+//     side), float and double: windows across a graded spectrum, and the edge
+//     cases -- sigma between two close eigenvalues, sigma very near one, sigma
+//     outside the spectrum, and sigma exactly on one (prepare fails, and so
+//     does the solve, leaving its output untouched).
 
 #include <gtest/gtest.h>
 
@@ -157,6 +161,30 @@ Reference<T> reference(const std::vector<T> &a, int n) {
   return ref;
 }
 
+lapack_int ref_syevr(lapack_int n, float *a, lapack_int il, lapack_int iu, lapack_int *m, float *w,
+                     float *z, lapack_int *isuppz) {
+  return LAPACKE_ssyevr(LAPACK_COL_MAJOR, 'V', 'I', 'L', n, a, n, 0.0f, 0.0f, il, iu, 0.0f, m, w, z,
+                        n, isuppz);
+}
+lapack_int ref_syevr(lapack_int n, double *a, lapack_int il, lapack_int iu, lapack_int *m,
+                     double *w, double *z, lapack_int *isuppz) {
+  return LAPACKE_dsyevr(LAPACK_COL_MAJOR, 'V', 'I', 'L', n, a, n, 0.0, 0.0, il, iu, 0.0, m, w, z, n,
+                        isuppz);
+}
+
+/// The reference over positions lo..hi (0-based, inclusive) only, ascending.
+template<typename T>
+Reference<T> reference_window(std::vector<T> a, int n, int lo, int hi) {
+  const auto count = static_cast<std::size_t>(hi - lo + 1);
+  Reference<T> ref{std::vector<T>(count), std::vector<T>(static_cast<std::size_t>(n) * count)};
+  std::vector<lapack_int> isuppz(2 * count);
+  lapack_int m = 0;
+  EXPECT_EQ(ref_syevr(n, a.data(), lo + 1, hi + 1, &m, ref.w.data(), ref.v.data(), isuppz.data()),
+            0);
+  ref.w.resize(static_cast<std::size_t>(m));
+  return ref;
+}
+
 /// The @p nev positions of @p w nearest @p sigma, ascending.
 template<typename T>
 std::vector<int> nearest(const std::vector<T> &w, T sigma, int nev) {
@@ -251,16 +279,14 @@ std::vector<double> even_spectrum(int n) {
   return lambda;
 }
 
-/// Solve for the @p nev pairs nearest @p sigma and check them against syevd.
+/// Solve for the @p nev pairs nearest @p sigma and check them against @p ref:
+/// its pairs lo..lo+nev-1 are the wanted ones, any others their neighbours.
 template<typename T>
-void check_interior(const std::vector<T> &a, int n, int nev, int ncv, T sigma,
-                    const LanczosOptions<T> &options) {
-  SCOPED_TRACE(::testing::Message() << "n=" << n << " nev=" << nev << " ncv=" << ncv
-                                    << " sigma=" << sigma << " sizeof(T)=" << sizeof(T)
-                                    << " verify=" << options.verify_residuals);
-  const Reference<T> ref = reference(a, n);
-  const std::vector<int> want = nearest(ref.w, sigma, nev);
-
+void check_against(const std::vector<T> &a, int n, int nev, int ncv, T sigma,
+                   const LanczosOptions<T> &options, const Reference<T> &ref, int lo) {
+  SCOPED_TRACE(::testing::Message()
+               << "n=" << n << " nev=" << nev << " ncv=" << ncv << " sigma=" << sigma
+               << " sizeof(T)=" << sizeof(T) << " verify=" << options.verify_residuals);
   Rig<T> rig(a, n, nev, ncv);
   auto op = rig.op(sigma);
   ASSERT_TRUE(op.prepare(rig.stream).ok());
@@ -275,7 +301,7 @@ void check_interior(const std::vector<T> &a, int n, int nev, int ncv, T sigma,
   const T tol = factorization_tol<T>(frobenius_norm(a), nz, nz);
   for (std::size_t c = 0; c < w.size(); ++c) {
     SCOPED_TRACE(::testing::Message() << "pair " << c);
-    const auto r = static_cast<std::size_t>(want[c]);
+    const auto r = static_cast<std::size_t>(lo) + c;
     EXPECT_NEAR(w[c], ref.w[r], tol);
     if (c > 0) {
       EXPECT_LT(w[c - 1], w[c]);
@@ -302,7 +328,7 @@ void check_interior(const std::vector<T> &a, int n, int nev, int ncv, T sigma,
     if (r > 0) {
       gap = std::min(gap, static_cast<double>(ref.w[r] - ref.w[r - 1]));
     }
-    if (r + 1 < nz) {
+    if (r + 1 < ref.w.size()) {
       gap = std::min(gap, static_cast<double>(ref.w[r + 1] - ref.w[r]));
     }
     // ||x - sign(dot) v_ref|| = 2 sin(angle / 2), free of the cancellation
@@ -327,6 +353,40 @@ void check_interior(const std::vector<T> &a, int n, int nev, int ncv, T sigma,
           << c << "," << d;
     }
   }
+}
+
+/// The whole spectrum by syevd; the wanted pairs are the nev nearest sigma.
+template<typename T>
+void check_interior(const std::vector<T> &a, int n, int nev, int ncv, T sigma,
+                    const LanczosOptions<T> &options) {
+  const Reference<T> ref = reference(a, n);
+  const std::vector<int> want = nearest(ref.w, sigma, nev);
+  ASSERT_EQ(want.back() - want.front(), nev - 1) << "the nearest pairs are contiguous";
+  check_against<T>(a, n, nev, ncv, sigma, options, ref, want.front());
+}
+
+/// Only an index window by syevr: the positions of the nev entries of
+/// @p spectrum (A's, by construction) nearest sigma, widened by one each side
+/// for the neighbours that bound the Davis-Kahan gaps.
+template<typename T>
+void check_window(const std::vector<T> &a, const std::vector<double> &spectrum, int nev, int ncv,
+                  T sigma, const LanczosOptions<T> &options) {
+  const int n = static_cast<int>(spectrum.size());
+  const int first = nearest(spectrum, static_cast<double>(sigma), nev).front();
+  const int lo = std::max(first - 1, 0);
+  const int hi = std::min(first + nev, n - 1);
+  const Reference<T> ref = reference_window(a, n, lo, hi);
+  ASSERT_EQ(ref.w.size(), static_cast<std::size_t>(hi - lo + 1));
+  // The window is the nearest in A's own spectrum: no neighbour is nearer.
+  const auto at = [&](int i) { return std::abs(ref.w[static_cast<std::size_t>(i - lo)] - sigma); };
+  const T farthest = std::max(at(first), at(first + nev - 1));
+  if (lo < first) {
+    EXPECT_GE(at(lo), farthest) << "below the window";
+  }
+  if (first + nev <= hi) {
+    EXPECT_GE(at(hi), farthest) << "above the window";
+  }
+  check_against<T>(a, n, nev, ncv, sigma, options, ref, first - lo);
 }
 
 template<typename T>
@@ -368,6 +428,170 @@ TEST(LanczosShiftInvertReferenceTests, UnpreparedOperatorFails) {
   const Status st = rig.solve(op, tight_options<double>(), &info);
   EXPECT_FALSE(st.ok());
   EXPECT_EQ(static_cast<int>(info.reason), static_cast<int>(LanczosStopReason::NumericalFailure));
+}
+
+// ── interior windows and edge cases ──────────────────────────────────────────
+
+/// lambda_i = -1 + 2 (i / (n - 1))^2: crowded at the bottom, sparse at the top.
+std::vector<double> graded_spectrum(int n) {
+  std::vector<double> lambda;
+  for (int i = 0; i < n; ++i) {
+    const double t = static_cast<double>(i) / static_cast<double>(n - 1);
+    lambda.push_back(-1.0 + 2.0 * t * t);
+  }
+  return lambda;
+}
+
+// The pairs around a position in the crowded bottom, the middle and the sparse
+// top, sigma 0.3 of a gap above it, against syevr over just that window.
+template<typename T>
+void check_index_windows() {
+  constexpr int n = 150;
+  const auto spectrum = graded_spectrum(n);
+  const auto a = from_spectrum<T>(spectrum, 318u);
+  const auto options = tight_options<T>();
+  for (const int p : {12, n / 2, 9 * n / 10}) {
+    const auto pz = static_cast<std::size_t>(p);
+    const T sigma = static_cast<T>(spectrum[pz] + 0.3 * (spectrum[pz + 1] - spectrum[pz]));
+    check_window<T>(a, spectrum, 3, 16, sigma, options);
+    check_window<T>(a, spectrum, 5, 24, sigma, options);
+  }
+}
+
+TEST(LanczosShiftInvertInteriorTests, IndexWindowsMatchSyevrDouble) {
+  check_index_windows<double>();
+}
+TEST(LanczosShiftInvertInteriorTests, IndexWindowsMatchSyevrFloat) {
+  check_index_windows<float>();
+}
+
+// sigma midway between two eigenvalues 1e-3 h apart: theta = +-2 / gap, equal
+// magnitudes of opposite sign, both wanted. nev = 2 only: a farther pair would
+// be judged against that theta, so resolved no better than tol * theta_max / theta.
+template<typename T>
+void check_close_pair() {
+  constexpr int n = 120;
+  const double h = 2.0 / static_cast<double>(n - 1);
+  auto spectrum = even_spectrum(n);
+  spectrum[67] = spectrum[66] + 1e-3 * h;
+  const auto a = from_spectrum<T>(spectrum, 11u);
+  const T sigma = static_cast<T>(0.5 * (spectrum[66] + spectrum[67]));
+  check_window<T>(a, spectrum, 2, 20, sigma, tight_options<T>());
+}
+
+TEST(LanczosShiftInvertInteriorTests, SigmaBetweenClosePairDouble) {
+  check_close_pair<double>();
+}
+TEST(LanczosShiftInvertInteriorTests, SigmaBetweenClosePairFloat) {
+  check_close_pair<float>();
+}
+
+// sigma sqrt(eps) h from an eigenvalue, either side: A - sigma I is
+// ill-conditioned (theta ~ 1 / (sqrt(eps) h)) but nonsingular, and the nearest
+// pair still converges. nev = 1, for the reason check_close_pair gives.
+template<typename T>
+void check_near_eigenvalue() {
+  constexpr int n = 120;
+  const double h = 2.0 / static_cast<double>(n - 1);
+  const auto spectrum = even_spectrum(n);
+  const auto a = from_spectrum<T>(spectrum, 23u);
+  const double delta = std::sqrt(static_cast<double>(test::eps<T>())) * h;
+  check_window<T>(a, spectrum, 1, 12, static_cast<T>(spectrum[40] + delta), tight_options<T>());
+  check_window<T>(a, spectrum, 1, 12, static_cast<T>(spectrum[40] - delta), tight_options<T>());
+}
+
+TEST(LanczosShiftInvertInteriorTests, SigmaNearEigenvalueDouble) {
+  check_near_eigenvalue<double>();
+}
+TEST(LanczosShiftInvertInteriorTests, SigmaNearEigenvalueFloat) {
+  check_near_eigenvalue<float>();
+}
+
+// sigma below or above the spectrum: every theta has one sign and the solve is
+// an extreme-end one, the nev smallest or largest pairs.
+template<typename T>
+void check_outside_spectrum() {
+  constexpr int n = 120;
+  const auto spectrum = even_spectrum(n);
+  const auto a = from_spectrum<T>(spectrum, 29u);
+  check_window<T>(a, spectrum, 4, 20, T(-1.5), tight_options<T>());
+  check_window<T>(a, spectrum, 4, 20, T(1.5), tight_options<T>());
+}
+
+TEST(LanczosShiftInvertInteriorTests, SigmaOutsideSpectrumDouble) {
+  check_outside_spectrum<double>();
+}
+TEST(LanczosShiftInvertInteriorTests, SigmaOutsideSpectrumFloat) {
+  check_outside_spectrum<float>();
+}
+
+/// 2 x 2 blocks [[3i, 1], [1, 3i]] (eigenvalues 3i -+ 1, i = 1..n/2) under a
+/// random symmetric permutation: integer entries, so the elimination of
+/// A - (3i + 1) I cancels to an exact zero pivot in either precision.
+template<typename T>
+std::vector<T> integer_blocks(int n, std::uint32_t seed) {
+  const auto nz = static_cast<std::size_t>(n);
+  std::vector<T> b(nz * nz, T(0));
+  for (std::size_t k = 0; k + 1 < nz; k += 2) {
+    const auto d = static_cast<T>(3 * (k / 2 + 1));
+    b[k + k * nz] = d;
+    b[(k + 1) + (k + 1) * nz] = d;
+    b[(k + 1) + k * nz] = T(1);
+    b[k + (k + 1) * nz] = T(1);
+  }
+  std::vector<std::size_t> p(nz);
+  std::iota(p.begin(), p.end(), std::size_t{0});
+  std::mt19937 gen(seed);
+  std::ranges::shuffle(p, gen);
+  std::vector<T> a(nz * nz);
+  for (std::size_t j = 0; j < nz; ++j) {
+    for (std::size_t i = 0; i < nz; ++i) {
+      a[i + j * nz] = b[p[i] + p[j] * nz];
+    }
+  }
+  return a;
+}
+
+std::vector<double> integer_blocks_spectrum(int n) {
+  std::vector<double> lambda;
+  for (int i = 1; i <= n / 2; ++i) {
+    lambda.push_back(3.0 * i - 1.0);
+    lambda.push_back(3.0 * i + 1.0);
+  }
+  return lambda;
+}
+
+// sigma exactly on an eigenvalue: prepare fails, and the solve on the unfactored
+// operator returns a failing Status with reason NumericalFailure, leaving the
+// output untouched. A quarter off it, the same A solves.
+template<typename T>
+void check_singular_shift() {
+  constexpr int n = 24;
+  constexpr int nev = 2;
+  const auto a = integer_blocks<T>(n, 31u);
+  const T sigma = T(16); // 3 * 5 + 1
+  Rig<T> rig(a, n, nev, 10);
+  auto op = rig.op(sigma);
+  EXPECT_FALSE(op.prepare(rig.stream).ok());
+
+  const std::vector<T> sentinel(nev, T(-7));
+  ASSERT_EQ(wwr::wwrMemcpyAsync(rig.d_w.data(), sentinel.data(), sizeof(T) * sentinel.size(),
+                                wwr::wwrMemcpyHostToDevice, rig.stream),
+            wwr::wwrSuccess);
+  LanczosInfo info;
+  const Status st = rig.solve(op, tight_options<T>(), &info);
+  EXPECT_FALSE(st.ok());
+  EXPECT_EQ(static_cast<int>(info.reason), static_cast<int>(LanczosStopReason::NumericalFailure));
+  EXPECT_EQ(rig.download(rig.d_w.data(), sentinel.size()), sentinel);
+
+  check_window<T>(a, integer_blocks_spectrum(n), nev, 10, sigma + T(0.25), tight_options<T>());
+}
+
+TEST(LanczosShiftInvertInteriorTests, SingularShiftFailsDouble) {
+  check_singular_shift<double>();
+}
+TEST(LanczosShiftInvertInteriorTests, SingularShiftFailsFloat) {
+  check_singular_shift<float>();
 }
 
 } // namespace
