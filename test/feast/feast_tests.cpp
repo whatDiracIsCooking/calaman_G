@@ -12,7 +12,8 @@
 //     gives every eigenpair; the ones in [Emin, Emax] are the oracle feast is
 //     checked against (count, values, and per-pair backward error);
 //   * an empty interval, where feast must report m = 0 and converge;
-//   * the dense model behind a wrapper hiding its norm1_estimate hook, so the
+//   * the exported dense model, through the model entry point, behind a
+//     wrapper hiding its norm1_estimate hook, so the
 //     residuals' ||A||_1 is lacn2's estimate: same eigenpairs, and an estimate
 //     never above the exact norm (and equal to it on a diagonal matrix).
 //   * KrylovResolvent, the matrix-free model: its filter against the dense
@@ -237,10 +238,10 @@ struct FeastResult {
   std::vector<T> q;      // n * m0
 };
 
-template<typename T, std::size_t Ne, class Wrap = std::identity>
+template<typename T, std::size_t Ne>
 FeastResult<T> run_feast(std::shared_ptr<DeviceHandle> handle, Handles &h, int n,
                          const std::vector<T> &a_full, T Emin, T Emax, int m0,
-                         const std::vector<T> &q0, FeastOptions<T> opts = {}, Wrap wrap = {}) {
+                         const std::vector<T> &q0, FeastOptions<T> opts = {}) {
   auto d_a = to_device(handle, a_full);
   auto d_q = to_device(handle, q0);
 
@@ -252,11 +253,53 @@ FeastResult<T> run_feast(std::shared_ptr<DeviceHandle> handle, Handles &h, int n
   FeastResult<T> r;
   r.status = feast<T, Ne>(h.blas, h.solver, handle->stream().get(), wwr::WWRBLAS_FILL_MODE_LOWER, n,
                           d_a.data(), n, Emin, Emax, m0, d_lambda.data(), d_q.data(), d_work.data(),
-                          bytes, opts, &r.info, wrap);
+                          bytes, opts, &r.info);
   wwr::wwrStreamSynchronize(handle->stream().get());
   r.lambda = from_device(handle, d_lambda, m0);
   r.q = from_device(handle, d_q, static_cast<std::size_t>(n) * m0);
   return r;
+}
+
+// The model entry point over @p model, from the start block @p q0.
+template<typename T, std::size_t Ne, class R>
+FeastResult<T> run_feast_model(std::shared_ptr<DeviceHandle> handle, Handles &h, R &model, int n,
+                               T Emin, T Emax, int m0, const std::vector<T> &q0,
+                               FeastOptions<T> opts = {}) {
+  auto d_q = to_device(handle, q0);
+
+  std::size_t bytes = 0;
+  EXPECT_EQ(feast_driver_bufferSize<T>(h.solver, n, m0, &bytes), wwr::WWRBLAS_STATUS_SUCCESS);
+  DeviceBuffer<T> d_work(bytes / sizeof(T) + 1, handle);
+  DeviceBuffer<T> d_lambda(m0, handle);
+
+  FeastResult<T> r;
+  r.status = feast<T, Ne>(h.blas, h.solver, handle->stream().get(), model, n, Emin, Emax, m0,
+                          d_lambda.data(), d_q.data(), d_work.data(), bytes, opts, &r.info);
+  wwr::wwrStreamSynchronize(handle->stream().get());
+  r.lambda = from_device(handle, d_lambda, m0);
+  r.q = from_device(handle, d_q, static_cast<std::size_t>(n) * m0);
+  return r;
+}
+
+// The model entry point over wrap(DenseResolvent of a_full): the exported dense
+// model, on its own buffer, decorated by @p wrap.
+template<typename T, std::size_t Ne, class Wrap>
+FeastResult<T> run_feast_dense_model(std::shared_ptr<DeviceHandle> handle, Handles &h, int n,
+                                     const std::vector<T> &a_full, T Emin, T Emax, int m0,
+                                     const std::vector<T> &q0, FeastOptions<T> opts, Wrap wrap) {
+  auto d_a = to_device(handle, a_full);
+  std::size_t bytes = 0;
+  EXPECT_EQ(dense_resolvent_bufferSize<T>(n, m0, static_cast<int>(Ne), &bytes),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+  DeviceBuffer<T> d_model_work(bytes / sizeof(T) + 1, handle);
+  DenseResolventSlices<T> slices;
+  EXPECT_EQ(make_dense_resolvent_slices<T>(n, m0, static_cast<int>(Ne), d_model_work.data(),
+                                           &slices, nullptr),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+
+  DenseResolvent<T> dense{h.blas, wwr::WWRBLAS_FILL_MODE_LOWER, n, d_a.data(), n, slices};
+  auto &&model = std::invoke(wrap, dense);
+  return run_feast_model<T, Ne>(handle, h, model, n, Emin, Emax, m0, q0, opts);
 }
 
 // ========================================================================
@@ -528,7 +571,7 @@ void check_hidden_norm(int n, const std::vector<T> &a, const std::vector<T> &ref
   const auto q0 = random_matrix<T>(n, m0, seed);
   const auto dense = run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0);
   const auto hidden =
-      run_feast<T, Ne>(handle, h, n, a, emin, emax, m0, q0, {}, HideNorm1Wrap<T>{});
+      run_feast_dense_model<T, Ne>(handle, h, n, a, emin, emax, m0, q0, {}, HideNorm1Wrap<T>{});
 
   ASSERT_EQ(dense.status, wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(hidden.status, wwr::WWRBLAS_STATUS_SUCCESS);
@@ -615,6 +658,27 @@ static_assert(!feast_norm1_hook<Krylov<double>, double>, "no hook: lacn2 scales 
 /// difference it bounds: rounding in the recurrences and the dense LU (as in
 /// shifted_cocg_tests).
 constexpr double kInnerSlack = 10.0;
+
+static_assert(feast_resolvent<DenseResolvent<double>, double>);
+static_assert(feast_norm1_hook<DenseResolvent<double>, double>);
+
+TEST(FeastArgCheckTests, DenseResolventBufferSize) {
+  std::size_t bytes = 0;
+  EXPECT_EQ(dense_resolvent_bufferSize<double>(8, 2, 8, nullptr), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "null lwork";
+  EXPECT_EQ(dense_resolvent_bufferSize<double>(0, 2, 8, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "n < 1";
+  EXPECT_EQ(dense_resolvent_bufferSize<double>(8, 0, 8, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "k_max < 1";
+  EXPECT_EQ(dense_resolvent_bufferSize<double>(8, 2, 0, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "ne < 1";
+  EXPECT_EQ(dense_resolvent_bufferSize<double>(8, 2, 9, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "ne > kFeastMaxNodes";
+
+  // At least the Ne complex n x n resolvents and Ne complex n x k_max blocks.
+  ASSERT_EQ(dense_resolvent_bufferSize<double>(16, 3, 8, &bytes), wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_GE(bytes, 8 * (16 * 16 + 16 * 3) * 2 * sizeof(double));
+}
 
 TEST(FeastArgCheckTests, KrylovResolventBufferSize) {
   std::size_t bytes = 0;
@@ -758,7 +822,7 @@ void check_krylov_filter(int n, unsigned seed, T inner_tol) {
   FeastOptions<T> opts;
   opts.max_iterations = 3;
   const auto q0 = random_matrix<T>(n, m0, seed + 1);
-  const auto r = run_feast<T, 8>(handle, h, n, a, emin, emax, m0, q0, opts, wrap);
+  const auto r = run_feast_dense_model<T, 8>(handle, h, n, a, emin, emax, m0, q0, opts, wrap);
 
   ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_FALSE(ratios.empty());
@@ -798,9 +862,8 @@ TEST(FeastKrylovResolventTests, SolveThroughKrylovDouble) {
   inner.max_iterations = 20 * n;
   Krylov<double> krylov{fx.op, n, fx.slices, inner};
 
-  const auto wrap = [&](auto &) -> Krylov<double> & { return krylov; };
   const auto q0 = random_matrix<double>(n, m0, 8);
-  const auto r = run_feast<double, 8>(handle, h, n, a, emin, emax, m0, q0, {}, wrap);
+  const auto r = run_feast_model<double, 8>(handle, h, krylov, n, emin, emax, m0, q0);
 
   ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
   EXPECT_CONVERGED(r.info);
@@ -850,9 +913,8 @@ TEST(FeastKrylovResolventTests, InnerNaNIsNumericalFailure) {
   inner.max_iterations = 20 * n;
   KrylovResolvent<NaNBlockOperator, double> krylov{op, n, fx.slices, inner};
 
-  const auto wrap = [&](auto &) -> KrylovResolvent<NaNBlockOperator, double> & { return krylov; };
   const auto q0 = random_matrix<double>(n, m0, 8);
-  const auto r = run_feast<double, 8>(handle, h, n, a, -0.5, 0.5, m0, q0, {}, wrap);
+  const auto r = run_feast_model<double, 8>(handle, h, krylov, n, -0.5, 0.5, m0, q0);
 
   EXPECT_EQ(r.status, wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
   EXPECT_EQ(r.info.reason, FeastStopReason::NumericalFailure);
@@ -977,7 +1039,8 @@ TEST(FeastKrylovResolventTests, ResidualFilterMatchesDenseDouble) {
   FeastOptions<double> opts;
   opts.max_iterations = 3;
   const auto q0 = random_matrix<double>(n, m0, seed + 1);
-  const auto r = run_feast<double, 8>(handle, h, n, a, emin, emax, m0, q0, opts, wrap);
+  const auto r =
+      run_feast_dense_model<double, 8>(handle, h, n, a, emin, emax, m0, q0, opts, wrap);
 
   ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_FALSE(ratios.empty()) << "the driver never took the residual form";  for (std::size_t c = 0; c < ratios.size(); ++c) {

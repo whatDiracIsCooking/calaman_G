@@ -29,10 +29,10 @@ module;
 
 #include "feast_bridge.h"
 
-// CLM_TRY -- a macro, so it arrives by #include in the global module fragment,
-// not by import. Resolved root-relative via the src/ root calaman.error_handling
-// exports; needs calaman::Status visible at expansion, which the import below
-// (export import) supplies.
+// CLM_TRY / CLM_REQUIRE -- macros, so they arrive by #include in the global
+// module fragment, not by import. Resolved root-relative via the src/ root
+// calaman.error_handling exports; need calaman::Status visible at expansion,
+// which the import below (export import) supplies.
 #include "error_handling/error_macros.h"
 
 export module calaman.feast:resolvent;
@@ -42,7 +42,7 @@ import wwr.runtime_api;    // wwrStream_t, wwrGetLastError, wwrMemcpyAsync, wwrS
 import wwr.blas;           // wwrblasHandle_t, WWRBLAS_*, wwrblasFillMode_t
 import wwr.wrappers.blas;  // getrfBatched, getrsBatched, symm
 import wwr.extension.blas; // ScopedPointerMode
-import calaman.common;     // real_fp, RealToComplexType, kOne, kZero, align_up, WorkspaceLayout
+import calaman.common;     // real_fp, RealToComplexType, kOne, kZero, align_up, carve_workspace
 export import calaman.linear_operator; // linear_operator
 export import calaman.error_handling;  // Status, PointerModeStatus, devinfo_verdict
 
@@ -97,10 +97,6 @@ concept feast_inner_hook = requires(const R &r) {
   { r.inner_report() } -> std::convertible_to<FeastInnerReport<T>>;
 };
 
-} // namespace calaman
-
-namespace calaman {
-
 /// @brief DenseResolvent's workspace: Ne resolvents and right-hand-side blocks,
 ///        their batched pointer arrays, pivots, per-node LU info, and ||A||_1 scratch.
 template<calaman::real_fp T>
@@ -142,6 +138,33 @@ struct DenseResolventSlices {
     colsum = layout.fixed<T>(nz);
   }
 };
+
+/**
+ * @brief Carve @p d_work into DenseResolventSlices for an n x n A, filter blocks
+ *        up to @p k_max columns, and @p ne quadrature nodes.
+ *
+ * @param d_work Workspace, or null to size it only. @p slices, @p lwork_bytes: out, may be null.
+ */
+template<calaman::real_fp T>
+Status make_dense_resolvent_slices(const int n, const int k_max, const int ne, void *d_work,
+                                   DenseResolventSlices<T> *slices, std::size_t *lwork_bytes) {
+  CLM_REQUIRE(n >= 1 && k_max >= 1 && ne >= 1 && ne <= device::kFeastMaxNodes,
+              wwr::WWRBLAS_STATUS_INVALID_VALUE);
+  const std::size_t bytes = carve_workspace(d_work, slices, n, k_max, ne);
+  if (lwork_bytes != nullptr) {
+    *lwork_bytes = bytes;
+  }
+  return wwr::WWRBLAS_STATUS_SUCCESS;
+}
+
+/// @brief Device workspace, in bytes, that DenseResolvent needs at (n, k_max, ne).
+/// @return INVALID_VALUE for a null @p lwork_bytes, or a shape outside 1 <= ne <= 8.
+template<calaman::real_fp T>
+Status dense_resolvent_bufferSize(const int n, const int k_max, const int ne,
+                                  std::size_t *lwork_bytes) {
+  CLM_REQUIRE(lwork_bytes != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
+  return make_dense_resolvent_slices<T>(n, k_max, ne, nullptr, nullptr, lwork_bytes);
+}
 
 /**
  * @brief The feast_resolvent of a dense real symmetric A, of which only the
@@ -244,6 +267,10 @@ private:
   int lda_;
   DenseResolventSlices<T> s_;
 };
+
+} // namespace calaman
+
+namespace calaman {
 
 static_assert(slices_for<DenseResolventSlices<float>, int, int, int>);
 static_assert(feast_resolvent<DenseResolvent<float>, float>);

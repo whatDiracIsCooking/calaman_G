@@ -30,9 +30,11 @@ Only the two `feast` overloads (dense, and over a caller's model),
 its optional `feast_norm1_hook`, `feast_residual_hook` and `feast_inner_hook`
 (with `FeastInnerReport`; with
 `linear_operator`, re-exported from `calaman.linear_operator`), and
+the two models — `DenseResolvent` with `DenseResolventSlices`,
+`make_dense_resolvent_slices` and `dense_resolvent_bufferSize`, and
 `KrylovResolvent` with `KrylovResolventSlices`, `make_krylov_resolvent_slices`
-and `krylov_resolvent_bufferSize` (with `calaman.shifted_cocg`, re-exported) are
-exported. The rest — the per-iteration steps, `DenseResolvent`, `FeastSlices`,
+and `krylov_resolvent_bufferSize` (with `calaman.shifted_cocg`, re-exported) — are
+exported. The rest — the per-iteration steps, `FeastSlices`,
 the contour and quadrature tables — are
 module-internal: reachable from the header-only `feast` template when an
 importer instantiates it, but not nameable by that importer.
@@ -95,7 +97,7 @@ Two models ship, and two entry points:
 | shifted solves | `getrfBatched` once per solve, `getrsBatched` per iteration: exact to rounding | `calaman.shifted_cocg`, all `Ne` shifts in one Krylov space: to a relative tolerance `τ` |
 | `‖A‖₁` | exact (the hook) | lacn2's lower bound |
 | filter form | plain | residual, from the second iteration |
-| entry point | `feast(…, uplo, n, d_A, lda, …)` + `feast_bufferSize` | `feast(…, model, n, …)` + `feast_driver_bufferSize`, the model sized by `krylov_resolvent_bufferSize` |
+| entry point | `feast(…, uplo, n, d_A, lda, …)` + `feast_bufferSize`, or the model `feast` with it sized by `dense_resolvent_bufferSize` | `feast(…, model, n, …)` + `feast_driver_bufferSize`, the model sized by `krylov_resolvent_bufferSize` |
 | workspace | `Ne·n²` complex | `(4·Ne + 3)·n·m0` real |
 
 The model `feast` takes any `feast_resolvent`, so a caller's own model works
@@ -143,11 +145,11 @@ estimate is a **lower bound** on `‖A‖₁`, so with it the tolerance is relat
 a lower bound: the test is never looser than with the exact norm, and can be
 stricter. `info.norm_a` reports the scale used.
 
-The dense `feast`'s last argument, `wrap` (identity by default), maps the
-module-internal `DenseResolvent` to the model actually iterated over. It stays
-alongside the model entry point because only it can reach `DenseResolvent`:
-the tests use it to hide the norm hook and to check `KrylovResolvent`'s filters
-against the dense ones on the blocks FEAST actually filters.
+`DenseResolvent` is exported, so a caller can build it over its own buffer
+(`dense_resolvent_bufferSize`) and hand it — or a decorator around it — to the
+model `feast`. The tests do that to hide the norm hook and to check
+`KrylovResolvent`'s filters against the dense ones on the blocks FEAST actually
+filters.
 
 ## One stream
 
