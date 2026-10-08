@@ -7,16 +7,19 @@
  *
  *   filter(Y) = sum_e Re[ w_e X_e ],   (Z_e I - A) X_e = Y by shifted_cocg
  *
- * All Ne shifts share one Krylov space, so a filter costs one k-column apply
- * per inner step for every node together. prepare has nothing to factor.
+ * All Ne shifts share one Krylov space: one k-column apply per inner step.
  *
- * The inner solves are inexact: each column meets the options' relative
- * residual tolerance, so filter agrees with DenseResolvent's to that tolerance
- * scaled by sum_e |w_e| / Im Z_e. An inner solve that stops short of it
- * (MaxIterations or NumericalFailure) fails filter with EXECUTION_FAILED --
- * feast then stops with NumericalFailure -- and last_solve() says why.
+ * The inner solves meet a relative tolerance tau, so filter is off by up to
+ * tau ||y|| sum_e |w_e| / Im Z_e -- a floor the outer iteration stalls at. Once
+ * there are Ritz pairs the driver calls filter_residual instead (IFEAST, Gavin
+ * & Polizzi; README):
  *
- * No norm1_estimate hook: the driver estimates ||A||_1 by lacn2 over apply.
+ *   (Z I - A)^{-1} x = [ x + (Z I - A)^{-1} r ] / (Z - lambda),   r = A x - lambda x
+ *
+ * solving against r, so the error shrinks with r and tau no longer limits the
+ * accuracy reached. An inner solve that stops short fails the filter with
+ * EXECUTION_FAILED -- feast stops with NumericalFailure -- and last_solve()
+ * says why. No norm1_estimate hook: the driver falls back to lacn2.
  */
 
 module;
@@ -117,15 +120,24 @@ public:
     CLM_REQUIRE(k >= 1 && k <= s_.cocg.k_max && contour.count >= 1 &&
                     contour.count <= s_.cocg.shifts_max,
                 wwr::WWRBLAS_STATUS_INVALID_VALUE);
-    const auto count = static_cast<std::size_t>(contour.count);
-    CLM_TRY(shifted_cocg<T>(stream, *op_, n_, k, std::span<const T>{contour.zr, count},
-                            std::span<const T>{contour.zi, count}, Y, s_.xr, s_.xi, s_.cocg,
-                            &last_, options_));
-    if (!converged(last_)) {
-      return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
-    }
+    CLM_TRY(solve(stream, contour, k, Y));
     const std::size_t nk = static_cast<std::size_t>(n_) * static_cast<std::size_t>(k);
     device::feast_accumulate_split(stream, nk, contour, s_.xr, s_.xi, nk, out);
+    CLM_TRY(wwr::wwrGetLastError());
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+
+  /// @brief The residual form (feast_residual_hook): out = rho(A) X for the Ritz
+  ///        pairs (lambda, X) with eigen-residuals @p R, solving against R, not X.
+  Status filter_residual(wwr::wwrStream_t stream, const device::FeastContour<T> &contour,
+                         const int k, const T *X, const T *lambda, const T *R, T *out) {
+    CLM_REQUIRE(k >= 1 && k <= s_.cocg.k_max && contour.count >= 1 &&
+                    contour.count <= s_.cocg.shifts_max,
+                wwr::WWRBLAS_STATUS_INVALID_VALUE);
+    CLM_TRY(solve(stream, contour, k, R));
+    const std::size_t nk = static_cast<std::size_t>(n_) * static_cast<std::size_t>(k);
+    device::feast_accumulate_residual_split(stream, n_, k, contour, X, lambda, s_.xr, s_.xi, nk,
+                                            out);
     CLM_TRY(wwr::wwrGetLastError());
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
@@ -134,6 +146,19 @@ public:
   const ShiftedCocgInfo<T> &last_solve() const noexcept { return last_; }
 
 private:
+  /// (Z_e I - A) X_e = B into s_.xr / s_.xi; EXECUTION_FAILED if a pair stops short.
+  Status solve(wwr::wwrStream_t stream, const device::FeastContour<T> &contour, const int k,
+               const T *B) {
+    const auto count = static_cast<std::size_t>(contour.count);
+    CLM_TRY(shifted_cocg<T>(stream, *op_, n_, k, std::span<const T>{contour.zr, count},
+                            std::span<const T>{contour.zi, count}, B, s_.xr, s_.xi, s_.cocg,
+                            &last_, options_));
+    if (!converged(last_)) {
+      return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
+    }
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+
   Op *op_;
   int n_;
   KrylovResolventSlices<T> s_;
@@ -154,5 +179,6 @@ static_assert(slices_for<KrylovResolventSlices<double>, int, int, int>);
 static_assert(feast_resolvent<KrylovResolvent<KrylovCheckOperator<float>, float>, float>);
 static_assert(feast_resolvent<KrylovResolvent<KrylovCheckOperator<double>, double>, double>);
 static_assert(!feast_norm1_hook<KrylovResolvent<KrylovCheckOperator<double>, double>, double>);
+static_assert(feast_residual_hook<KrylovResolvent<KrylovCheckOperator<double>, double>, double>);
 
 } // namespace calaman::detail

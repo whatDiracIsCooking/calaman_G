@@ -10,9 +10,7 @@
  * Subspace iteration with a rational filter. rho(A) approximates the spectral
  * projector onto the eigenvectors with eigenvalues in the interval, so applying
  * it to m0 >= m vectors and extracting Ritz pairs converges to the m wanted
- * eigenpairs -- at a rate set by how sharply rho falls away outside the interval,
- * which is what more quadrature nodes buy.
- *
+ * eigenpairs -- at a rate set by how sharply rho falls away outside the interval.
  * One iteration:
  *
  *   1. basis = rho(A) Q = sum_e Re[ w_e (Z_e I - A)^{-1} Q ]      r.filter, :resolvent
@@ -20,7 +18,9 @@
  *   3. residuals of the pairs inside [Emin, Emax]                  :rayleigh_ritz
  *   4. stop once the count m repeats and every residual is below tol
  *
- * feast_iterate runs it over any feast_resolvent model; feast, over DenseResolvent.
+ * From the second iteration a feast_residual_hook model filters in residual form
+ * (krylov_resolvent.cppm). feast_iterate runs over any feast_resolvent model;
+ * the dense feast builds DenseResolvent, the model feast takes the caller's.
  * One stream; one small status copy per iteration is the loop's only sync.
  */
 
@@ -124,7 +124,22 @@ Status feast_iterate(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_
   int m_prev = -1; // no count yet
 
   for (int k = 0; k < opts.max_iterations; ++k) {
-    status = r.filter(stream, contour, m0, d_Q, s.basis);
+    // After the first iteration d_Q, d_lambda and s.a_ritz hold the Ritz pairs
+    // and A times them, so a residual-form model gets R = A Q - Q diag(lambda),
+    // formed in s.a_ritz (free until the next Rayleigh-Ritz): no extra apply.
+    if constexpr (feast_residual_hook<R, T>) {
+      if (k > 0) {
+        device::feast_ritz_residual_block(stream, n, m0, d_Q, d_lambda, s.a_ritz);
+        status = wwr::wwrGetLastError();
+        if (status.ok()) {
+          status = r.filter_residual(stream, contour, m0, d_Q, d_lambda, s.a_ritz, s.basis);
+        }
+      } else {
+        status = r.filter(stream, contour, m0, d_Q, s.basis);
+      }
+    } else {
+      status = r.filter(stream, contour, m0, d_Q, s.basis);
+    }
     if (!status.ok()) {
       return publish(FeastStopReason::NumericalFailure, status);
     }
@@ -261,6 +276,40 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
   auto &&model = std::invoke(wrap, resolvent);
   return feast_iterate<T, Ne>(cublas_handle, cusolver_handle, stream, model, n, Emin, Emax, m0,
                               d_lambda, d_Q, ws.rr, opts, info);
+}
+
+/**
+ * @brief feast over the caller's resolvent @p model of an n x n real symmetric A
+ *        -- KrylovResolvent for a matrix-free A. Never reads A's entries.
+ *
+ * @param model  Carved for this n, m0 columns and Ne nodes; used on @p stream.
+ * @param d_work Device workspace for the driver alone, from feast_driver_bufferSize.
+ * The other arguments, the return and @p info are as the dense feast's.
+ */
+template<calaman::real_fp T, std::size_t Ne = 8, class R>
+  requires(Ne == 4 || Ne == 8) && feast_resolvent<R, T>
+Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
+             wwr::wwrStream_t stream, R &model, const int n, const T Emin, const T Emax,
+             const int m0, T *d_lambda, T *d_Q, void *d_work, const std::size_t lwork_bytes,
+             const FeastOptions<T> &opts = {}, FeastInfo<T> *info = nullptr) {
+  if (n < 1 || m0 < 1 || m0 > n) {
+    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
+  }
+  if (!std::isfinite(Emin) || !std::isfinite(Emax) || !(Emin < Emax)) {
+    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
+  }
+  if (d_lambda == nullptr || d_Q == nullptr || d_work == nullptr) {
+    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
+  }
+
+  FeastSlices<T> s;
+  std::size_t required = 0;
+  CLM_TRY(make_feast_driver_slices<T>(cusolver_handle, n, m0, d_work, &s, &required));
+  if (lwork_bytes < required) {
+    return wwr::WWRBLAS_STATUS_ALLOC_FAILED;
+  }
+  return feast_iterate<T, Ne>(cublas_handle, cusolver_handle, stream, model, n, Emin, Emax, m0,
+                              d_lambda, d_Q, s, opts, info);
 }
 
 } // namespace calaman

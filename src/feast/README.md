@@ -18,16 +18,18 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 |---|---|
 | `:quadrature` | Gauss–Legendre nodes and weights, `N = 4, 8` |
 | `:compute_quadrature` | the contour `Z_e, w_e` for an interval, and the rational filter `ρ` it defines |
-| `:buffer_size` | the driver's `O(n·m0)` workspace, the dense entry point's single-buffer layout, and its sizing |
-| `:resolvent` | the `feast_resolvent` concept, and `DenseResolvent`: `ρ(A) Y` as `Ne` shifted solves in batched BLAS calls |
-| `:krylov_resolvent` | `KrylovResolvent<Op, T>`: the matrix-free model, `ρ(A) Y` by `calaman.shifted_cocg` over any `linear_operator`, with its own workspace sizing |
+| `:buffer_size` | the driver's `O(n·m0)` workspace, the dense entry point's single-buffer layout, and their sizing |
+| `:resolvent` | the `feast_resolvent` concept and its two optional hooks, and `DenseResolvent`: `ρ(A) Y` as `Ne` shifted solves in batched BLAS calls |
+| `:krylov_resolvent` | `KrylovResolvent<Op, T>`: the matrix-free model, `ρ(A) Y` by `calaman.shifted_cocg` over any `linear_operator`, in plain or residual form, with its own workspace sizing |
 | `:rayleigh_ritz` | QR, projection, `syevd`, selection, residuals |
-| `:driver` | the iteration |
+| `:driver` | the iteration, and the two `feast` entry points |
 
-Only `feast`, `feast_bufferSize`, `FeastOptions`, `FeastInfo`,
+Only the two `feast` overloads (dense, and over a caller's model),
+`feast_bufferSize`, `feast_driver_bufferSize`, `FeastOptions`, `FeastInfo`,
 `FeastStopReason`, `feast_rational_filter`, the `feast_resolvent` concept and
-its optional `feast_norm1_hook` (with `linear_operator`, re-exported from `calaman.linear_operator`),
-and `KrylovResolvent` with `KrylovResolventSlices`, `make_krylov_resolvent_slices`
+its optional `feast_norm1_hook` and `feast_residual_hook` (with
+`linear_operator`, re-exported from `calaman.linear_operator`), and
+`KrylovResolvent` with `KrylovResolventSlices`, `make_krylov_resolvent_slices`
 and `krylov_resolvent_bufferSize` (with `calaman.shifted_cocg`, re-exported) are
 exported. The rest — the per-iteration steps, `DenseResolvent`, `FeastSlices`,
 the contour and quadrature tables — are
@@ -79,9 +81,44 @@ The driver (`feast_iterate`) never reads `A`: it is generic over a
 that also has `prepare(stream, contour)`, once per solve, and
 `filter(stream, contour, k, Y, out)`, `out = ρ(A) Y`, once per iteration. Each
 model carves its own workspace; the driver's `FeastSlices` is only the
-`O(n·m0)` Rayleigh–Ritz part. `feast` and `feast_bufferSize` are the dense
-model, `DenseResolvent`, behind the original signatures. The plan for
-matrix-free models is `docs/architecture.md` §9.
+`O(n·m0)` Rayleigh–Ritz part.
+
+Two models ship, and two entry points:
+
+| | `DenseResolvent` | `KrylovResolvent<Op, T>` |
+|---|---|---|
+| `A` known as | a dense matrix, `uplo` triangle | any `linear_operator` — a stencil, a sparse product, … |
+| shifted solves | `getrfBatched` once per solve, `getrsBatched` per iteration: exact to rounding | `calaman.shifted_cocg`, all `Ne` shifts in one Krylov space: to a relative tolerance `τ` |
+| `‖A‖₁` | exact (the hook) | lacn2's lower bound |
+| filter form | plain | residual, from the second iteration |
+| entry point | `feast(…, uplo, n, d_A, lda, …)` + `feast_bufferSize` | `feast(…, model, n, …)` + `feast_driver_bufferSize`, the model sized by `krylov_resolvent_bufferSize` |
+| workspace | `Ne·n²` complex | `(4·Ne + 3)·n·m0` real |
+
+The model `feast` takes any `feast_resolvent`, so a caller's own model works
+the same way. Where matrix-free FEAST sits next to lanczos and davidson is
+`docs/architecture.md` §10.
+
+### The residual form (IFEAST)
+
+An inexact inner solve to relative tolerance `τ` puts an error of up to
+`τ‖y‖ Σ_e |w_e| / Im Z_e` in each filtered column — a floor proportional to `‖y‖`,
+which does not shrink as the iteration converges, so the outer residual stalls
+near it (the tests measure about `2·10⁻⁶` at `τ = 10⁻⁴`). Gavin and Polizzi's
+fix rewrites each solve against the Ritz pair's eigen-residual
+`r = Ax − λx`:
+
+```
+(Z I − A)⁻¹ x = [ x + (Z I − A)⁻¹ r ] / (Z − λ)
+```
+
+The right-hand side is now `r`, and the error is `τ‖r‖ Σ_e |w_e| / (Im Z_e)²`:
+it shrinks with `r`, so a fixed `τ` no longer limits the accuracy reached. A
+model opts in with the optional `filter_residual(stream, contour, k, X, lambda, R,
+out)` hook (`feast_residual_hook`); from the second iteration the driver hands
+it the Ritz pairs and `R = AX − X diag(λ)`, formed in place from the `AX`
+Rayleigh–Ritz already computed — no extra `apply`. The first iteration, with no
+Ritz pairs yet, filters the start block in plain form. `DenseResolvent` keeps
+the plain form: its solves are exact.
 
 The residuals' scale `‖A‖₁` is the driver's last use of `A`'s entries, so it
 too goes through the model. A model may carry the optional
@@ -91,9 +128,13 @@ without it gets `calaman.lacn2`'s Hager–Higham estimate, driven by `apply`
 (`A` is symmetric, so `Aᵀx = Ax`) once per solve — a few `k = 1` products. That
 estimate is a **lower bound** on `‖A‖₁`, so with it the tolerance is relative to
 a lower bound: the test is never looser than with the exact norm, and can be
-stricter. `info.norm_a` reports the scale used. `feast`'s last argument, `wrap`
-(identity by default), maps `DenseResolvent` to the model actually iterated
-over; the tests use it to hide the hook.
+stricter. `info.norm_a` reports the scale used.
+
+The dense `feast`'s last argument, `wrap` (identity by default), maps the
+module-internal `DenseResolvent` to the model actually iterated over. It stays
+alongside the model entry point because only it can reach `DenseResolvent`:
+the tests use it to hide the norm hook and to check `KrylovResolvent`'s filters
+against the dense ones on the blocks FEAST actually filters.
 
 ## One stream
 
@@ -125,6 +166,10 @@ is not the fastest LU available, but the factorization happens once per solve,
 and the batched solve that runs every iteration keeps all `Ne` systems on one
 stream in one call.
 
+`KrylovResolvent` is on the same one stream, but not one sync per iteration:
+`shifted_cocg` reads its convergence back once per Lanczos step, so a
+matrix-free filter synchronizes once per inner step.
+
 ## Stopping
 
 | `info.reason` | Meaning |
@@ -132,7 +177,7 @@ stream in one call.
 | `Converged` | `m` is the same as last iteration and every residual is below `tol` |
 | `MaxIterations` | the budget ran out |
 | `SubspaceTooSmall` | every Ritz value landed inside the interval after the first iteration — raise `m0` |
-| `NumericalFailure` | a factorization reported a breakdown, or a kernel failed |
+| `NumericalFailure` | a factorization reported a breakdown, a kernel failed, or a `KrylovResolvent` inner solve stopped short of `τ` (its `last_solve()` says why) |
 
 `FeastInfo` derives from `calaman.iterative`'s `IterationInfo`, so
 `converged(info)` reads `reason == Converged`. Non-convergence is an outcome,
@@ -208,8 +253,35 @@ Both handles must already be set to `stream`. Only the `uplo` triangle of `d_A`
 is read. `m0` has to exceed the number of eigenvalues in the interval — about
 1.5 times it is the usual choice.
 
+Matrix-free, with `op` any `linear_operator<Op, double>` (`op.apply(stream, k,
+X, Y)`, `Y = A X`):
+
+```cpp
+std::size_t model_bytes = 0, lwork = 0;
+krylov_resolvent_bufferSize<double>(n, m0, 8, &model_bytes);
+feast_driver_bufferSize<double>(cusolver, n, m0, &lwork);
+// ... allocate d_model and d_work; fill d_Q ...
+
+KrylovResolventSlices<double> slices;
+make_krylov_resolvent_slices<double>(n, m0, 8, d_model, &slices, nullptr);
+ShiftedCocgOptions<double> inner;
+inner.tolerance = 1e-4;  // loose is fine: the residual form converges past it
+KrylovResolvent<Op, double> model{op, n, slices, inner};
+
+feast<double, 8>(cublas, cusolver, stream, model, n, Emin, Emax, m0,
+                 d_lambda, d_Q, d_work, lwork, {}, &info);
+```
+
+The model must be carved for at least `feast`'s `Ne` (here 8) and `m0` columns. Give `inner.max_iterations`
+room: the inner solves slow as `Im Z_e` — the interval's radius — shrinks.
+
 ## Workspace
 
-Dominated by the `Ne` resolvents, `Ne·n²` complex elements: 32 MiB at `n = 512`
-in double with `Ne = 8`. Everything else is `O(n·m0)`. The QR and `syevd`
-workspaces never overlap in time, so they share one region.
+Dense: dominated by the `Ne` resolvents, `Ne·n²` complex elements: 32 MiB at
+`n = 512` in double with `Ne = 8`. Everything else is `O(n·m0)`. The QR and
+`syevd` workspaces never overlap in time, so they share one region.
+
+Matrix-free: `O(n·m0)` throughout — the driver's buffer
+(`feast_driver_bufferSize`) and the model's (`krylov_resolvent_bufferSize`,
+`(4·Ne + 3)·n·m0` reals: the Lanczos vectors, the split search directions and
+the split solutions), sized and carved separately.

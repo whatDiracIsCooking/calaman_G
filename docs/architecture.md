@@ -351,3 +351,51 @@ Davidson, which tolerates inexact solves, may be the better home for that case.
   `lambda`.
 - A caller who has only a matvec, with no way to factor `A - sigma I`, has no
   interior-eigenvalue Lanczos until the Krylov model lands.
+
+## 10. Matrix-free FEAST: the interior eigensolver for a caller with only a matvec
+
+**Shipped 2026-10-08** (milestone 11, *Matrix-free FEAST*, #301–#306). Measured
+on the RTX 3080 (CUDA, `sm_86`) under the toolchain above.
+
+**Decision.** `calaman.feast` takes any `feast_resolvent` model through a second
+`feast` overload, and ships `KrylovResolvent<Op, T>`, whose `Ne` shifted solves
+are `calaman.shifted_cocg` over a `linear_operator`. Its inner solves are
+inexact, so from the second iteration it filters in **residual form** (IFEAST,
+Gavin & Polizzi): each solve runs against the Ritz pair's eigen-residual
+`r = A x - lambda x`, and `(z I - A)^-1 x = [x + (z I - A)^-1 r] / (z - lambda)`.
+
+So the three matrix-free solvers split by what they find and what they need:
+
+| | finds | needs from `A` | inexact inner solves |
+|---|---|---|---|
+| `lanczos` | the `nev` extreme pairs | a matvec | none to make (§9: shift-invert, exact solves only) |
+| `davidson` | the lowest `n_roots` pairs | a block matvec + a preconditioner | tolerated: a correction only has to point the right way |
+| `feast` + `KrylovResolvent` | every pair in `[Emin, Emax]` | a block matvec | tolerated, through the residual form |
+
+**Context.** In plain form an inner solve to relative tolerance `tau` leaves
+an error proportional to `tau * ||y||` in each filtered column, and `||y||`
+does not shrink as the outer iteration converges, so the outer residual stalls
+at that floor. Measured on the 2-D Dirichlet Laplacian (`N = 16`, `n = 256`,
+applied in Kronecker form, 11 eigenvalues in the interval, `m0 = 19`, `Ne = 8`)
+with `tau = 1e-4` and the double default `tol = 1e-12`: the plain form ran out
+its 30 iterations with the backward error stuck at `2.2e-6`; the residual form
+converged in 17, to `1.5e-16`, with every eigenvalue within `4.4e-16` of the
+closed form. The error the residual form leaves is `tau * ||r||` instead, so it
+shrinks with `r`.
+
+That is why FEAST, and not Lanczos, is where the Krylov shifted solve shipped:
+subspace iteration re-filters a fresh block every iteration, so an inexact
+filter perturbs the subspace rather than the operator a Krylov recurrence
+assumes is fixed (§9).
+
+**Consequences.**
+
+- An interval far narrower than the spectrum makes every `Im Z_e` small, and
+  the inner solves slow with it: their cost, not the outer iteration count, is
+  what a narrow interval costs matrix-free.
+- With no `norm1_estimate` hook the residuals' `||A||_1` is lacn2's lower bound
+  (src/feast/README.md, *Resolvent models*), so the outer test is never looser
+  than stated.
+- The dense entry point's `wrap` seam stays: `DenseResolvent` is
+  module-internal, and the seam is how the tests compare the Krylov filters
+  against it.
