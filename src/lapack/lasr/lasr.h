@@ -6,7 +6,8 @@
  * rotations from inside its own launch (?steqr updating Z). The chain runs
  * sequentially along the rotated dimension; the other dimension is split across
  * the block's threads (any blockDim shape), and each thread carries its lines
- * through the whole chain, so no barrier is needed between rotations.
+ * through the whole chain, so no barrier is needed between rotations. A complex
+ * A takes real c and s (ZLASR); the arithmetic goes through elem_ops.
  *
  * Every thread of the block must call lasr_block: it opens and closes with
  * __syncthreads(). Device code only; the stream-level entry point is the module
@@ -22,6 +23,7 @@
 
 #pragma once
 
+#include "common/elem_ops.cuh"
 #include "common/enums.h"
 
 #include <cstddef>
@@ -33,22 +35,23 @@ namespace calaman {
 /// x(i) is x[i * inc]. Rotation j acts on the pair (p, q) @p pivot selects as
 /// x(p) <- c x(p) + s x(q), x(q) <- c x(q) - s x(p); an identity rotation
 /// (c == 1, s == 0) is skipped, as DLASR does. One thread, no barrier.
-template<typename T>
+template<typename T, typename R>
 __device__ void lasr_line(const Pivot pivot, const Direct direct, const std::size_t k,
-                          const T *const c, const T *const s, T *const x, const std::size_t inc) {
+                          const R *const c, const R *const s, T *const x, const std::size_t inc) {
+  using ops = device::elem_ops<T>;
   for (std::size_t r = 0; r + 1 < k; ++r) {
     const std::size_t j = direct == Direct::F ? r : k - 2 - r;
-    const T ct = c[j];
-    const T st = s[j];
-    if (ct == T{1} && st == T{0}) {
+    const R ct = c[j];
+    const R st = s[j];
+    if (ct == R{1} && st == R{0}) {
       continue;
     }
     const std::size_t p = pivot == Pivot::T ? 0 : j;
     const std::size_t q = pivot == Pivot::B ? k - 1 : j + 1;
     const T xp = x[p * inc];
     const T xq = x[q * inc];
-    x[q * inc] = ct * xq - st * xp;
-    x[p * inc] = st * xq + ct * xp;
+    x[q * inc] = ops::sub(ops::scale(xq, ct), ops::scale(xp, st));
+    x[p * inc] = ops::add(ops::scale(xq, st), ops::scale(xp, ct));
   }
 }
 
@@ -59,13 +62,14 @@ __device__ void lasr_line(const Pivot pivot, const Direct direct, const std::siz
 /// barrier, so inputs written by other threads beforehand are seen, and closes
 /// with one, so the update is visible block-wide on return.
 ///
-/// @tparam T Real element type (float, double)
+/// @tparam T Element type: float, double, wwrFloatComplex, wwrDoubleComplex
+/// @tparam R Real component type of T -- the rotations are real, as in ZLASR
 /// @param c, s Cosines and sines of the rotations, in plane order
 /// @param A    Column-major matrix, leading dimension @p lda, updated in place
-template<typename T>
+template<typename T, typename R>
 __device__ void lasr_block(const Side side, const Pivot pivot, const Direct direct,
-                           const std::size_t m, const std::size_t n, const T *const c,
-                           const T *const s, T *const A, const std::size_t lda) {
+                           const std::size_t m, const std::size_t n, const R *const c,
+                           const R *const s, T *const A, const std::size_t lda) {
   const std::size_t bx = blockDim.x;
   const std::size_t by = blockDim.y;
   const std::size_t bz = blockDim.z;

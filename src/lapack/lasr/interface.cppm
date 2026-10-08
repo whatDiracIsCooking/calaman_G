@@ -10,8 +10,9 @@
  * allocates nothing (one launch, lasr.cu).
  *
  * Mapping from DLASR (docs/architecture.md §4): SIDE/PIVOT/DIRECT become the
- * calaman::Side/Pivot/Direct enums; s/d become one template over T; INTEGER
- * extents become std::size_t.
+ * calaman::Side/Pivot/Direct enums; s/d/c/z become one template over T, with
+ * c and s in T's real component type (ZLASR's real rotations); INTEGER extents
+ * become std::size_t.
  *
  * A kernel that applies the rotations from inside its own launch (?steqr) does
  * not call this: it #includes "lapack/lasr/lasr.h" for the block-cooperative
@@ -35,7 +36,8 @@ export module calaman.lasr;
 
 import std;
 import wwr.runtime_api;
-import calaman.common; // Side, Pivot, Direct (:enums)
+import wwr.complex;    // wwrFloatComplex, wwrDoubleComplex
+import calaman.common; // Side, Pivot, Direct (:enums), ComplexToRealType
 
 // export import: lasr RETURNS calaman::Status, so a consumer must see its
 // members, not just its name.
@@ -54,22 +56,23 @@ export using calaman::Side;
 /// dimension k (m for Side::L, n for Side::R) is 1 -- @p c and @p s are then
 /// unread. Rotation j is skipped when c[j] == 1 and s[j] == 0, as in DLASR.
 ///
-/// @tparam T Element type; one of the instantiated types (float, double)
+/// @tparam T Element type; float, double, wwrFloatComplex or wwrDoubleComplex
 /// @param stream Stream the work is enqueued on; all pointers live on its device
-/// @param c, s   Device cosines and sines of the k-1 rotations
+/// @param c, s   Device cosines and sines of the k-1 rotations, real for any T
 /// @param d_A    Device matrix, column-major, updated in place
 /// @param lda    Leading dimension of A; lda >= max(1, m)
 /// @return Success, the launch error, or invalid-value when lda < max(1, m)
 export template<typename T>
 Status lasr(const wwr::wwrStream_t stream, const Side side, const Pivot pivot,
-            const Direct direct, const std::size_t m, const std::size_t n, const T *const c,
-            const T *const s, T *const d_A, const std::size_t lda) {
+            const Direct direct, const std::size_t m, const std::size_t n,
+            const ComplexToRealType<T> *const c, const ComplexToRealType<T> *const s,
+            T *const d_A, const std::size_t lda) {
   CLM_REQUIRE(lda >= std::max<std::size_t>(1, m), wwr::wwrErrorInvalidValue);
   const std::size_t k = side == Side::L ? m : n;
   if (m == 0 || n == 0 || k < 2) {
     return wwr::wwrSuccess;
   }
-  device::lasr<T>(stream, side, pivot, direct, m, n, c, s, d_A, lda);
+  device::lasr<T, ComplexToRealType<T>>(stream, side, pivot, direct, m, n, c, s, d_A, lda);
   CLM_TRY(wwr::wwrGetLastError());
   return wwr::wwrSuccess;
 }
@@ -80,5 +83,13 @@ extern template Status lasr<float>(wwr::wwrStream_t, Side, Pivot, Direct, std::s
 extern template Status lasr<double>(wwr::wwrStream_t, Side, Pivot, Direct, std::size_t,
                                     std::size_t, const double *, const double *, double *,
                                     std::size_t);
+extern template Status lasr<wwr::wwrFloatComplex>(wwr::wwrStream_t, Side, Pivot, Direct,
+                                                  std::size_t, std::size_t, const float *,
+                                                  const float *, wwr::wwrFloatComplex *,
+                                                  std::size_t);
+extern template Status lasr<wwr::wwrDoubleComplex>(wwr::wwrStream_t, Side, Pivot, Direct,
+                                                   std::size_t, std::size_t, const double *,
+                                                   const double *, wwr::wwrDoubleComplex *,
+                                                   std::size_t);
 
 } // namespace calaman
