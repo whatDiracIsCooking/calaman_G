@@ -94,7 +94,7 @@ Two models ship, and two entry points:
 | | `DenseResolvent` | `KrylovResolvent<Op, T>` |
 |---|---|---|
 | `A` known as | a dense matrix, `uplo` triangle | any `linear_operator` — a stencil, a sparse product, … |
-| shifted solves | `getrfBatched` once per solve, `getrsBatched` per iteration: exact to rounding | `calaman.shifted_cocg`, all `Ne` shifts in one Krylov space: to a relative tolerance `τ` |
+| shifted solves | `getrfBatched` node by node once per solve, `getrsBatched` per iteration: exact to rounding | `calaman.shifted_cocg`, all `Ne` shifts in one Krylov space: to a relative tolerance `τ` |
 | `‖A‖₁` | exact (the hook) | lacn2's lower bound |
 | filter form | plain | residual, from the second iteration |
 | entry point | `feast(…, uplo, n, d_A, lda, …)` + `feast_bufferSize`, or the model `feast` with it sized by `dense_resolvent_bufferSize` | `feast(…, model, n, …)` + `feast_driver_bufferSize`, the model sized by `krylov_resolvent_bufferSize` |
@@ -153,10 +153,10 @@ filters.
 
 ## One stream
 
-The `Ne` shifted systems are independent, and each stage over them is a single
-call: `getrfBatched` factors all `Ne` resolvents `Z_e I − A` once per solve —
-neither `Z_e` nor `A` changes between iterations — and `getrsBatched` solves all
-of them against `Q` once per iteration. Both are reached through the
+The `Ne` shifted systems are independent. `getrfBatched` factors the `Ne`
+resolvents `Z_e I − A` once per solve — neither `Z_e` nor `A` changes between
+iterations — one batch-of-one call per node (below), and `getrsBatched` solves
+all of them against `Q` in one call per iteration. Both are reached through the
 backend-neutral wrappers in `wwr.wrappers.blas`, so the one-stream batched path
 is the same under CUDA and HIP. The resolvents are complex symmetric, not
 Hermitian, so the factorization is a general LU; it is never singular, since
@@ -180,6 +180,16 @@ synchronizes once per solve.
 is not the fastest LU available, but the factorization happens once per solve,
 and the batched solve that runs every iteration keeps all `Ne` systems on one
 stream in one call.
+
+The factorization is **not** one `Ne`-wide batch, though it once was (#339). On
+ROCm 7.2.4 / gfx1200, `hipblasZgetrfBatched` (rocSOLVER's batched LU) over all
+8 nodes intermittently returned invalid pivots (zeros, `ipiv[k] < k`) and wrong
+factors for the *last* matrix of the batch when other processes shared the card
+— about one solve in a thousand with 8 concurrent test processes, never with the
+card to itself. Wrong factors are a wrong filter for the whole solve, so FEAST
+stalled at `MaxIterations` with spurious Ritz values in the interval. Batches of
+1, 7 + 1 and 1 + 7 never failed in 12–24k contended solves each, so `prepare`
+factors node by node: `Ne` launches once per solve, on either backend.
 
 `KrylovResolvent` is on the same one stream, but not one sync per iteration:
 `shifted_cocg` reads its convergence back once every

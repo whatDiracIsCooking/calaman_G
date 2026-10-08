@@ -11,9 +11,9 @@
  * filter: prepare once per solve, filter once per iteration. It owns its
  * workspace and its failure reporting; the driver sees only Status.
  *
- * DenseResolvent factors all Ne resolvents in one getrfBatched per solve and
- * solves them in one getrsBatched per iteration; the Ne shifts are never split
- * into separate calls. Z_e I - A is complex symmetric, so the factorization is
+ * DenseResolvent factors the Ne resolvents once per solve, one getrfBatched of
+ * one matrix each (prepare says why), and solves all Ne in one getrsBatched per
+ * iteration. Z_e I - A is complex symmetric, so the factorization is
  * a general LU, never singular: every Im Z_e > 0 and A's spectrum is real.
  *
  * A model may add the optional feast_norm1_hook, ||A||_1 for the residuals'
@@ -191,7 +191,7 @@ public:
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
-  /// @brief Build every Z_e I - A and LU-factor them in one batched call.
+  /// @brief Build every Z_e I - A and LU-factor each, one batch-of-one call per node.
   ///
   /// Synchronizes @p stream once, to read the per-node LU info: a breakdown
   /// comes back as devinfo_verdict's failure.
@@ -209,8 +209,12 @@ public:
     // A kernel-launch failure is a runtime-domain error, carried as such.
     CLM_TRY(wwr::wwrGetLastError());
 
-    CLM_TRY(wwr::getrfBatched<C>(handle_, n_, s_.resolvent_ptrs, n_, s_.ipiv, s_.lu_info,
-                                 contour.count));
+    // One node per call: rocSOLVER's 8-wide batched LU (ROCm 7.2) intermittently
+    // returns invalid pivots for its last matrix under GPU contention (#339).
+    for (int e = 0; e < contour.count; ++e) {
+      CLM_TRY(wwr::getrfBatched<C>(handle_, n_, s_.resolvent_ptrs + e, n_, s_.ipiv + e * n_,
+                                   s_.lu_info + e, 1));
+    }
 
     std::array<int, device::kFeastMaxNodes> lu_info{};
     CLM_TRY(wwr::wwrMemcpyAsync(lu_info.data(), s_.lu_info,
