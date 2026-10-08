@@ -73,8 +73,8 @@ Status rayleigh_ritz(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_
                                                PointerModeStatus{&pm_status}};
   CLM_TRY(pm_status);
 
-  orthogonalize<T>(cusolver_handle, n, m0, s.basis, s.scratch, s.lwork_qr, s.qr_info,
-                   s.qr_info + 1);
+  CLM_TRY(orthogonalize<T>(cusolver_handle, n, m0, s.basis, s.scratch, s.lwork_qr, s.qr_info,
+                           s.qr_info + 1));
 
   CLM_TRY(op.apply(stream, m0, s.basis, s.a_basis));
 

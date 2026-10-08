@@ -334,8 +334,11 @@ Status cg_unitary(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t c
       int lwork_q = 0;
       if (orthogonalize_bufferSize<T>(cusolver_handle, n, n, &lwork_q).ok() &&
           static_cast<std::size_t>(lwork_q) * sizeof(T) <= s.scratch_bytes) {
-        orthogonalize<T>(cusolver_handle, n, n, d_W, static_cast<T *>(s.scratch), lwork_q,
-                         s.info, s.info);
+        const Status qr = orthogonalize<T>(cusolver_handle, n, n, d_W,
+                                           static_cast<T *>(s.scratch), lwork_q, s.info, s.info);
+        if (!qr.ok()) {
+          return publish(CgStopReason::NumericalFailure, qr);
+        }
       }
     }
 
