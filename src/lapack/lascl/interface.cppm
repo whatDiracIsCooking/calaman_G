@@ -11,12 +11,12 @@
  *
  * Enqueued on the given stream and returns WITHOUT synchronizing, like a BLAS
  * call; the caller synchronizes when it needs A. A is a device pointer the
- * caller owns; nothing is allocated here -- so a stream, not a device handle, is
- * the whole requirement, matching calaman.lascl2 and calaman.laset.
+ * caller owns; nothing is allocated here, so it takes a stream, not a handle.
  *
  * Scope: TYPE='G' (full matrix); the banded and triangular TYPE codes ?lascl
- * also accepts are not implemented. The s/d variants become one template over T;
- * the INTEGER extents become std::size_t; LDA is kept (column-major storage).
+ * also accepts are not implemented. The s/d/c/z variants become one template over
+ * T, with cfrom/cto REAL (ComplexToRealType<T>) even for a complex T, as in
+ * ?lascl; the INTEGER extents become std::size_t; LDA is kept (column-major).
  * cfrom == 0 or a NaN cfrom/cto is rejected -- ?lascl's INFO=-4/-5 -- as an
  * InvalidValue runtime Status, the one error this can report.
  *
@@ -45,7 +45,9 @@ module;
 export module calaman.lascl;
 
 import std;
-import wwr.runtime_api;
+import wwr.runtime_api; // wwrStream_t, wwrGetLastError
+import wwr.complex;     // wwrFloatComplex, wwrDoubleComplex
+import calaman.common;  // ComplexToRealType
 
 // export import, not a plain import: lascl RETURNS calaman::Status, so a
 // consumer of `import calaman.lascl;` must see Status's member functions, not
@@ -64,22 +66,28 @@ namespace calaman {
 /// multiplies and returns without synchronizing. Enqueues nothing when @p m or
 /// @p n is 0. A must live on @p stream's device.
 ///
-/// @tparam T Element type; one of the instantiated types (float, double)
+/// @tparam T Element type; one of the instantiated types (float, double,
+///           wwrFloatComplex, wwrDoubleComplex)
 /// @param stream Stream the scaling is enqueued on; A lives on its device
-/// @param cfrom Denominator of the scale ratio; must be non-zero and finite
-/// @param cto Numerator of the scale ratio; must be finite
+/// @param cfrom Denominator of the scale ratio, real; non-zero and not NaN
+/// @param cto Numerator of the scale ratio, real; not NaN
 /// @param m Number of rows of A
 /// @param n Number of columns of A
 /// @param d_a Device matrix to scale in place, column-major, leading dim @p lda
 /// @param lda Leading dimension of A; lda >= m
 /// @return Success, InvalidValue for a bad cfrom/cto, or a launch error
 export template<typename T>
-Status lascl(const wwr::wwrStream_t stream, const T cfrom, const T cto, const std::size_t m,
-             const std::size_t n, T *const d_a, const std::size_t lda) {
+Status lascl(const wwr::wwrStream_t stream, const ComplexToRealType<T> cfrom,
+             const ComplexToRealType<T> cto, const std::size_t m, const std::size_t n, T *const d_a,
+             const std::size_t lda) {
+  // The ratio and its factors are real for every T; a complex T has both parts
+  // scaled by the same factor, as ZLASCL does.
+  using R = ComplexToRealType<T>;
+
   // ?lascl's INFO=-4/-5: cfrom == 0 cannot form a ratio, and a NaN cfrom/cto
   // poisons every factor. Reported as a runtime InvalidValue -- the one domain
   // this routine's return type can speak and the closest match to a bad arg.
-  if (cfrom == T{0} || std::isnan(cfrom) || std::isnan(cto)) {
+  if (cfrom == R{0} || std::isnan(cfrom) || std::isnan(cto)) {
     return wwr::wwrErrorInvalidValue;
   }
   if (m == 0 || n == 0) {
@@ -90,28 +98,28 @@ Status lascl(const wwr::wwrStream_t stream, const T cfrom, const T cto, const st
   // to a chain of factors each guaranteed in range, so no product over- or
   // underflows. smlnum is DLAMCH 'S' (the smallest normal, == numeric_limits
   // min on the host, where this scalar arithmetic runs); bignum its reciprocal.
-  const T smlnum = std::numeric_limits<T>::min();
-  const T bignum = T{1} / smlnum;
+  const R smlnum = std::numeric_limits<R>::min();
+  const R bignum = R{1} / smlnum;
 
-  T cfromc = cfrom;
-  T ctoc = cto;
+  R cfromc = cfrom;
+  R ctoc = cto;
   bool done = false;
   do {
-    const T cfrom1 = cfromc * smlnum;
-    T mul;
+    const R cfrom1 = cfromc * smlnum;
+    R mul;
     if (cfrom1 == cfromc) {
       // cfromc is an inf or a NaN -- the one-step ratio is the answer (and
       // cannot be reached for finite cfrom, which the guard above required).
       mul = ctoc / cfromc;
       done = true;
     } else {
-      const T cto1 = ctoc / bignum;
+      const R cto1 = ctoc / bignum;
       if (cto1 == ctoc) {
         // ctoc is an inf or a NaN: multiply by it and reset cfromc to 1.
         mul = ctoc;
         done = true;
-        cfromc = T{1};
-      } else if (std::abs(cfrom1) > std::abs(ctoc) && ctoc != T{0}) {
+        cfromc = R{1};
+      } else if (std::abs(cfrom1) > std::abs(ctoc) && ctoc != R{0}) {
         mul = smlnum;
         done = false;
         cfromc = cfrom1;
@@ -138,5 +146,11 @@ extern template Status lascl<float>(wwr::wwrStream_t, float, float, std::size_t,
                                     float *, std::size_t);
 extern template Status lascl<double>(wwr::wwrStream_t, double, double, std::size_t, std::size_t,
                                      double *, std::size_t);
+extern template Status lascl<wwr::wwrFloatComplex>(wwr::wwrStream_t, float, float, std::size_t,
+                                                   std::size_t, wwr::wwrFloatComplex *,
+                                                   std::size_t);
+extern template Status lascl<wwr::wwrDoubleComplex>(wwr::wwrStream_t, double, double, std::size_t,
+                                                    std::size_t, wwr::wwrDoubleComplex *,
+                                                    std::size_t);
 
 } // namespace calaman

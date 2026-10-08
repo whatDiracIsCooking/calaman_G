@@ -20,6 +20,10 @@
 // reference LAPACK, so the suite is guarded on calaman::lapack_reference at
 // configure time (CMakeLists.txt) -- a missing oracle is a missing tier, not a
 // silent pass.
+//
+// Every case runs for s, d, c and z. For c/z, cfrom/cto stay real (as in
+// ?lascl) and the element comparison is per component -- the wwr complex types
+// are layout-compatible with lapack_complex_*, so the reference runs in place.
 
 #include <gtest/gtest.h>
 
@@ -28,6 +32,7 @@
 import std;
 
 import wwr.runtime_api;
+import wwr.complex;
 import wwr.extension.memory_buffer;
 import calaman.lascl;
 import calaman.test.shared.abort_policy;
@@ -80,28 +85,87 @@ std::vector<T> from_device(std::shared_ptr<DeviceHandle> handle, const DeviceBuf
   return out;
 }
 
-// The reference, dispatched on T. LAPACKE_?lascl with TYPE='G' (KL/KU unused)
+// Per-type glue: the real component type R, building an element, reading its
+// parts (through the host wwrC* accessors -- .x/.y is not portable to
+// hipComplex), and the reference LAPACKE_?lascl with TYPE='G' (KL/KU unused)
 // over the same column-major lda-by-n buffer, in place.
 template<typename T>
-void reference_lascl(T cfrom, T cto, int m, int n, std::vector<T> &a, int lda);
+struct elem;
 
 template<>
-void reference_lascl<float>(float cfrom, float cto, int m, int n, std::vector<float> &a, int lda) {
-  LAPACKE_slascl(LAPACK_COL_MAJOR, 'G', 0, 0, cfrom, cto, m, n, a.data(), lda);
-}
+struct elem<float> {
+  using R = float;
+  static float make(double re, double) { return static_cast<float>(re); }
+  static float re(float v) { return v; }
+  static float im(float) { return 0.0F; }
+  static void ref(float cfrom, float cto, int m, int n, float *a, int lda) {
+    LAPACKE_slascl(LAPACK_COL_MAJOR, 'G', 0, 0, cfrom, cto, m, n, a, lda);
+  }
+};
 
 template<>
-void reference_lascl<double>(double cfrom, double cto, int m, int n, std::vector<double> &a,
-                             int lda) {
-  LAPACKE_dlascl(LAPACK_COL_MAJOR, 'G', 0, 0, cfrom, cto, m, n, a.data(), lda);
-}
+struct elem<double> {
+  using R = double;
+  static double make(double re, double) { return re; }
+  static double re(double v) { return v; }
+  static double im(double) { return 0.0; }
+  static void ref(double cfrom, double cto, int m, int n, double *a, int lda) {
+    LAPACKE_dlascl(LAPACK_COL_MAJOR, 'G', 0, 0, cfrom, cto, m, n, a, lda);
+  }
+};
+
+template<>
+struct elem<wwr::wwrFloatComplex> {
+  using R = float;
+  static wwr::wwrFloatComplex make(double re, double im) {
+    return wwr::make_wwrFloatComplex(static_cast<float>(re), static_cast<float>(im));
+  }
+  static float re(wwr::wwrFloatComplex v) { return wwr::wwrCrealf(v); }
+  static float im(wwr::wwrFloatComplex v) { return wwr::wwrCimagf(v); }
+  static void ref(float cfrom, float cto, int m, int n, wwr::wwrFloatComplex *a, int lda) {
+    LAPACKE_clascl(LAPACK_COL_MAJOR, 'G', 0, 0, cfrom, cto, m, n,
+                   reinterpret_cast<lapack_complex_float *>(a), lda);
+  }
+};
+
+template<>
+struct elem<wwr::wwrDoubleComplex> {
+  using R = double;
+  static wwr::wwrDoubleComplex make(double re, double im) {
+    return wwr::make_wwrDoubleComplex(re, im);
+  }
+  static double re(wwr::wwrDoubleComplex v) { return wwr::wwrCreal(v); }
+  static double im(wwr::wwrDoubleComplex v) { return wwr::wwrCimag(v); }
+  static void ref(double cfrom, double cto, int m, int n, wwr::wwrDoubleComplex *a, int lda) {
+    LAPACKE_zlascl(LAPACK_COL_MAJOR, 'G', 0, 0, cfrom, cto, m, n,
+                   reinterpret_cast<lapack_complex_double *>(a), lda);
+  }
+};
+
+template<typename T>
+using real_of = typename elem<T>::R;
 
 // A distinct, moderate-magnitude value per matrix slot, so a mis-indexed write
 // (or a stray write into the lda padding) lands on a value no correct run would
-// produce. Kept O(1) so the scaled result stays well inside range.
+// produce. Kept O(1) so the scaled result stays well inside range; the
+// imaginary part (dropped for a real T) differs from the real part, so a
+// swapped or unscaled component shows too.
 template<typename T>
 T fill(std::size_t k) {
-  return static_cast<T>(1) + static_cast<T>(k) * static_cast<T>(0.5);
+  const double x = static_cast<double>(k);
+  return elem<T>::make(1.0 + 0.5 * x, 0.25 - 0.75 * x);
+}
+
+// Equal-or-near per component, to the one-multiply relative bound.
+template<typename T>
+void expect_near_elem(T got, T want, const char *ctx, int i, int j) {
+  using R = real_of<T>;
+  const R tre = static_cast<R>(16) * eps<R>() * (std::abs(elem<T>::re(want)) + static_cast<R>(1));
+  const R tim = static_cast<R>(16) * eps<R>() * (std::abs(elem<T>::im(want)) + static_cast<R>(1));
+  EXPECT_NEAR(elem<T>::re(got), elem<T>::re(want), tre)
+      << ctx << ": real-part mismatch at (" << i << "," << j << ")";
+  EXPECT_NEAR(elem<T>::im(got), elem<T>::im(want), tim)
+      << ctx << ": imag-part mismatch at (" << i << "," << j << ")";
 }
 
 // Stage the SAME buffer on host and device, scale both by cto/cfrom, and assert
@@ -109,7 +173,7 @@ T fill(std::size_t k) {
 // region and untouched padding alike (the padding compares exactly, as neither
 // path touches it).
 template<typename T>
-void check(T cfrom, T cto, int m, int n, int lda, const char *ctx) {
+void check(real_of<T> cfrom, real_of<T> cto, int m, int n, int lda, const char *ctx) {
   auto handle = shared_device();
   const std::size_t size = static_cast<std::size_t>(lda) * static_cast<std::size_t>(n);
 
@@ -119,11 +183,11 @@ void check(T cfrom, T cto, int m, int n, int lda, const char *ctx) {
   }
 
   auto d_a = to_device(handle, ref); // device starts from the identical fill
-  reference_lascl<T>(cfrom, cto, m, n, ref, lda);
+  elem<T>::ref(cfrom, cto, m, n, ref.data(), lda);
 
-  const auto status = calaman::lascl<T>(handle->stream().get(), cfrom, cto,
-                                        static_cast<std::size_t>(m), static_cast<std::size_t>(n),
-                                        d_a.data(), static_cast<std::size_t>(lda));
+  const auto status =
+      calaman::lascl<T>(handle->stream().get(), cfrom, cto, static_cast<std::size_t>(m),
+                        static_cast<std::size_t>(n), d_a.data(), static_cast<std::size_t>(lda));
   EXPECT_TRUE(status.ok()) << ctx << ": lascl returned status=" << status.name();
   wwr::wwrStreamSynchronize(handle->stream().get());
   const auto got = from_device(handle, d_a, size);
@@ -133,8 +197,7 @@ void check(T cfrom, T cto, int m, int n, int lda, const char *ctx) {
   for (int j = 0; j < n; ++j) {
     for (int i = 0; i < lda; ++i) {
       const std::size_t k = static_cast<std::size_t>(j) * lda + i;
-      const T tol = static_cast<T>(16) * eps<T>() * (std::abs(ref[k]) + static_cast<T>(1));
-      EXPECT_NEAR(got[k], ref[k], tol) << ctx << ": mismatch at (" << i << "," << j << ")";
+      expect_near_elem(got[k], ref[k], ctx, i, j);
     }
   }
 }
@@ -152,8 +215,8 @@ void all_shapes() {
 
   // cto/cfrom far apart in each direction, so the guarded loop takes its
   // smlnum/bignum branches rather than a single multiply.
-  const T big = std::numeric_limits<T>::max();
-  const T small = std::numeric_limits<T>::min();
+  const real_of<T> big = std::numeric_limits<real_of<T>>::max();
+  const real_of<T> small = std::numeric_limits<real_of<T>>::min();
   check<T>(small, big, 4, 4, 4, "up");   // ratio huge: repeated bignum steps
   check<T>(big, small, 4, 4, 4, "down"); // ratio tiny: repeated smlnum steps
 }
@@ -171,17 +234,17 @@ template<typename T>
 void bad_cfrom_rejected() {
   // cfrom == 0 cannot form a ratio: ?lascl's INFO=-4, surfaced as an
   // InvalidValue runtime Status, with the matrix left untouched.
+  using R = real_of<T>;
   auto handle = shared_device();
-  std::vector<T> a{static_cast<T>(1), static_cast<T>(2), static_cast<T>(3), static_cast<T>(4)};
+  std::vector<T> a{fill<T>(0), fill<T>(1), fill<T>(2), fill<T>(3)};
   auto d_a = to_device(handle, a);
-  const auto status =
-      calaman::lascl<T>(handle->stream().get(), static_cast<T>(0), static_cast<T>(5), 2, 2,
-                        d_a.data(), 2);
+  const auto status = calaman::lascl<T>(handle->stream().get(), R{0}, R{5}, 2, 2, d_a.data(), 2);
   EXPECT_FALSE(status.ok()) << "cfrom==0 should be rejected";
   wwr::wwrStreamSynchronize(handle->stream().get());
   const auto got = from_device(handle, d_a, a.size());
   for (std::size_t k = 0; k < a.size(); ++k) {
-    EXPECT_EQ(got[k], a[k]) << "matrix must be untouched on a rejected cfrom";
+    EXPECT_EQ(elem<T>::re(got[k]), elem<T>::re(a[k])) << "matrix must be untouched";
+    EXPECT_EQ(elem<T>::im(got[k]), elem<T>::im(a[k])) << "matrix must be untouched";
   }
 }
 
@@ -200,6 +263,21 @@ TEST(LasclOracleTests, ZeroDimIsNoop) {
 TEST(LasclOracleTests, BadCfromRejected) {
   bad_cfrom_rejected<float>();
   bad_cfrom_rejected<double>();
+}
+
+TEST(LasclOracleTests, AllShapesComplex) {
+  all_shapes<wwr::wwrFloatComplex>();
+  all_shapes<wwr::wwrDoubleComplex>();
+}
+
+TEST(LasclOracleTests, ZeroDimIsNoopComplex) {
+  zero_dim_is_noop<wwr::wwrFloatComplex>();
+  zero_dim_is_noop<wwr::wwrDoubleComplex>();
+}
+
+TEST(LasclOracleTests, BadCfromRejectedComplex) {
+  bad_cfrom_rejected<wwr::wwrFloatComplex>();
+  bad_cfrom_rejected<wwr::wwrDoubleComplex>();
 }
 
 } // namespace calaman

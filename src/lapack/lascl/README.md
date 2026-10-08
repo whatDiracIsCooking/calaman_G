@@ -2,8 +2,9 @@
 
 The GPU counterpart of LAPACK's `?lascl`: multiply a column-major matrix `A` in
 place by the ratio `cto/cfrom`, computed WITHOUT over/underflow —
-`A(i,j) <- (cto/cfrom) * A(i,j)`. One entry point, templated over `float` and
-`double`:
+`A(i,j) <- (cto/cfrom) * A(i,j)`. One entry point, templated over `float`,
+`double`, `wwrFloatComplex` and `wwrDoubleComplex`; `cfrom`/`cto` are always
+real (`ComplexToRealType<T>`):
 
 ```cpp
 import calaman.lascl;    // also re-exports calaman::Status
@@ -37,8 +38,10 @@ arithmetic, the kernel is a plain multiply and needs no device machine constants
 
 Kept: the name, `cfrom`, `cto`, and the leading dimension `lda` — that last a
 fact of column-major storage, not a Fortran accommodation. Changed, per
-`docs/architecture.md` §4: the `s/d` variants become one template over `T`, and
-the `INTEGER` extents become `std::size_t`.
+`docs/architecture.md` §4: the `s/d/c/z` variants become one template over `T`,
+and the `INTEGER` extents become `std::size_t`. As in `?lascl`, `cfrom`/`cto`
+stay real for a complex `T`, and the kernel scales the real and imaginary parts
+by the same factor (`elem_ops<T>::scale`, `common/elem_ops.cuh`).
 
 **Scope: `TYPE='G'` (full matrix) only.** `?lascl` also accepts the lower/upper
 triangular, upper-Hessenberg and three banded `TYPE` codes (with `KL`/`KU`);
@@ -49,10 +52,8 @@ those are not implemented, so the `KL`/`KU` arguments do not appear.
 (`?lascl`'s `INFO=-4/-5`). There is no separate `INFO` out-parameter; the error
 rides the `Status` return.
 
-Complex (`c`/`z`) is an extension, though note `?lascl`'s `cfrom`/`cto` stay
-real even for the complex element types: add the type to the three lists that
-must stay in step — `interface.cppm`'s `extern template`, `instantiations.cpp`,
-and `lascl.cu`.
+A new element type goes into the three lists that must stay in step —
+`interface.cppm`'s `extern template`, `instantiations.cpp`, and `lascl.cu`.
 
 ## Shape
 
@@ -60,9 +61,9 @@ and `lascl.cu`.
 `lascl.cu` is the device half — the per-factor per-element multiply;
 `lascl_bridge.h` carries the launcher declaration across the host/device
 boundary (a global module fragment cannot `import`). `instantiations.cpp`
-explicitly instantiates the wrapper for each type. Like `calaman.lascl2`, the
-host module links no `calaman.common`: only the device library needs it, for
-`idivup` (`common/align_up.h`).
+explicitly instantiates the wrapper for each type. The host module links
+`calaman.common` for `ComplexToRealType`; the device library links it for
+`idivup` (`common/align_up.h`) and `elem_ops` (`common/elem_ops.cuh`).
 
 The kernel is one hand-launched 2-D grid of 1-D blocks, each block
 `4*WWR_WARP_SIZE` threads along the rows (x), with `blockIdx.y` naming the
@@ -73,7 +74,7 @@ column bound is a possible later optimisation, as in `calaman.lascl2`.
 ## Tested
 
 `test/lascl/` runs the kernel on the device and compares against the reference
-`LAPACKE_?lascl` (`TYPE='G'`) over the identical inputs, for both `s` and `d` to
+`LAPACKE_?lascl` (`TYPE='G'`) over the identical inputs, for `s`, `d`, `c` and `z` to
 `test/shared/tolerance.cppm`. `?lascl` applies the same guarded multiplier chain,
 so the device and the reference agree to rounding — the comparison is a relative
 tolerance, not bit-for-bit. Cases cover square/tall/wide shapes, a leading
