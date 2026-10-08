@@ -62,4 +62,11 @@ template<typename T>
 void cocg_update(wwr::wwrStream_t stream, int n, int k, int ne, int step, const T *d_v_cur,
                  const T *d_beta_cur, CocgPairs<T> pairs, T *d_pr, T *d_pi, T *d_xr, T *d_xi);
 
+/// @brief cocg_update with X_e folded into one real block: P_e as there, then
+///        out(:, j) += sum_e Re[ c_ej zeta P_e(:, j) ], c_ej = (d_cr + i d_ci)[e * k + j].
+template<typename T>
+void cocg_update_accumulate(wwr::wwrStream_t stream, int n, int k, int ne, int step,
+                            const T *d_v_cur, const T *d_beta_cur, CocgPairs<T> pairs, T *d_pr,
+                            T *d_pi, const T *d_cr, const T *d_ci, T *d_out);
+
 } // namespace calaman::device

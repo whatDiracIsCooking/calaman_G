@@ -229,6 +229,46 @@ __global__ void update_kernel(const std::size_t n, const int k, const std::size_
   }
 }
 
+/// Grid-stride over k * n, each thread walking the ne shifts: update_kernel's
+/// P_e step, with zeta P_e weighted by c_ej and summed into out, not into X_e.
+template<typename T>
+__global__ void update_accumulate_kernel(const std::size_t n, const int k, const int ne,
+                                         const int step, const T *v_cur, const T *beta_cur,
+                                         CocgPairs<T> pairs, T *pr, T *pi, const T *cr_all,
+                                         const T *ci_all, T *out) {
+  const std::size_t block = n * static_cast<std::size_t>(k);
+  const std::size_t stride = static_cast<std::size_t>(gridDim.x) * blockDim.x;
+  for (std::size_t rem = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       rem < block; rem += stride) {
+    const std::size_t j = rem / n;
+    const T v = v_cur[rem];
+    const T b = beta_cur[j];
+    T acc = T(0);
+    for (int e = 0; e < ne; ++e) {
+      const std::size_t p = static_cast<std::size_t>(e) * static_cast<std::size_t>(k) + j;
+      const int done = pairs.done_step[p];
+      if (done != -1 && done != step) {
+        continue;
+      }
+      const std::size_t idx = static_cast<std::size_t>(e) * block + rem;
+      const T ur = v + b * pr[idx];
+      const T ui = b * pi[idx];
+      const T er = pairs.ieta_r[p];
+      const T ei = pairs.ieta_i[p];
+      const T qr = er * ur - ei * ui;
+      const T qi = er * ui + ei * ur;
+      pr[idx] = qr;
+      pi[idx] = qi;
+      const T zr = pairs.zeta_r[p];
+      const T zi = pairs.zeta_i[p];
+      const T tr = zr * qr - zi * qi;
+      const T ti = zr * qi + zi * qr;
+      acc += cr_all[p] * tr - ci_all[p] * ti; // Re(c zeta q)
+    }
+    out[rem] += acc;
+  }
+}
+
 unsigned int pair_blocks(const int pairs_count) {
   return static_cast<unsigned int>((pairs_count + static_cast<int>(kBlock) - 1) /
                                    static_cast<int>(kBlock));
@@ -288,6 +328,20 @@ void cocg_update(const wwr::wwrStream_t stream, const int n, const int k, const 
                                                              d_pi, d_xr, d_xi);
 }
 
+template<typename T>
+void cocg_update_accumulate(const wwr::wwrStream_t stream, const int n, const int k, const int ne,
+                            const int step, const T *const d_v_cur, const T *const d_beta_cur,
+                            const CocgPairs<T> pairs, T *const d_pr, T *const d_pi,
+                            const T *const d_cr, const T *const d_ci, T *const d_out) {
+  if (n < 1 || k < 1 || ne < 1) {
+    return;
+  }
+  const std::size_t block = static_cast<std::size_t>(n) * static_cast<std::size_t>(k);
+  update_accumulate_kernel<T><<<blocks_for(block), kBlock, 0, stream>>>(
+      static_cast<std::size_t>(n), k, ne, step, d_v_cur, d_beta_cur, pairs, d_pr, d_pi, d_cr, d_ci,
+      d_out);
+}
+
 // One per supported type (float, double), matching shifted_cocg_bridge.h.
 #define CLM_COCG_INSTANTIATE(T)                                                                    \
   template void cocg_start<T>(wwr::wwrStream_t, int, int, int, const T *, T *, T *, T *, T *,      \
@@ -297,7 +351,10 @@ void cocg_update(const wwr::wwrStream_t stream, const int n, const int k, const 
   template void cocg_shift<T>(wwr::wwrStream_t, int, int, int, T, const T *, const T *, const T *, \
                               const T *, const T *, const T *, CocgPairs<T>);                      \
   template void cocg_update<T>(wwr::wwrStream_t, int, int, int, int, const T *, const T *,         \
-                               CocgPairs<T>, T *, T *, T *, T *);
+                               CocgPairs<T>, T *, T *, T *, T *);                                  \
+  template void cocg_update_accumulate<T>(wwr::wwrStream_t, int, int, int, int, const T *,         \
+                                          const T *, CocgPairs<T>, T *, T *, const T *, const T *, \
+                                          T *);
 
 CLM_COCG_INSTANTIATE(float)
 CLM_COCG_INSTANTIATE(double)

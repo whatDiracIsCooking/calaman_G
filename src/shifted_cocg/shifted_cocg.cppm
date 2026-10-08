@@ -9,9 +9,9 @@
  * bilinear form x^T y, right for z I - A (complex symmetric, not Hermitian).
  * It runs here in its Lanczos form: a real three-term Lanczos per column, with
  * the per-shift COCG coefficients as complex scalar recurrences (D-Lanczos),
- * which never break down for Im z_e > 0. Columns are independent recurrences
- * batched into one block apply; X_e's real and imaginary parts are separate
- * real arrays, so the real operator applies to each directly.
+ * which never break down for Im z_e > 0; columns batch into one block apply.
+ * X_e is stored split, Re and Im; shifted_cocg_accumulate stores instead only
+ * a weighted sum of the X_e, one n x k block in place of ne.
  *
  * A pair (shift, column) stops updating once its relative residual estimate
  * beta_{m+1} |zeta_m / eta_m| / ||b_j|| meets the tolerance. No
@@ -154,24 +154,19 @@ Status shifted_cocg_bufferSize(const int n, const int k, const int ne, std::size
   return make_shifted_cocg_slices<T>(n, k, ne, nullptr, nullptr, lwork_bytes);
 }
 
-/**
- * @brief Solve (z_e I - A) X_e = B for every shift z_e = zr[e] + i zi[e].
- *
- * Returns success whenever it stops on its own condition (read @p info);
- * INVALID_VALUE for a bad argument, any Im z_e <= 0 included.
- * @param op     Applies the real symmetric A; called with k columns per step.
- * @param d_B    n x k, device, ld n. Never written.
- * @param d_Xr   Out: ne blocks of n x k (ld n), n * k apart: Re X_e. Likewise @p d_Xi.
- * @param s      Carved for this n, a k_max >= k and at least zr.size() shifts.
- */
-template<calaman::real_fp T, linear_operator<T> Op>
-Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
-                    std::span<const T> zr, std::span<const T> zi, const T *d_B, T *d_Xr, T *d_Xi,
-                    const ShiftedCocgSlices<T> &s, ShiftedCocgInfo<T> *info,
-                    const ShiftedCocgOptions<T> &options = {}) {
+} // namespace calaman
+
+namespace calaman::detail {
+
+/// The shared solve: validates, runs @p clear once the arguments pass, then per
+/// step @p update(step, v_cur, beta_cur, pairs) enqueues the P_e / output update.
+template<calaman::real_fp T, linear_operator<T> Op, class Clear, class Update>
+Status shifted_cocg_run(wwr::wwrStream_t stream, Op &op, const int n, const int k,
+                        std::span<const T> zr, std::span<const T> zi, const T *d_B,
+                        const ShiftedCocgSlices<T> &s, ShiftedCocgInfo<T> *info,
+                        const ShiftedCocgOptions<T> &options, Clear clear, Update update) {
   const int ne = static_cast<int>(zr.size());
-  CLM_REQUIRE(info != nullptr && d_B != nullptr && d_Xr != nullptr && d_Xi != nullptr,
-              wwr::WWRBLAS_STATUS_INVALID_VALUE);
+  CLM_REQUIRE(info != nullptr && d_B != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(shifted_cocg_shape_ok(n, k, ne) && zi.size() == zr.size(),
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(s.v != nullptr && s.n == n && k <= s.k_max && ne <= s.shifts_max,
@@ -201,8 +196,7 @@ Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
   T *v_next = s.v + 2 * block;
 
   const std::size_t x_bytes = sizeof(T) * block * static_cast<std::size_t>(ne);
-  CLM_TRY(wwr::wwrMemsetAsync(d_Xr, 0, x_bytes, stream));
-  CLM_TRY(wwr::wwrMemsetAsync(d_Xi, 0, x_bytes, stream));
+  CLM_TRY(clear(x_bytes));
   CLM_TRY(wwr::wwrMemsetAsync(s.p_re, 0, x_bytes, stream));
   CLM_TRY(wwr::wwrMemsetAsync(s.p_im, 0, x_bytes, stream));
   CLM_TRY(wwr::wwrMemcpyAsync(s.shift_re, zr.data(), sizeof(T) * zr.size(),
@@ -236,8 +230,7 @@ Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
     device::cocg_lanczos<T>(stream, n, k, v_prev, v_cur, v_next, beta_cur, alpha, beta_next);
     device::cocg_shift<T>(stream, k, ne, step, options.tolerance, s.shift_re, s.shift_im, alpha,
                           beta_cur, beta_next, bnorm, pairs);
-    device::cocg_update<T>(stream, n, k, ne, step, v_cur, beta_cur, pairs, s.p_re, s.p_im, d_Xr,
-                           d_Xi);
+    update(step, static_cast<const T *>(v_cur), static_cast<const T *>(beta_cur), pairs);
     CLM_TRY(wwr::wwrGetLastError());
     info->iterations = step;
     // v_{m+1} becomes v_m, and beta_{m+1} beta_m; the old v_{m-1} is reused.
@@ -267,6 +260,67 @@ Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
     info->shift_residual[e] = std::max(info->shift_residual[e], res[p]);
   }
   return wwr::WWRBLAS_STATUS_SUCCESS;
+}
+
+} // namespace calaman::detail
+
+export namespace calaman {
+
+/**
+ * @brief Solve (z_e I - A) X_e = B for every shift z_e = zr[e] + i zi[e].
+ *
+ * Returns success whenever it stops on its own condition (read @p info);
+ * INVALID_VALUE for a bad argument, any Im z_e <= 0 included.
+ * @param op     Applies the real symmetric A; called with k columns per step.
+ * @param d_B    n x k, device, ld n. Never written.
+ * @param d_Xr   Out: ne blocks of n x k (ld n), n * k apart: Re X_e. Likewise @p d_Xi.
+ * @param s      Carved for this n, a k_max >= k and at least zr.size() shifts.
+ */
+template<calaman::real_fp T, linear_operator<T> Op>
+Status shifted_cocg(wwr::wwrStream_t stream, Op &op, const int n, const int k,
+                    std::span<const T> zr, std::span<const T> zi, const T *d_B, T *d_Xr, T *d_Xi,
+                    const ShiftedCocgSlices<T> &s, ShiftedCocgInfo<T> *info,
+                    const ShiftedCocgOptions<T> &options = {}) {
+  CLM_REQUIRE(d_Xr != nullptr && d_Xi != nullptr, wwr::WWRBLAS_STATUS_INVALID_VALUE);
+  const int ne = static_cast<int>(zr.size());
+  const auto clear = [&](const std::size_t x_bytes) -> Status {
+    CLM_TRY(wwr::wwrMemsetAsync(d_Xr, 0, x_bytes, stream));
+    return wwr::wwrMemsetAsync(d_Xi, 0, x_bytes, stream);
+  };
+  const auto update = [&](const int step, const T *v_cur, const T *beta_cur,
+                          const device::CocgPairs<T> &pairs) {
+    device::cocg_update<T>(stream, n, k, ne, step, v_cur, beta_cur, pairs, s.p_re, s.p_im, d_Xr,
+                           d_Xi);
+  };
+  return detail::shifted_cocg_run<T>(stream, op, n, k, zr, zi, d_B, s, info, options, clear,
+                                     update);
+}
+
+/**
+ * @brief shifted_cocg without X_e: d_out(:, j) += sum_e Re[ c_ej X_e(:, j) ], the
+ *        sum built step by step, so no ne blocks of X are stored.
+ *
+ * Arguments and returns as shifted_cocg. A partial solve accumulates its partial X_e.
+ * @param d_cr  ne x k, device: Re c_ej at e * k + j. Likewise @p d_ci, Im c_ej.
+ * @param d_out n x k, device, ld n, added to; must not overlap @p d_B.
+ */
+template<calaman::real_fp T, linear_operator<T> Op>
+Status shifted_cocg_accumulate(wwr::wwrStream_t stream, Op &op, const int n, const int k,
+                               std::span<const T> zr, std::span<const T> zi, const T *d_B,
+                               const T *d_cr, const T *d_ci, T *d_out,
+                               const ShiftedCocgSlices<T> &s, ShiftedCocgInfo<T> *info,
+                               const ShiftedCocgOptions<T> &options = {}) {
+  CLM_REQUIRE(d_cr != nullptr && d_ci != nullptr && d_out != nullptr,
+              wwr::WWRBLAS_STATUS_INVALID_VALUE);
+  const int ne = static_cast<int>(zr.size());
+  const auto clear = [](std::size_t) -> Status { return wwr::WWRBLAS_STATUS_SUCCESS; };
+  const auto update = [&](const int step, const T *v_cur, const T *beta_cur,
+                          const device::CocgPairs<T> &pairs) {
+    device::cocg_update_accumulate<T>(stream, n, k, ne, step, v_cur, beta_cur, pairs, s.p_re,
+                                      s.p_im, d_cr, d_ci, d_out);
+  };
+  return detail::shifted_cocg_run<T>(stream, op, n, k, zr, zi, d_B, s, info, options, clear,
+                                     update);
 }
 
 } // namespace calaman

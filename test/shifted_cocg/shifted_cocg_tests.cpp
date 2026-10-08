@@ -14,6 +14,8 @@
 //     X, per-shift counts and residuals at every interval;
 //   * max_iterations exhaustion (success, reason MaxIterations), a zero column
 //     of B (X's column zero), an invariant subspace (exact after one step);
+//   * shifted_cocg_accumulate: the same info as shifted_cocg, and its weighted
+//     sum equal to the one formed from shifted_cocg's X_e, converged or not;
 //   * the argument checks and the workspace sizing, which need no card.
 
 #include <gtest/gtest.h>
@@ -555,6 +557,127 @@ TEST(ShiftedCocgReferenceTests, InvariantSubspaceIsExactInOneStep) {
       EXPECT_EQ(x[i], std::complex<double>(0.0, 0.0));
     }
   }
+}
+
+// ── fused accumulation ───────────────────────────────────────────────────────
+
+/// shifted_cocg_accumulate against shifted_cocg on one problem: the same info,
+/// and out = out_0 + sum_e Re[ c_ej X_e(:, j) ] per column to within @p bound
+/// of sum_e |c_ej| ||X_e(:, j)||, for random weights c and start out_0.
+template<typename T>
+void expect_accumulate_matches(const int n, const int k, const std::vector<std::complex<double>> &z,
+                               const ShiftedCocgOptions<T> &options, const double bound) {
+  const int ne = static_cast<int>(z.size());
+  const auto nz = static_cast<std::size_t>(n);
+  const auto kz = static_cast<std::size_t>(k);
+  const std::size_t block = nz * kz;
+  const std::size_t pairs = static_cast<std::size_t>(ne) * kz;
+  Rig<T> rig(random_symmetric(n, 19U), random_block(block, 23U), n, k, ne);
+  ShiftedCocgInfo<T> plain;
+  ASSERT_TRUE(rig.solve(z, options, &plain).ok());
+
+  const std::vector<T> cr = cast<T>(random_block(pairs, 31U));
+  const std::vector<T> ci = cast<T>(random_block(pairs, 37U));
+  const std::vector<T> out0 = cast<T>(random_block(block, 41U));
+  DeviceBuffer<T> d_cr(pairs, rig.handle);
+  DeviceBuffer<T> d_ci(pairs, rig.handle);
+  DeviceBuffer<T> d_out(block, rig.handle);
+  rig.upload(d_cr.data(), cr);
+  rig.upload(d_ci.data(), ci);
+  rig.upload(d_out.data(), out0);
+  std::vector<T> zr;
+  std::vector<T> zi;
+  for (const auto &c : z) {
+    zr.push_back(static_cast<T>(c.real()));
+    zi.push_back(static_cast<T>(c.imag()));
+  }
+  ShiftedCocgInfo<T> fused;
+  ASSERT_TRUE(shifted_cocg_accumulate<T>(rig.stream, rig.op, n, k, zr, zi, rig.d_b.data(),
+                                         d_cr.data(), d_ci.data(), d_out.data(), rig.s, &fused,
+                                         options)
+                  .ok());
+  EXPECT_EQ(fused.reason, plain.reason);
+  EXPECT_EQ(fused.iterations, plain.iterations);
+  EXPECT_EQ(fused.convergence_checks, plain.convergence_checks);
+  EXPECT_EQ(fused.shift_iterations, plain.shift_iterations);
+  EXPECT_EQ(fused.shift_residual, plain.shift_residual);
+
+  const std::vector<T> out = rig.download(d_out.data(), block);
+  std::vector<std::vector<std::complex<double>>> x;
+  for (int e = 0; e < ne; ++e) {
+    x.push_back(rig.x(e));
+  }
+  for (std::size_t j = 0; j < kz; ++j) {
+    double diff = 0.0;
+    double scale = 0.0;
+    for (std::size_t e = 0; e < static_cast<std::size_t>(ne); ++e) {
+      const std::complex<double> c(cr[e * kz + j], ci[e * kz + j]);
+      double xx = 0.0;
+      for (std::size_t i = 0; i < nz; ++i) {
+        xx += std::norm(x[e][i + j * nz]);
+      }
+      scale += std::abs(c) * std::sqrt(xx);
+    }
+    for (std::size_t i = 0; i < nz; ++i) {
+      double ref = static_cast<double>(out0[i + j * nz]);
+      for (std::size_t e = 0; e < static_cast<std::size_t>(ne); ++e) {
+        const std::complex<double> c(cr[e * kz + j], ci[e * kz + j]);
+        ref += (c * x[e][i + j * nz]).real();
+      }
+      const double d = static_cast<double>(out[i + j * nz]) - ref;
+      diff += d * d;
+    }
+    EXPECT_LE(std::sqrt(diff), bound * scale) << "column " << j;
+  }
+}
+
+TEST(ShiftedCocgAccumulateTests, MatchesSeparateSolvesDouble) {
+  ShiftedCocgOptions<double> options;
+  options.tolerance = 1e-10;
+  options.max_iterations = 4000;
+  std::vector<std::complex<double>> z = contour(-0.3, 0.3, 8);
+  z.emplace_back(0.05, 1e-3);
+  expect_accumulate_matches<double>(200, 3, z, options, kSlack * options.tolerance);
+}
+
+TEST(ShiftedCocgAccumulateTests, MatchesSeparateSolvesFloat) {
+  ShiftedCocgOptions<float> options;
+  options.tolerance = 1e-4F;
+  options.max_iterations = 2560;
+  expect_accumulate_matches<float>(128, 2, contour(-0.4, 0.2, 8), options,
+                                   kSlack * options.tolerance);
+}
+
+TEST(ShiftedCocgAccumulateTests, PartialSolveAccumulatesItsIterate) {
+  ShiftedCocgOptions<double> options;
+  options.tolerance = 1e-12;
+  options.max_iterations = 5;
+  options.check_interval = 2;
+  expect_accumulate_matches<double>(100, 2, contour(-0.2, 0.2, 3), options, 1e-12);
+}
+
+TEST(ShiftedCocgArgCheckTests, AccumulateRejectsNullOutputs) {
+  ShiftedCocgSlices<double> s;
+  s.v = reinterpret_cast<double *>(std::uintptr_t{256}); // never dereferenced
+  s.n = 4;
+  s.k_max = 2;
+  s.shifts_max = 2;
+  NeverApplied op;
+  ShiftedCocgInfo<double> info;
+  double dummy = 0.0;
+  const std::vector<double> zr = {0.0, 1.0};
+  const std::vector<double> zi = {0.5, 0.5};
+  const auto call = [&](const double *cr, const double *ci, double *out) {
+    return shifted_cocg_accumulate<double>(nullptr, op, 4, 2, zr, zi, &dummy, cr, ci, out, s, &info)
+        .code;
+  };
+  EXPECT_EQ(call(nullptr, &dummy, &dummy), kInvalidValue);
+  EXPECT_EQ(call(&dummy, nullptr, &dummy), kInvalidValue);
+  EXPECT_EQ(call(&dummy, &dummy, nullptr), kInvalidValue);
+  EXPECT_EQ(shifted_cocg_accumulate<double>(nullptr, op, 4, 0, zr, zi, &dummy, &dummy, &dummy,
+                                            &dummy, s, &info)
+                .code,
+            kInvalidValue);
 }
 
 } // namespace

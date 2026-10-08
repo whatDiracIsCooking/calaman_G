@@ -98,7 +98,7 @@ Two models ship, and two entry points:
 | `‖A‖₁` | exact (the hook) | lacn2's lower bound |
 | filter form | plain | residual, from the second iteration |
 | entry point | `feast(…, uplo, n, d_A, lda, …)` + `feast_bufferSize`, or the model `feast` with it sized by `dense_resolvent_bufferSize` | `feast(…, model, n, …)` + `feast_driver_bufferSize`, the model sized by `krylov_resolvent_bufferSize` |
-| workspace | `Ne·n²` complex | `(4·Ne + 3)·n·m0` real |
+| workspace | `Ne·n²` complex | `(2·Ne + 4)·n·m0` real |
 
 The model `feast` takes any `feast_resolvent`, so a caller's own model works
 the same way. Where matrix-free FEAST sits next to lanczos and davidson is
@@ -310,5 +310,9 @@ Dense: dominated by the `Ne` resolvents, `Ne·n²` complex elements: 32 MiB at
 
 Matrix-free: `O(n·m0)` throughout — the driver's buffer
 (`feast_driver_bufferSize`) and the model's (`krylov_resolvent_bufferSize`,
-`(4·Ne + 3)·n·m0` reals: the Lanczos vectors, the split search directions and
-the split solutions), sized and carved separately.
+about `(2·Ne + 4)·n·m0` reals: the Lanczos vectors, the split search
+directions, and the right-hand side `filter_residual` mixes), sized and carved
+separately. The `X_e` themselves are never stored: the filter is linear in each
+(weight `w_e`, or `w_e / (Z_e − λ_j)` in the residual form), so
+`shifted_cocg_accumulate` adds every step's weighted increment straight into the
+filtered output.

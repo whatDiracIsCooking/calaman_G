@@ -163,23 +163,6 @@ __global__ void accumulate_kernel(const std::size_t elems, const FeastContour<R>
   }
 }
 
-/// accumulate_kernel over split storage: X_e = Xr_e + i Xi_e, two real arrays.
-template<typename R>
-__global__ void accumulate_split_kernel(const std::size_t elems, const FeastContour<R> contour,
-                                        const R *Xr, const R *Xi, const std::size_t stride,
-                                        R *out) {
-  const std::size_t step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
-  for (std::size_t k = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x; k < elems;
-       k += step) {
-    R acc = R(0);
-    for (int e = 0; e < contour.count; ++e) {
-      const std::size_t at = static_cast<std::size_t>(e) * stride + k;
-      acc += contour.wr[e] * Xr[at] - contour.wi[e] * Xi[at]; // Re(w x)
-    }
-    out[k] = acc;
-  }
-}
-
 /// One block per column j: compare the two forms' error bounds (feast_bridge.h),
 /// copy r_j or x_j into B(:, j), and record the choice in form[j].
 template<typename R>
@@ -215,39 +198,48 @@ __global__ void residual_select_kernel(const int n, const FeastContour<R> contou
   }
 }
 
-/// The filter sum over B's solutions: form[j] = 1 gives the residual form,
-/// c_e = w_e / (Z_e - lambda_j) and out = sum_e Re[ c_e (x + Xr_e + i Xi_e) ]
-/// (Im Z_e > 0, so Z_e - lambda_j != 0); form[j] = 0 the plain sum_e Re[ w_e X_e ].
+/// One thread per (node e, column j): c_ej = w_e, or w_e / (Z_e - lambda_j)
+/// where form[j] = 1 (Im Z_e > 0, so Z_e - lambda_j != 0).
 template<typename R>
-__global__ void accumulate_residual_split_kernel(const std::size_t n, const std::size_t elems,
-                                                 const FeastContour<R> contour, const R *X,
-                                                 const R *lambda, const R *form, const R *Xr,
-                                                 const R *Xi, const std::size_t stride, R *out) {
+__global__ void filter_weights_kernel(const int k, const int count, const FeastContour<R> contour,
+                                      const R *lambda, const R *form, R *cr, R *ci) {
+  const int p = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  if (p >= count * k) {
+    return;
+  }
+  const int e = p / k;
+  const int j = p % k;
+  if (form == nullptr || form[j] == R(0)) {
+    cr[p] = contour.wr[e];
+    ci[p] = contour.wi[e];
+    return;
+  }
+  // c = w / d with d = Z - lambda: (w conj(d)) / |d|^2.
+  const R dr = contour.zr[e] - lambda[j];
+  const R di = contour.zi[e];
+  const R inv = R(1) / (dr * dr + di * di);
+  cr[p] = (contour.wr[e] * dr + contour.wi[e] * di) * inv;
+  ci[p] = (contour.wi[e] * dr - contour.wr[e] * di) * inv;
+}
+
+/// out(:, j) = sum_e Re(c_ej) x_j where form[j] = 1, else 0; c from filter_weights_kernel.
+template<typename R>
+__global__ void filter_seed_kernel(const std::size_t n, const std::size_t elems, const int k,
+                                   const int count, const R *X, const R *form, const R *cr,
+                                   R *out) {
   const std::size_t step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
-  for (std::size_t k = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x; k < elems;
-       k += step) {
-    R acc = R(0);
-    if (form[k / n] == R(0)) {
-      for (int e = 0; e < contour.count; ++e) {
-        const std::size_t at = static_cast<std::size_t>(e) * stride + k;
-        acc += contour.wr[e] * Xr[at] - contour.wi[e] * Xi[at]; // Re(w x)
-      }
-      out[k] = acc;
+  for (std::size_t idx = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       idx < elems; idx += step) {
+    const std::size_t j = idx / n;
+    if (form == nullptr || form[j] == R(0)) {
+      out[idx] = R(0);
       continue;
     }
-    const R lam = lambda[k / n];
-    const R x = X[k];
-    for (int e = 0; e < contour.count; ++e) {
-      // c = w / d with d = Z - lambda: (w conj(d)) / |d|^2.
-      const R dr = contour.zr[e] - lam;
-      const R di = contour.zi[e];
-      const R inv = R(1) / (dr * dr + di * di);
-      const R cr = (contour.wr[e] * dr + contour.wi[e] * di) * inv;
-      const R ci = (contour.wi[e] * dr - contour.wr[e] * di) * inv;
-      const std::size_t at = static_cast<std::size_t>(e) * stride + k;
-      acc += cr * (x + Xr[at]) - ci * Xi[at];
+    R sum = R(0);
+    for (int e = 0; e < count; ++e) {
+      sum += cr[static_cast<std::size_t>(e) * static_cast<std::size_t>(k) + j];
     }
-    out[k] = acc;
+    out[idx] = sum * X[idx];
   }
 }
 
@@ -436,24 +428,6 @@ void feast_accumulate(const wwr::wwrStream_t stream, const std::size_t elems,
 }
 
 template<typename RealT>
-void feast_accumulate_split(const wwr::wwrStream_t stream, const std::size_t elems,
-                            const FeastContour<RealT> contour, const RealT *const d_Xr,
-                            const RealT *const d_Xi, const std::size_t stride,
-                            RealT *const d_out) {
-  if (d_Xr == nullptr || d_Xi == nullptr || d_out == nullptr || stride < elems) {
-    return;
-  }
-  if (contour.count < 1 || contour.count > kFeastMaxNodes) {
-    return;
-  }
-  if (elems == 0) {
-    return;
-  }
-  accumulate_split_kernel<RealT>
-      <<<blocks_for(elems), kBlock, 0, stream>>>(elems, contour, d_Xr, d_Xi, stride, d_out);
-}
-
-template<typename RealT>
 void feast_residual_select(const wwr::wwrStream_t stream, const int n, const int k,
                            const FeastContour<RealT> contour, const RealT *const d_X,
                            const RealT *const d_lambda, const RealT *const d_R,
@@ -470,25 +444,28 @@ void feast_residual_select(const wwr::wwrStream_t stream, const int n, const int
 }
 
 template<typename RealT>
-void feast_accumulate_residual_split(const wwr::wwrStream_t stream, const int n, const int k,
-                                     const FeastContour<RealT> contour, const RealT *const d_X,
-                                     const RealT *const d_lambda, const RealT *const d_form,
-                                     const RealT *const d_Xr, const RealT *const d_Xi,
-                                     const std::size_t stride, RealT *const d_out) {
-  if (n < 1 || k < 1) {
+void feast_filter_weights(const wwr::wwrStream_t stream, const int n, const int k,
+                          const FeastContour<RealT> contour, const RealT *const d_X,
+                          const RealT *const d_lambda, const RealT *const d_form,
+                          RealT *const d_cr, RealT *const d_ci, RealT *const d_out) {
+  if (n < 1 || k < 1 || d_cr == nullptr || d_ci == nullptr || d_out == nullptr) {
     return;
   }
-  const std::size_t nz = static_cast<std::size_t>(n);
-  const std::size_t elems = nz * static_cast<std::size_t>(k);
-  if (d_X == nullptr || d_lambda == nullptr || d_form == nullptr || d_Xr == nullptr ||
-      d_Xi == nullptr || d_out == nullptr || stride < elems) {
+  if (d_form != nullptr && (d_X == nullptr || d_lambda == nullptr)) {
     return;
   }
   if (contour.count < 1 || contour.count > kFeastMaxNodes) {
     return;
   }
-  accumulate_residual_split_kernel<RealT><<<blocks_for(elems), kBlock, 0, stream>>>(
-      nz, elems, contour, d_X, d_lambda, d_form, d_Xr, d_Xi, stride, d_out);
+  const int pairs = contour.count * k;
+  filter_weights_kernel<RealT>
+      <<<static_cast<unsigned int>((pairs + static_cast<int>(kBlock) - 1) /
+                                   static_cast<int>(kBlock)),
+         kBlock, 0, stream>>>(k, contour.count, contour, d_lambda, d_form, d_cr, d_ci);
+  const std::size_t nz = static_cast<std::size_t>(n);
+  const std::size_t elems = nz * static_cast<std::size_t>(k);
+  filter_seed_kernel<RealT><<<blocks_for(elems), kBlock, 0, stream>>>(
+      nz, elems, k, contour.count, d_X, d_form, d_cr, d_out);
 }
 
 template<typename RealT>
@@ -580,27 +557,18 @@ template void feast_accumulate<wwrDoubleComplex, double>(wwr::wwrStream_t, std::
                                                          const wwrDoubleComplex *, std::size_t,
                                                          double *);
 
-template void feast_accumulate_split<float>(wwr::wwrStream_t, std::size_t, FeastContour<float>,
-                                           const float *, const float *, std::size_t, float *);
-template void feast_accumulate_split<double>(wwr::wwrStream_t, std::size_t, FeastContour<double>,
-                                            const double *, const double *, std::size_t,
-                                            double *);
-
 template void feast_residual_select<float>(wwr::wwrStream_t, int, int, FeastContour<float>,
                                            const float *, const float *, const float *, float *,
                                            float *);
 template void feast_residual_select<double>(wwr::wwrStream_t, int, int, FeastContour<double>,
                                             const double *, const double *, const double *,
                                             double *, double *);
-template void feast_accumulate_residual_split<float>(wwr::wwrStream_t, int, int,
-                                                     FeastContour<float>, const float *,
-                                                     const float *, const float *, const float *,
-                                                     const float *, std::size_t, float *);
-template void feast_accumulate_residual_split<double>(wwr::wwrStream_t, int, int,
-                                                      FeastContour<double>, const double *,
-                                                      const double *, const double *,
-                                                      const double *, const double *,
-                                                      std::size_t, double *);
+template void feast_filter_weights<float>(wwr::wwrStream_t, int, int, FeastContour<float>,
+                                          const float *, const float *, const float *, float *,
+                                          float *, float *);
+template void feast_filter_weights<double>(wwr::wwrStream_t, int, int, FeastContour<double>,
+                                           const double *, const double *, const double *,
+                                           double *, double *, double *);
 
 template void feast_ritz_residual_block<float>(wwr::wwrStream_t, int, int, const float *,
                                                const float *, float *);

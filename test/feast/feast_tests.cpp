@@ -694,11 +694,19 @@ TEST(FeastArgCheckTests, KrylovResolventBufferSize) {
   EXPECT_EQ(krylov_resolvent_bufferSize<double>(8, 2, 9, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
       << "ne > kFeastMaxNodes";
 
-  // At least shifted_cocg's workspace plus the 2 Ne split solution blocks.
+  // shifted_cocg's workspace plus one n x k_max right-hand side: no X_e blocks,
+  // so (2 Ne + 4) n k_max reals plus O(Ne k_max) and the 256-byte alignment.
+  constexpr int n = 1000;
+  constexpr int k_max = 10;
+  constexpr int ne = 8;
+  constexpr std::size_t block = std::size_t{n} * k_max * sizeof(double);
   std::size_t cocg = 0;
-  ASSERT_EQ(shifted_cocg_bufferSize<double>(16, 3, 8, &cocg), wwr::WWRBLAS_STATUS_SUCCESS);
-  ASSERT_EQ(krylov_resolvent_bufferSize<double>(16, 3, 8, &bytes), wwr::WWRBLAS_STATUS_SUCCESS);
-  EXPECT_GE(bytes, cocg + 2 * 16 * 3 * 8 * sizeof(double));
+  ASSERT_EQ(shifted_cocg_bufferSize<double>(n, k_max, ne, &cocg), wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_EQ(krylov_resolvent_bufferSize<double>(n, k_max, ne, &bytes),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_GE(bytes, cocg + block);
+  EXPECT_GE(bytes, (2 * ne + 4) * block);
+  EXPECT_LE(bytes, (2 * ne + 4) * block + std::size_t{16} * ne * k_max * sizeof(double) + 16 * 256);
 }
 
 /// A KrylovResolvent over SymmOperator, with its own copy of A and workspace.

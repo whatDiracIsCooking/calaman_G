@@ -7,7 +7,8 @@
  *
  *   filter(Y) = sum_e Re[ w_e X_e ],   (Z_e I - A) X_e = Y by shifted_cocg
  *
- * All Ne shifts share one Krylov space: one k-column apply per inner step.
+ * All Ne shifts share one Krylov space: one k-column apply per inner step. No
+ * X_e is stored: shifted_cocg_accumulate adds each step's weighted share to out.
  *
  * The inner solves meet a relative tolerance tau, so filter is off by up to
  * tau ||y|| sum_e |w_e| / Im Z_e -- a floor the outer iteration stalls at. Once
@@ -45,22 +46,25 @@ export import calaman.error_handling; // Status
 
 export namespace calaman {
 
-/// @brief KrylovResolvent's workspace: shifted_cocg's, then the split X_e it solves into.
+/// @brief KrylovResolvent's workspace: shifted_cocg's, then the filter's right-hand
+///        side and weights. No X_e: shifted_cocg_accumulate sums them as it goes.
 template<calaman::real_fp T>
 struct KrylovResolventSlices {
   ShiftedCocgSlices<T> cocg;
-  T *xr = nullptr; ///< Ne blocks of n x k: Re X_e
-  T *xi = nullptr; ///< Ne blocks of n x k: Im X_e
-  T *form = nullptr; ///< k_max: 1 where filter_residual took the residual form
+  T *rhs = nullptr;    ///< n x k_max: filter_residual's mixed right-hand side
+  T *coef_r = nullptr; ///< Ne x k_max: Re c_ej, the filter weight of X_e(:, j)
+  T *coef_i = nullptr; ///< Ne x k_max: Im c_ej
+  T *form = nullptr;   ///< k_max: 1 where filter_residual took the residual form
 
   /// @brief Lay the slices out from @p layout; every region is FIXED.
   void carve(WorkspaceLayout &layout, const int n, const int k_max, const int ne) {
     cocg.carve(layout, n, k_max, ne);
-    const std::size_t len = static_cast<std::size_t>(n) * static_cast<std::size_t>(k_max) *
-                            static_cast<std::size_t>(ne);
-    xr = layout.fixed<T>(len);
-    xi = layout.fixed<T>(len);
-    form = layout.fixed<T>(static_cast<std::size_t>(k_max));
+    const std::size_t kz = static_cast<std::size_t>(k_max);
+    const std::size_t pairs = static_cast<std::size_t>(ne) * kz;
+    rhs = layout.fixed<T>(static_cast<std::size_t>(n) * kz);
+    coef_r = layout.fixed<T>(pairs);
+    coef_i = layout.fixed<T>(pairs);
+    form = layout.fixed<T>(kz);
   }
 };
 
@@ -121,35 +125,32 @@ public:
 
   /// @brief out = sum_e Re[ w_e (Z_e I - A)^{-1} Y ], each solve to the options'
   ///        tolerance or step cap; EXECUTION_FAILED on a NaN (see last_solve).
+  ///        @p out must not overlap @p Y.
   Status filter(wwr::wwrStream_t stream, const device::FeastContour<T> &contour, const int k,
                 const T *Y, T *out) {
     CLM_REQUIRE(k >= 1 && k <= s_.cocg.k_max && contour.count >= 1 &&
                     contour.count <= s_.cocg.shifts_max,
                 wwr::WWRBLAS_STATUS_INVALID_VALUE);
-    CLM_TRY(solve(stream, contour, k, Y));
-    const std::size_t nk = static_cast<std::size_t>(n_) * static_cast<std::size_t>(k);
-    device::feast_accumulate_split(stream, nk, contour, s_.xr, s_.xi, nk, out);
+    device::feast_filter_weights<T>(stream, n_, k, contour, nullptr, nullptr, nullptr, s_.coef_r,
+                                    s_.coef_i, out);
     CLM_TRY(wwr::wwrGetLastError());
-    return wwr::WWRBLAS_STATUS_SUCCESS;
+    return solve(stream, contour, k, Y, out);
   }
 
   /// @brief The residual form (feast_residual_hook): out = rho(A) X for the Ritz
   ///        pairs (lambda, X) with eigen-residuals @p R, solving against r_j
   ///        where that bounds the error tighter, else against x_j. @p out
-  ///        holds the mixed right-hand side until the sum overwrites it.
+  ///        must not overlap @p X or @p R.
   Status filter_residual(wwr::wwrStream_t stream, const device::FeastContour<T> &contour,
                          const int k, const T *X, const T *lambda, const T *R, T *out) {
     CLM_REQUIRE(k >= 1 && k <= s_.cocg.k_max && contour.count >= 1 &&
                     contour.count <= s_.cocg.shifts_max,
                 wwr::WWRBLAS_STATUS_INVALID_VALUE);
-    device::feast_residual_select(stream, n_, k, contour, X, lambda, R, out, s_.form);
+    device::feast_residual_select(stream, n_, k, contour, X, lambda, R, s_.rhs, s_.form);
+    device::feast_filter_weights<T>(stream, n_, k, contour, X, lambda, s_.form, s_.coef_r,
+                                    s_.coef_i, out);
     CLM_TRY(wwr::wwrGetLastError());
-    CLM_TRY(solve(stream, contour, k, out));
-    const std::size_t nk = static_cast<std::size_t>(n_) * static_cast<std::size_t>(k);
-    device::feast_accumulate_residual_split(stream, n_, k, contour, X, lambda, s_.form, s_.xr,
-                                            s_.xi, nk, out);
-    CLM_TRY(wwr::wwrGetLastError());
-    return wwr::WWRBLAS_STATUS_SUCCESS;
+    return solve(stream, contour, k, s_.rhs, out);
   }
 
   /// @brief The dimension n, and the widest block and most shifts the slices fit.
@@ -165,13 +166,14 @@ public:
   FeastInnerReport<T> inner_report() const noexcept { return report_; }
 
 private:
-  /// (Z_e I - A) X_e = B into s_.xr / s_.xi, tallied in report_; EXECUTION_FAILED on a NaN.
+  /// (Z_e I - A) X_e = B, out += sum_e Re[ c_ej X_e(:, j) ] with the carved
+  /// weights; tallied in report_, EXECUTION_FAILED on a NaN.
   Status solve(wwr::wwrStream_t stream, const device::FeastContour<T> &contour, const int k,
-               const T *B) {
+               const T *B, T *out) {
     const auto count = static_cast<std::size_t>(contour.count);
-    CLM_TRY(shifted_cocg<T>(stream, *op_, n_, k, std::span<const T>{contour.zr, count},
-                            std::span<const T>{contour.zi, count}, B, s_.xr, s_.xi, s_.cocg,
-                            &last_, options_));
+    CLM_TRY(shifted_cocg_accumulate<T>(stream, *op_, n_, k, std::span<const T>{contour.zr, count},
+                                       std::span<const T>{contour.zi, count}, B, s_.coef_r,
+                                       s_.coef_i, out, s_.cocg, &last_, options_));
     if (last_.reason == ShiftedCocgStopReason::NumericalFailure) {
       return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
     }
