@@ -7,7 +7,7 @@
 # once against WarpWraps's `wwr*` names and built for either backend.
 #
 # Not a LAPACK routine (LAPACK ships no FEAST), so it is its own module, like
-# calaman.expm. One module with six partitions: the inter-partition edges are
+# calaman.expm. One module with seven partitions: the inter-partition edges are
 # genuine internal pieces of one driver, not reusable routines, so they are
 # partitions rather than separate modules (unlike the geqp3 call graph).
 
@@ -33,7 +33,7 @@ calaman_add_gpu_device_library(
 )
 
 # The module itself: ordinary host C++23, no device code. interface.cppm
-# re-exports the six partitions; the host driver and the workspace layout live
+# re-exports the seven partitions; the host driver and the workspace layout live
 # in them. The template surface is header-only (like the geqp3 family),
 # instantiated on use, so there is no instantiations.cpp.
 #
@@ -51,6 +51,7 @@ calaman_add_gpu_device_library(
 #   calaman.linear_operator linear_operator, feast_resolvent's base
 #                           (re-exported)
 #   calaman.lacn2           ||A||_1 for a model with no norm1_estimate hook
+#   calaman.shifted_cocg    KrylovResolvent's inner solves (re-exported)
 # (every entry point returns it). wwr.complex is not listed: no partition names
 # the vendor complex type, and RealToComplexType's target is reachable
 # transitively through calaman.common.
@@ -69,6 +70,7 @@ calaman_add_cxx_module_library(
   compute_quadrature.cppm
   buffer_size.cppm
   resolvent.cppm
+  krylov_resolvent.cppm
   rayleigh_ritz.cppm
   driver.cppm
   LINK_PUBLIC
@@ -85,6 +87,7 @@ calaman_add_cxx_module_library(
   calaman::iterative
   calaman::linear_operator
   calaman::lacn2
+  calaman::shifted_cocg
   LINK_PRIVATE
   wwr::backend
   INCLUDE_DIRS_PRIVATE
