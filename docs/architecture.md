@@ -403,6 +403,6 @@ assumes is fixed (§9).
 - With no `norm1_estimate` hook the residuals' `||A||_1` is lacn2's lower bound
   (src/feast/README.md, *Resolvent models*), so the outer test is never looser
   than stated.
-- The dense entry point's `wrap` seam stays: `DenseResolvent` is
-  module-internal, and the seam is how the tests compare the Krylov filters
-  against it.
+- `DenseResolvent` is exported (#330), so the tests compare the Krylov filters
+  against it through the model entry point; the dense entry point carries no
+  test-only seam.

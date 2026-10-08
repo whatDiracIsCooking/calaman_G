@@ -12,8 +12,8 @@
  * Exported: feast (dense, or over a caller's model), feast_bufferSize,
  * feast_driver_bufferSize, FeastOptions/FeastInfo/FeastStopReason,
  * feast_rational_filter, the feast_resolvent concept and its optional
- * feast_norm1_hook and feast_residual_hook, the matrix-free KrylovResolvent
- * model with its slices and krylov_resolvent_bufferSize, and
+ * feast_norm1_hook and feast_residual_hook, the two models -- DenseResolvent
+ * and the matrix-free KrylovResolvent -- with their slices and bufferSize, and
  * linear_operator (calaman.linear_operator). The other partitions' declarations
  * are module-internal; they are re-exported only because every interface
  * partition must be.

@@ -242,9 +242,6 @@ export namespace calaman {
  * @param lwork_bytes     Its size.
  * @param opts            Tuning.
  * @param info            Host out, may be null.
- * @param wrap            Maps the dense model to the feast_resolvent iterated
- *                        over; identity by default. A seam for decorating it,
- *                        e.g. hiding its norm1_estimate hook.
  *
  * @return A Status: success whenever the iteration reached one of its own
  *         stopping conditions -- including MaxIterations and SubspaceTooSmall,
@@ -261,13 +258,13 @@ export namespace calaman {
  * iteration after the first: the interval may hold more eigenvalues than m0 can
  * carry, and the ones returned cannot be trusted to be all of them. Raise m0.
  */
-template<calaman::real_fp T, std::size_t Ne = 8, class Wrap = std::identity>
-  requires(Ne == 4 || Ne == 8) && std::invocable<Wrap &, DenseResolvent<T> &>
+template<calaman::real_fp T, std::size_t Ne = 8>
+  requires(Ne == 4 || Ne == 8)
 Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
              wwr::wwrStream_t stream, const wwr::wwrblasFillMode_t uplo, const int n, const T *d_A,
              const int lda, const T Emin, const T Emax, const int m0, T *d_lambda, T *d_Q,
              void *d_work, const std::size_t lwork_bytes, const FeastOptions<T> &opts = {},
-             FeastInfo<T> *info = nullptr, Wrap wrap = {}) {
+             FeastInfo<T> *info = nullptr) {
   if (n < 1 || m0 < 1 || m0 > n || lda < n) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
@@ -289,17 +286,13 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
   }
 
   DenseResolvent<T> resolvent{cublas_handle, uplo, n, d_A, lda, ws.resolvent};
-  auto &&model = std::invoke(wrap, resolvent);
-  if (!feast_model_fits<T, Ne>(model, n, m0)) {
-    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
-  }
-  return feast_iterate<T, Ne>(cublas_handle, cusolver_handle, stream, model, n, Emin, Emax, m0,
+  return feast_iterate<T, Ne>(cublas_handle, cusolver_handle, stream, resolvent, n, Emin, Emax, m0,
                               d_lambda, d_Q, ws.rr, opts, info);
 }
 
 /**
  * @brief feast over the caller's resolvent @p model of an n x n real symmetric A
- *        -- KrylovResolvent for a matrix-free A. Never reads A's entries.
+ *        -- KrylovResolvent for a matrix-free A, or DenseResolvent. Reads A only through it.
  *
  * @param model  On @p stream; dim() == n, k_max() >= m0, shifts_max() >= Ne, else INVALID_VALUE.
  * @param d_work Device workspace for the driver alone, from feast_driver_bufferSize.
