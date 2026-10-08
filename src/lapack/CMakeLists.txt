@@ -471,6 +471,10 @@ add_subdirectory(geev)
 # steqr, so it follows them.
 add_subdirectory(syev)
 
+# ?heev -- the complex Hermitian eigensolver driver, syev's C/Z twin; links
+# lanhe, lascl, sterf and steqr, so it follows them.
+add_subdirectory(heev)
+
 # calaman.tri_index -- the header-only INTERFACE target carrying tri_index.cuh,
 # the device index maps of the triangular storage formats. Added before the
 # conversion modules that link it.
