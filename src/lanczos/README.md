@@ -3,7 +3,8 @@
 Thick-restart **Lanczos** for the `nev` extreme eigenpairs of a real symmetric
 operator known only as a [`linear_operator`](../linear_operator/linear_operator.cppm)
 (the block-operator concept shared with davidson and feast) or a single-vector
-matrix-vector-product callback.
+matrix-vector-product callback — and, by [shift-invert](#shift-invert-interior-eigenpairs),
+for the `nev` interior pairs nearest a shift `sigma`.
 
 Not a LAPACK routine, so it is its own module rather than a partition of a
 LAPACK-named one, like `calaman.davidson` and `calaman.feast`.
@@ -16,10 +17,9 @@ LAPACK-named one, like `calaman.davidson` and `calaman.feast`.
 Real `float`/`double` only (`calaman::real_fp`). Hermitian/complex, block Lanczos
 and a tridiagonal eigensolver are out of scope.
 
-**Planned:** shift-invert for interior eigenvalues, with an exact (dense)
-shifted solve behind the operator concept shared with davidson and feast.
-Inexact Krylov shift-solves, and block, Hermitian and generalized Lanczos, are
-deferred — [`docs/architecture.md` §9](../../docs/architecture.md) says why.
+Shift-invert takes exact shifted solves only. Inexact Krylov shift-solves, and
+block, Hermitian and generalized Lanczos, are deferred —
+[`docs/architecture.md` §9](../../docs/architecture.md) says why.
 
 ## Module
 
@@ -151,6 +151,47 @@ multiplicity; a block method, or deflating the found vectors and re-solving, is
 the remedy. For the same reason an eigenvector absent from the start vector is
 found only if a breakdown recovery or rounding brings it in.
 
+## Shift-invert: interior eigenpairs
+
+`:shift_invert`'s `lanczos_shift_invert_solve` finds the `nev` eigenpairs of `A`
+nearest a shift `sigma`, on either side of it. It takes a `shifted_operator` —
+a `linear_operator` for `(A - sigma I)^{-1}` that also reports `sigma()` — such
+as [`calaman.shift_invert`](../shift_invert/README.md)'s `DenseShiftInvert`,
+already `prepare`d (`A - sigma I` factored once by `sytrf`; each apply a
+`sytrs2` solve). It runs `lanczos_solve` unchanged on that operator for
+`LanczosWhich::largest_magnitude` — the largest `|theta|` are the eigenvalues
+nearest `sigma` — then `shift_invert_back_transform` maps each Ritz value to
+`lambda = sigma + 1/theta` on the host and sorts ascending, and the
+eigenvector columns follow by in-place `swap`s. That costs one round trip of
+the `nev` values and no workspace of its own: the driver takes the same
+`LanczosSlices`, and the operator carries its own.
+
+```cpp
+DenseShiftInvert<double> op{blas, solver, Uplo::L, n, d_A, n, sigma, op_slices};
+CLM_TRY(op.prepare(stream));   // sigma exactly on an eigenvalue: fails here
+CLM_TRY(lanczos_shift_invert_solve<double>(blas, solver, stream, n, nev, ncv, s, op,
+                                           d_lambda, d_X, &info));
+```
+
+- **The tolerance judges `theta`, not `lambda`.** A wanted pair passes when its
+  estimate is under `tol * max(|theta_i|, ||T||_2)`, and `||T||_2` is the
+  `|theta|` of the pair nearest `sigma`. So a pair farther out is resolved only
+  to about `tol * theta_max / |theta_i|` of its own `theta`: with `sigma` very
+  near one eigenvalue, ask for that one (`nev = 1`), or tighten `tol`.
+- **A singular shift** (`sigma` exactly on an eigenvalue of the stored `A`)
+  fails `prepare`. Handed to the solve anyway, the unfactored operator fails its
+  first apply: a failing `Status`, `reason == NumericalFailure`, and the
+  outputs unwritten.
+- **`sigma` outside the spectrum** gives every `theta` one sign, and the solve
+  degenerates to the nearer end's `nev` pairs — what `lanczos_solve` finds
+  without a factorization.
+
+`test/lanczos/lanczos_shift_invert_tests.cpp` checks the pairs against
+`LAPACKE_?syevr` over just the wanted index window, in float and double, across
+a graded spectrum and at the edges: `sigma` midway between two eigenvalues
+`1e-3` of a gap apart (two `theta` of equal magnitude), `sqrt(eps)` of a gap
+from one, outside the spectrum, and exactly on one.
+
 ## Workspace
 
 One caller-provided device buffer, carved by `make_lanczos_slices` through
@@ -185,6 +226,7 @@ lanczos_solve<double>(blas, solver, stream, n, nev, ncv, LanczosWhich::smallest,
 | `buffer_size.cppm` | `:buffer_size` — slices, workspace layout, sizing |
 | `ritz.cppm` | `:ritz` — `syevd` on `T`, end selection, residual estimates, compaction, Ritz vectors |
 | `solve.cppm` | `:solve` — `lanczos_solve`, its cycle stages, the thick restart and breakdown recovery |
+| `shift_invert.cppm` | `:shift_invert` — `shifted_operator`, the back-transform, `lanczos_shift_invert_solve` |
 | `lanczos_bridge.h` | `device::LanczosStatus` and the kernel-launch declarations |
 | `lanczos.cu` | the device library: status reset, step write/normalise + breakdown guard, arrowhead |
 | `interface.cppm` | primary interface; re-exports the partitions |

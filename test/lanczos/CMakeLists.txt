@@ -121,9 +121,10 @@ calaman_add_gtest_suite_tests(
 )
 
 # The shift-invert entry point on calaman.shift_invert's DenseShiftInvert,
-# against LAPACKE_?syevd (plus ?geqrf/?orgqr for the random orthogonal Q). Same
-# lapack_reference guard. The back-transform suite is host math and runs on a
-# card-less runner; the reference suite factors and solves on the device.
+# against LAPACKE_?syevd, or ?syevr over an index window (plus ?geqrf/?orgqr
+# for the random orthogonal Q). Same lapack_reference guard. The back-transform
+# suite is host math and runs on a card-less runner; the reference and interior
+# suites factor and solve on the device.
 calaman_add_gtest_executable(
   NAME
   lanczos_shift_invert_tests
@@ -157,5 +158,6 @@ calaman_add_gtest_suite_tests(
   lanczos_shift_invert_tests
   SUITES
   LanczosShiftInvertReferenceTests
+  LanczosShiftInvertInteriorTests
   REQUIRES_GPU
 )
