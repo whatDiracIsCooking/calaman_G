@@ -49,15 +49,18 @@ export namespace calaman {
 
 /// @brief A linear_operator that also applies the FEAST filter for a contour.
 ///
-/// r.prepare(stream, contour) runs once per solve, before any filter;
-/// r.filter(stream, contour, k, Y, out) enqueues out = Re sum_e w_e (Z_e I - A)^{-1} Y,
-/// with Y and out n x k, device-resident, leading dimension n, not aliased.
+/// r.prepare(stream, contour) once per solve, then r.filter(stream, contour, k, Y, out):
+/// out = Re sum_e w_e (Z_e I - A)^{-1} Y, Y and out n x k on the device, ld n, unaliased.
+/// r.dim() is n; r.k_max() and r.shifts_max() are the widest k and most nodes it takes.
 template<class R, class T>
 concept feast_resolvent = linear_operator<R, T> && requires(R &r, wwr::wwrStream_t stream,
                                                             const device::FeastContour<T> &contour,
                                                             int k, const T *Y, T *out) {
   { r.prepare(stream, contour) } -> std::convertible_to<Status>;
   { r.filter(stream, contour, k, Y, out) } -> std::convertible_to<Status>;
+  { r.dim() } -> std::convertible_to<int>;
+  { r.k_max() } -> std::convertible_to<int>;
+  { r.shifts_max() } -> std::convertible_to<int>;
 };
 
 /// @brief The optional hook: r.norm1_estimate(stream, d_out) enqueues ||A||_1,
@@ -212,6 +215,11 @@ public:
     CLM_TRY(wwr::wwrGetLastError());
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
+
+  /// @brief The dimension n, and the widest block and most nodes the slices fit.
+  int dim() const noexcept { return n_; }
+  int k_max() const noexcept { return s_.k_max; }
+  int shifts_max() const noexcept { return s_.nodes; }
 
 private:
   wwr::wwrblasHandle_t handle_;

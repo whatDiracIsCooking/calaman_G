@@ -81,7 +81,10 @@ The driver (`feast_iterate`) never reads `A`: it is generic over a
 that also has `prepare(stream, contour)`, once per solve, and
 `filter(stream, contour, k, Y, out)`, `out = ρ(A) Y`, once per iteration. Each
 model carves its own workspace; the driver's `FeastSlices` is only the
-`O(n·m0)` Rayleigh–Ritz part.
+`O(n·m0)` Rayleigh–Ritz part. So a model also reports what it was sized for —
+`dim()`, `k_max()` and `shifts_max()` — and `feast` returns `INVALID_VALUE`
+before any device work unless `dim() == n`, `k_max() ≥ m0` and
+`shifts_max() ≥ Ne`.
 
 Two models ship, and two entry points:
 

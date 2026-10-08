@@ -84,6 +84,13 @@ struct FeastInfo : IterationInfo<FeastStopReason> {
 
 namespace calaman {
 
+/// @brief Whether model @p r is of dimension @p n and takes m0 columns and Ne nodes.
+template<calaman::real_fp T, std::size_t Ne, class R>
+  requires feast_resolvent<R, T>
+bool feast_model_fits(R &r, const int n, const int m0) {
+  return r.dim() == n && r.k_max() >= m0 && r.shifts_max() >= static_cast<int>(Ne);
+}
+
 /**
  * @brief The FEAST iteration over the resolvent model @p r, on carved slices.
  *
@@ -274,6 +281,9 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
 
   DenseResolvent<T> resolvent{cublas_handle, uplo, n, d_A, lda, ws.resolvent};
   auto &&model = std::invoke(wrap, resolvent);
+  if (!feast_model_fits<T, Ne>(model, n, m0)) {
+    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
+  }
   return feast_iterate<T, Ne>(cublas_handle, cusolver_handle, stream, model, n, Emin, Emax, m0,
                               d_lambda, d_Q, ws.rr, opts, info);
 }
@@ -282,7 +292,7 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
  * @brief feast over the caller's resolvent @p model of an n x n real symmetric A
  *        -- KrylovResolvent for a matrix-free A. Never reads A's entries.
  *
- * @param model  Carved for this n, m0 columns and Ne nodes; used on @p stream.
+ * @param model  On @p stream; dim() == n, k_max() >= m0, shifts_max() >= Ne, else INVALID_VALUE.
  * @param d_work Device workspace for the driver alone, from feast_driver_bufferSize.
  * The other arguments, the return and @p info are as the dense feast's.
  */
@@ -299,6 +309,9 @@ Status feast(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolv
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
   if (d_lambda == nullptr || d_Q == nullptr || d_work == nullptr) {
+    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
+  }
+  if (!feast_model_fits<T, Ne>(model, n, m0)) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
 

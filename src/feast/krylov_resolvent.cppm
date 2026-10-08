@@ -148,6 +148,11 @@ public:
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
+  /// @brief The dimension n, and the widest block and most shifts the slices fit.
+  int dim() const noexcept { return n_; }
+  int k_max() const noexcept { return s_.cocg.k_max; }
+  int shifts_max() const noexcept { return s_.cocg.shifts_max; }
+
   /// @brief What the last filter's shifted_cocg did: iterations, reason, per-shift residuals.
   const ShiftedCocgInfo<T> &last_solve() const noexcept { return last_; }
 

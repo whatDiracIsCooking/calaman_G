@@ -494,6 +494,9 @@ struct HideNorm1 {
   Status filter(wwr::wwrStream_t stream, const Contour &contour, int k, const T *Y, T *out) {
     return inner.filter(stream, contour, k, Y, out);
   }
+  int dim() const { return inner.dim(); }
+  int k_max() const { return inner.k_max(); }
+  int shifts_max() const { return inner.shifts_max(); }
 };
 
 template<typename T>
@@ -674,6 +677,9 @@ struct CompareFilters {
   Status apply(wwr::wwrStream_t stream, int k, const T *X, T *Y) {
     return dense.apply(stream, k, X, Y);
   }
+  int dim() const { return dense.dim(); }
+  int k_max() const { return dense.k_max(); }
+  int shifts_max() const { return dense.shifts_max(); }
   template<class Contour>
   Status prepare(wwr::wwrStream_t stream, const Contour &contour) {
     FEAST_TEST_TRY(krylov.prepare(stream, contour));
@@ -858,6 +864,9 @@ struct CompareResidualFilters {
   Status apply(wwr::wwrStream_t stream, int k, const T *X, T *Y) {
     return dense.apply(stream, k, X, Y);
   }
+  int dim() const { return dense.dim(); }
+  int k_max() const { return dense.k_max(); }
+  int shifts_max() const { return dense.shifts_max(); }
   template<class Contour>
   Status prepare(wwr::wwrStream_t stream, const Contour &contour) {
     FEAST_TEST_TRY(krylov.prepare(stream, contour));
@@ -1017,6 +1026,9 @@ struct PlainForm {
   Status filter(wwr::wwrStream_t stream, const Contour &contour, int k, const T *Y, T *out) {
     return inner.filter(stream, contour, k, Y, out);
   }
+  int dim() const { return inner.dim(); }
+  int k_max() const { return inner.k_max(); }
+  int shifts_max() const { return inner.shifts_max(); }
 };
 
 using Laplacian = KrylovResolvent<LaplacianOperator<double>, double>;
@@ -1174,19 +1186,31 @@ TEST(FeastMatrixFreeTests, ResidualFormConvergesFromEveryStart) {
   }
 }
 
-// The model entry point's argument checks return before any device work.
+// The model entry point's argument checks return before any device work: a
+// call that reaches the model sets touched.
 struct NullModel {
+  int n = 4;
+  int k_cols = 8;
+  int shifts = 8;
+  bool touched = false;
+
   Status apply(wwr::wwrStream_t, int, const double *, double *) {
+    touched = true;
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
   template<class Contour>
   Status prepare(wwr::wwrStream_t, const Contour &) {
+    touched = true;
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
   template<class Contour>
   Status filter(wwr::wwrStream_t, const Contour &, int, const double *, double *) {
+    touched = true;
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
+  int dim() const { return n; }
+  int k_max() const { return k_cols; }
+  int shifts_max() const { return shifts; }
 };
 
 TEST(FeastArgCheckTests, ModelEntryPointRejectsBadArguments) {
@@ -1215,6 +1239,20 @@ TEST(FeastArgCheckTests, ModelEntryPointRejectsBadArguments) {
       << "non-finite Emax";
   EXPECT_EQ(call(n, m0, 1.0, 2.0, nullptr), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "null lambda";
 
+  // A model sized for another problem: its dim, k_max or shift count disagrees.
+  model.n = n + 1;
+  EXPECT_EQ(call(n, m0, 1.0, 2.0, lambda.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "model dim() != n";
+  model.n = n;
+  model.k_cols = m0 - 1;
+  EXPECT_EQ(call(n, m0, 1.0, 2.0, lambda.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "model k_max() < m0";
+  model.k_cols = m0;
+  model.shifts = 7;
+  EXPECT_EQ(call(n, m0, 1.0, 2.0, lambda.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "model shifts_max() < Ne";
+  EXPECT_FALSE(model.touched) << "rejected before iterating";
+
   std::size_t bytes = 0;
   EXPECT_EQ(feast_driver_bufferSize<double>(null_solver, n, m0, nullptr),
             wwr::WWRBLAS_STATUS_INVALID_VALUE)
@@ -1222,6 +1260,44 @@ TEST(FeastArgCheckTests, ModelEntryPointRejectsBadArguments) {
   EXPECT_EQ(feast_driver_bufferSize<double>(null_solver, n, n + 1, &bytes),
             wwr::WWRBLAS_STATUS_INVALID_VALUE)
       << "m0 > n";
+}
+
+// KrylovResolvent reports the n, k_max and shift count it was built for, and
+// the model entry point rejects a mismatch with any of them up front. Host-side:
+// the slices are carved over host memory, never dereferenced.
+TEST(FeastArgCheckTests, ModelEntryPointRejectsMisSizedKrylovModel) {
+  const int n = 8;
+  const int m0 = 3;
+  wwr::wwrblasHandle_t null_blas{};
+  wwr::wwrsolverDnHandle_t null_solver{};
+  std::vector<double> lambda(m0, 0.0);
+  std::vector<double> q(static_cast<std::size_t>(n) * m0, 1.0);
+  std::vector<double> work(4096, 0.0);
+  SymmOperator<double> op{null_blas, n, nullptr};
+
+  const auto check = [&](const int model_n, const int k_max, const int ne, const int feast_n,
+                         const char *what) {
+    std::size_t bytes = 0;
+    ASSERT_EQ(krylov_resolvent_bufferSize<double>(model_n, k_max, ne, &bytes),
+              wwr::WWRBLAS_STATUS_SUCCESS);
+    std::vector<double> model_work(bytes / sizeof(double) + 1, 0.0);
+    KrylovResolventSlices<double> slices;
+    ASSERT_EQ(make_krylov_resolvent_slices<double>(model_n, k_max, ne, model_work.data(), &slices,
+                                                   nullptr),
+              wwr::WWRBLAS_STATUS_SUCCESS);
+    Krylov<double> model{op, model_n, slices};
+    EXPECT_EQ(model.dim(), model_n);
+    EXPECT_EQ(model.k_max(), k_max);
+    EXPECT_EQ(model.shifts_max(), ne);
+    const Status status =
+        feast<double, 8>(null_blas, null_solver, wwr::wwrStream_t{}, model, feast_n, 1.0, 2.0, m0,
+                         lambda.data(), q.data(), work.data(), work.size() * sizeof(double));
+    EXPECT_EQ(status, wwr::WWRBLAS_STATUS_INVALID_VALUE) << what;
+  };
+  check(n + 1, m0, 8, n, "model dim() > n");
+  check(n - 1, m0, 8, n, "model dim() < n");
+  check(n, m0 - 1, 8, n, "model k_max() < m0");
+  check(n, m0, 4, n, "model shifts_max() < Ne");
 }
 
 } // namespace
