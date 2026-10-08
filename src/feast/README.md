@@ -111,8 +111,17 @@ fix rewrites each solve against the Ritz pair's eigen-residual
 (Z I − A)⁻¹ x = [ x + (Z I − A)⁻¹ r ] / (Z − λ)
 ```
 
-The right-hand side is now `r`, and the error is `τ‖r‖ Σ_e |w_e| / (Im Z_e)²`:
-it shrinks with `r`, so a fixed `τ` no longer limits the accuracy reached. A
+The right-hand side is now `r`, and the error is `τ‖r‖ Σ_e |w_e| / (Im Z_e |Z_e − λ|)`:
+it shrinks with `r`, so a fixed `τ` no longer limits the accuracy reached.
+
+That bound is not always the smaller one. A guard or spurious pair keeps a
+large `r`, and its `λ` can sit by a node near the real axis, where
+`1 / |Z_e − λ|` is about `1 / Im Z_e`: filtered in residual form it is
+re-polluted every iteration, and Rayleigh–Ritz turns the pollution into
+spurious pairs inside the interval that flicker in and out, so the count never
+settles. `KrylovResolvent` therefore picks the form **per column**, whichever
+bound is smaller (`feast_residual_select`): converging pairs take the residual
+form, the rest the plain one. A
 model opts in with the optional `filter_residual(stream, contour, k, X, lambda, R,
 out)` hook (`feast_residual_hook`); from the second iteration the driver hands
 it the Ritz pairs and `R = AX − X diag(λ)`, formed in place from the `AX`

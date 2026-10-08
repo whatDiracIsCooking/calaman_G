@@ -16,8 +16,8 @@
  *
  *   (Z I - A)^{-1} x = [ x + (Z I - A)^{-1} r ] / (Z - lambda),   r = A x - lambda x
  *
- * solving against r, so the error shrinks with r and tau no longer limits the
- * accuracy reached. An inner solve that stops short fails the filter with
+ * solving against r for each column where that bound is the smaller, so the
+ * error shrinks with r and tau no longer limits accuracy. An inner solve that stops short fails the filter with
  * EXECUTION_FAILED -- feast stops with NumericalFailure -- and last_solve()
  * says why. No norm1_estimate hook: the driver falls back to lacn2.
  */
@@ -49,6 +49,7 @@ struct KrylovResolventSlices {
   ShiftedCocgSlices<T> cocg;
   T *xr = nullptr; ///< Ne blocks of n x k: Re X_e
   T *xi = nullptr; ///< Ne blocks of n x k: Im X_e
+  T *form = nullptr; ///< k_max: 1 where filter_residual took the residual form
 
   /// @brief Lay the slices out from @p layout; every region is FIXED.
   void carve(WorkspaceLayout &layout, const int n, const int k_max, const int ne) {
@@ -57,6 +58,7 @@ struct KrylovResolventSlices {
                             static_cast<std::size_t>(ne);
     xr = layout.fixed<T>(len);
     xi = layout.fixed<T>(len);
+    form = layout.fixed<T>(static_cast<std::size_t>(k_max));
   }
 };
 
@@ -128,16 +130,20 @@ public:
   }
 
   /// @brief The residual form (feast_residual_hook): out = rho(A) X for the Ritz
-  ///        pairs (lambda, X) with eigen-residuals @p R, solving against R, not X.
+  ///        pairs (lambda, X) with eigen-residuals @p R, solving against r_j
+  ///        where that bounds the error tighter, else against x_j. @p out
+  ///        holds the mixed right-hand side until the sum overwrites it.
   Status filter_residual(wwr::wwrStream_t stream, const device::FeastContour<T> &contour,
                          const int k, const T *X, const T *lambda, const T *R, T *out) {
     CLM_REQUIRE(k >= 1 && k <= s_.cocg.k_max && contour.count >= 1 &&
                     contour.count <= s_.cocg.shifts_max,
                 wwr::WWRBLAS_STATUS_INVALID_VALUE);
-    CLM_TRY(solve(stream, contour, k, R));
+    device::feast_residual_select(stream, n_, k, contour, X, lambda, R, out, s_.form);
+    CLM_TRY(wwr::wwrGetLastError());
+    CLM_TRY(solve(stream, contour, k, out));
     const std::size_t nk = static_cast<std::size_t>(n_) * static_cast<std::size_t>(k);
-    device::feast_accumulate_residual_split(stream, n_, k, contour, X, lambda, s_.xr, s_.xi, nk,
-                                            out);
+    device::feast_accumulate_residual_split(stream, n_, k, contour, X, lambda, s_.form, s_.xr,
+                                            s_.xi, nk, out);
     CLM_TRY(wwr::wwrGetLastError());
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }

@@ -1061,7 +1061,7 @@ struct MatrixFreeRun {
 /// feast through the model entry point over KrylovResolvent<LaplacianOperator>,
 /// inner tolerance @p inner_tol, in residual form or (@p plain) not.
 MatrixFreeRun run_laplacian(const LaplacianProblem &p, const double inner_tol, const bool plain,
-                            const FeastOptions<double> &opts) {
+                            const FeastOptions<double> &opts, const unsigned seed = 2024) {
   auto handle = shared_device();
   Handles h = make_handles(handle);
 
@@ -1093,7 +1093,7 @@ MatrixFreeRun run_laplacian(const LaplacianProblem &p, const double inner_tol, c
             wwr::WWRBLAS_STATUS_SUCCESS);
   DeviceBuffer<double> d_work(bytes / sizeof(double) + 1, handle);
   DeviceBuffer<double> d_lambda(p.m0, handle);
-  auto d_q = to_device(handle, random_matrix<double>(p.n, p.m0, 2024));
+  auto d_q = to_device(handle, random_matrix<double>(p.n, p.m0, seed));
 
   MatrixFreeRun run;
   const auto solve = [&](auto &model) {
@@ -1153,6 +1153,25 @@ TEST(FeastMatrixFreeTests, PlainFormStallsWhereResidualFormConverges) {
   ASSERT_EQ(residual.r.status, wwr::WWRBLAS_STATUS_SUCCESS);
   EXPECT_CONVERGED(residual.r.info);
   EXPECT_LT(residual.r.info.iterations, opts.max_iterations);
+}
+
+// Convergence must not hang on the start block: filtered in residual form, a
+// guard pair by a near-axis node once kept re-seeding spurious in-interval
+// pairs, and whether the count ever settled depended on the start and card.
+TEST(FeastMatrixFreeTests, ResidualFormConvergesFromEveryStart) {
+  const LaplacianProblem p;
+  FeastOptions<double> opts;
+  opts.max_iterations = 30;
+  const double tol = test::factorization_tol<double>(8.0, p.n, p.n);
+  for (unsigned seed = 1; seed <= 8; ++seed) {
+    const auto run = run_laplacian(p, kLooseInnerTol, false, opts, seed);
+    ASSERT_EQ(run.r.status, wwr::WWRBLAS_STATUS_SUCCESS) << "seed " << seed;
+    EXPECT_CONVERGED(run.r.info) << "seed " << seed;
+    ASSERT_EQ(run.r.info.m, p.count) << "seed " << seed;
+    for (int i = 0; i < p.count; ++i) {
+      EXPECT_NEAR(run.r.lambda[i], p.w[p.lo + i], tol) << "seed " << seed << ", eigenvalue " << i;
+    }
+  }
 }
 
 // The model entry point's argument checks return before any device work.
