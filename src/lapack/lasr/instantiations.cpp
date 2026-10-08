@@ -13,6 +13,7 @@ module calaman.lasr;
 // that interface's imports; the signatures below need these.
 import std;
 import wwr.runtime_api;
+import wwr.complex;
 import calaman.common; // Side, Pivot, Direct
 
 namespace calaman {
@@ -21,5 +22,11 @@ template Status lasr<float>(wwr::wwrStream_t, Side, Pivot, Direct, std::size_t, 
                             const float *, const float *, float *, std::size_t);
 template Status lasr<double>(wwr::wwrStream_t, Side, Pivot, Direct, std::size_t, std::size_t,
                              const double *, const double *, double *, std::size_t);
+template Status lasr<wwr::wwrFloatComplex>(wwr::wwrStream_t, Side, Pivot, Direct, std::size_t,
+                                           std::size_t, const float *, const float *,
+                                           wwr::wwrFloatComplex *, std::size_t);
+template Status lasr<wwr::wwrDoubleComplex>(wwr::wwrStream_t, Side, Pivot, Direct, std::size_t,
+                                            std::size_t, const double *, const double *,
+                                            wwr::wwrDoubleComplex *, std::size_t);
 
 } // namespace calaman

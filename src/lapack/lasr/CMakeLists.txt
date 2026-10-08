@@ -2,9 +2,9 @@
 # GPU counterpart of LAPACK's ?lasr, plus the block-cooperative lasr_block
 # header (lasr.h) that ?steqr's kernel calls to update Z.
 
-# The header's own target: an INTERFACE library carrying only the src/ root, so
-# a downstream .cu reaches "lapack/lasr/lasr.h" (and the "common/enums.h" it
-# includes) root-relative by linking calaman::lasr::header -- lanst.h's shape.
+# The header's own target: the src/ root that resolves "lapack/lasr/lasr.h"
+# (and the "common/enums.h" it includes), plus calaman.common for
+# "common/elem_ops.cuh" and, through it, wwr.device -- lag2.cuh's shape.
 add_library(calaman.lasr.header INTERFACE)
 add_library(calaman::lasr::header ALIAS calaman.lasr.header)
 target_include_directories(
@@ -12,6 +12,7 @@ target_include_directories(
   INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
             $<INSTALL_INTERFACE:${CALAMAN_INSTALL_INCLUDEDIR}>
 )
+target_link_libraries(calaman.lasr.header INTERFACE wwr::device calaman::common)
 
 # The device-kernel library: one launch of lasr_block per slab. calaman.common
 # carries the src/ root for common/enums.h plus, through it, wwr.device.
@@ -29,7 +30,8 @@ calaman_add_gpu_device_library(
 # interface.cppm includes in its GMF (hence INCLUDE_DIRS_PRIVATE, and
 # wwr_backend PRIVATE for the selected_backend.h behind runtime.h there).
 # PUBLIC links are what the exported surface names: wwrStream_t, Side/Pivot/
-# Direct (re-exported from calaman.common) and Status (calaman.error_handling).
+# Direct and ComplexToRealType (calaman.common), wwrFloatComplex/
+# wwrDoubleComplex (wwr.complex) and Status (calaman.error_handling).
 calaman_add_cxx_module_library(
   NAME
   calaman.lasr
@@ -39,6 +41,7 @@ calaman_add_cxx_module_library(
   instantiations.cpp
   LINK_PUBLIC
   wwr::runtime_api
+  wwr::complex
   calaman::common
   calaman::error_handling
   LINK_PRIVATE

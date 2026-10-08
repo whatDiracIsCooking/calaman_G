@@ -24,9 +24,10 @@ namespace calaman::device {
 /// One launch whose blocks each run lasr_block (lasr.h) on a slab of the
 /// unrotated dimension; returns without synchronizing. Assumes m, n >= 1.
 ///
-/// @tparam T Element type; instantiated for float, double
-template<typename T>
+/// @tparam T Element type; float, double, wwrFloatComplex, wwrDoubleComplex
+/// @tparam R Real component type of T -- the type of c and s
+template<typename T, typename R>
 void lasr(wwr::wwrStream_t stream, Side side, Pivot pivot, Direct direct, std::size_t m,
-          std::size_t n, const T *c, const T *s, T *A, std::size_t lda);
+          std::size_t n, const R *c, const R *s, T *A, std::size_t lda);
 
 } // namespace calaman::device
