@@ -18,7 +18,8 @@
  *
  * A model may add the optional feast_norm1_hook, ||A||_1 for the residuals'
  * scale; DenseResolvent's is exact. An inexact model may add feast_residual_hook,
- * the residual form; DenseResolvent's solves are exact, so it keeps the plain one.
+ * the residual form, and feast_inner_hook, a tally of inner solves cut short;
+ * DenseResolvent's solves are exact, so it has neither.
  *
  * Every member expects the BLAS handle's stream to be the @p stream it is
  * given.
@@ -81,6 +82,20 @@ concept feast_residual_hook =
              const T *X, const T *lambda, const T *res, T *out) {
       { r.filter_residual(stream, contour, k, X, lambda, res, out) } -> std::convertible_to<Status>;
     };
+
+/// @brief An inexact model's inner-solve tally over one solve (since prepare).
+template<class T>
+struct FeastInnerReport {
+  int under_converged = 0; ///< filter calls whose inner solve stopped at its step cap
+  T max_residual = T(0);   ///< worst inner relative residual estimate seen
+};
+
+/// @brief The optional inner-report hook: r.inner_report() is the model's
+///        FeastInnerReport, which the driver copies into FeastInfo.
+template<class R, class T>
+concept feast_inner_hook = requires(const R &r) {
+  { r.inner_report() } -> std::convertible_to<FeastInnerReport<T>>;
+};
 
 } // namespace calaman
 
@@ -236,5 +251,6 @@ static_assert(feast_resolvent<DenseResolvent<double>, double>);
 static_assert(!feast_resolvent<DenseResolvent<double>, float>);
 static_assert(feast_norm1_hook<DenseResolvent<double>, double>);
 static_assert(!feast_residual_hook<DenseResolvent<double>, double>, "exact solves: plain form");
+static_assert(!feast_inner_hook<DenseResolvent<double>, double>, "exact solves: nothing to tally");
 
 } // namespace calaman

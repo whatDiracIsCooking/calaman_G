@@ -17,9 +17,11 @@
  *   (Z I - A)^{-1} x = [ x + (Z I - A)^{-1} r ] / (Z - lambda),   r = A x - lambda x
  *
  * solving against r for each column where that bound is the smaller, so the
- * error shrinks with r and tau no longer limits accuracy. An inner solve that stops short fails the filter with
- * EXECUTION_FAILED -- feast stops with NumericalFailure -- and last_solve()
- * says why. No norm1_estimate hook: the driver falls back to lacn2.
+ * error shrinks with r and tau no longer limits accuracy. An inner solve that
+ * stops at its step cap still filters: its partial X_e is accumulated, the
+ * outer iteration judges it by its own residuals, and inner_report() tallies
+ * it. Only a NaN fails the filter (EXECUTION_FAILED). No norm1_estimate hook:
+ * the driver falls back to lacn2.
  */
 
 module;
@@ -37,7 +39,7 @@ import std;
 import wwr.runtime_api;               // wwrStream_t, wwrGetLastError
 import wwr.blas;                      // WWRBLAS_STATUS_*
 import calaman.common;                // real_fp, WorkspaceLayout, carve_workspace, slices_for
-import :resolvent;                    // feast_resolvent, feast_norm1_hook
+import :resolvent;                    // feast_resolvent, feast_norm1_hook, FeastInnerReport
 export import calaman.shifted_cocg;   // shifted_cocg, its options, info and slices
 export import calaman.error_handling; // Status
 
@@ -108,15 +110,17 @@ public:
     return op_->apply(stream, k, X, Y);
   }
 
-  /// @brief Checks the contour fits the workspace; there is nothing to factor.
+  /// @brief Checks the contour fits the workspace and resets inner_report();
+  ///        there is nothing to factor.
   Status prepare(wwr::wwrStream_t /*stream*/, const device::FeastContour<T> &contour) {
     CLM_REQUIRE(contour.count >= 1 && contour.count <= s_.cocg.shifts_max,
                 wwr::WWRBLAS_STATUS_INVALID_VALUE);
+    report_ = {};
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
 
   /// @brief out = sum_e Re[ w_e (Z_e I - A)^{-1} Y ], each solve to the options'
-  ///        tolerance; EXECUTION_FAILED if one stops short (see last_solve).
+  ///        tolerance or step cap; EXECUTION_FAILED on a NaN (see last_solve).
   Status filter(wwr::wwrStream_t stream, const device::FeastContour<T> &contour, const int k,
                 const T *Y, T *out) {
     CLM_REQUIRE(k >= 1 && k <= s_.cocg.k_max && contour.count >= 1 &&
@@ -156,16 +160,26 @@ public:
   /// @brief What the last filter's shifted_cocg did: iterations, reason, per-shift residuals.
   const ShiftedCocgInfo<T> &last_solve() const noexcept { return last_; }
 
+  /// @brief Since prepare: filters whose inner solve hit its step cap, and the
+  ///        worst inner relative residual estimate (feast_inner_hook).
+  FeastInnerReport<T> inner_report() const noexcept { return report_; }
+
 private:
-  /// (Z_e I - A) X_e = B into s_.xr / s_.xi; EXECUTION_FAILED if a pair stops short.
+  /// (Z_e I - A) X_e = B into s_.xr / s_.xi, tallied in report_; EXECUTION_FAILED on a NaN.
   Status solve(wwr::wwrStream_t stream, const device::FeastContour<T> &contour, const int k,
                const T *B) {
     const auto count = static_cast<std::size_t>(contour.count);
     CLM_TRY(shifted_cocg<T>(stream, *op_, n_, k, std::span<const T>{contour.zr, count},
                             std::span<const T>{contour.zi, count}, B, s_.xr, s_.xi, s_.cocg,
                             &last_, options_));
-    if (!converged(last_)) {
+    if (last_.reason == ShiftedCocgStopReason::NumericalFailure) {
       return wwr::WWRBLAS_STATUS_EXECUTION_FAILED;
+    }
+    if (last_.reason == ShiftedCocgStopReason::MaxIterations) {
+      ++report_.under_converged;
+    }
+    for (const T r : last_.shift_residual) {
+      report_.max_residual = std::max(report_.max_residual, r);
     }
     return wwr::WWRBLAS_STATUS_SUCCESS;
   }
@@ -175,6 +189,7 @@ private:
   KrylovResolventSlices<T> s_;
   ShiftedCocgOptions<T> options_;
   ShiftedCocgInfo<T> last_{};
+  FeastInnerReport<T> report_{};
 };
 
 } // namespace calaman
@@ -191,5 +206,6 @@ static_assert(feast_resolvent<KrylovResolvent<KrylovCheckOperator<float>, float>
 static_assert(feast_resolvent<KrylovResolvent<KrylovCheckOperator<double>, double>, double>);
 static_assert(!feast_norm1_hook<KrylovResolvent<KrylovCheckOperator<double>, double>, double>);
 static_assert(feast_residual_hook<KrylovResolvent<KrylovCheckOperator<double>, double>, double>);
+static_assert(feast_inner_hook<KrylovResolvent<KrylovCheckOperator<double>, double>, double>);
 
 } // namespace calaman::detail

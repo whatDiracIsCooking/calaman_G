@@ -17,14 +17,16 @@
 //     never above the exact norm (and equal to it on a diagonal matrix).
 //   * KrylovResolvent, the matrix-free model: its filter against the dense
 //     model's on the blocks FEAST filters, within the inner tolerance's bound;
-//     a whole solve through it against the reference eigenvalues; and an inner
-//     solve cut short failing the solve rather than passing silently.
+//     a whole solve through it against the reference eigenvalues; and a NaN
+//     in an inner solve failing the solve rather than passing silently.
 //   * its residual form (IFEAST): filter_residual against the dense filter on
 //     the Ritz pairs FEAST produces, within the bound that shrinks with r.
 //   * matrix-free end to end: a 2-D Dirichlet Laplacian applied in Kronecker
 //     form (never assembled), through the model feast entry point, against its
 //     closed-form eigenvalues -- with a loose inner tolerance at which the
-//     plain form stalls and the residual form reaches the outer tol.
+//     plain form stalls and the residual form reaches the outer tol, and with
+//     an inner step cap low enough that solves stop short, still converging
+//     and counting them in FeastInfo.
 //
 // The host arithmetic is done in double regardless of T, so the oracle shares
 // none of feast's device code. float and double (FEAST is real-symmetric only).
@@ -814,9 +816,27 @@ TEST(FeastKrylovResolventTests, SolveThroughKrylovDouble) {
   destroy_handles(h);
 }
 
-// An inner solve cut off before its tolerance fails the filter -- feast stops
-// with NumericalFailure -- and last_solve() says why: never a silent pass.
-TEST(FeastKrylovResolventTests, InnerNonConvergenceIsReported) {
+/// SymmOperator, but every block (k > 1) product comes back with a NaN in it:
+/// lacn2's k = 1 products stay clean, so the first NaN is inside the filter.
+struct NaNBlockOperator {
+  SymmOperator<double> inner;
+  double nan = std::numeric_limits<double>::quiet_NaN();
+
+  Status apply(wwr::wwrStream_t stream, const int k, const double *X, double *Y) {
+    FEAST_TEST_TRY(inner.apply(stream, k, X, Y));
+    if (k == 1) {
+      return wwr::WWRBLAS_STATUS_SUCCESS;
+    }
+    FEAST_TEST_TRY(
+        wwr::wwrMemcpyAsync(Y, &nan, sizeof(double), wwr::wwrMemcpyHostToDevice, stream));
+    return wwr::wwrStreamSynchronize(stream);
+  }
+};
+
+// An inner solve that turns NaN fails the filter -- feast stops with
+// NumericalFailure -- and last_solve() says why. A step cap alone does not
+// (InnerStopShortStillConverges).
+TEST(FeastKrylovResolventTests, InnerNaNIsNumericalFailure) {
   const int n = 24;
   const auto a = random_symmetric<double>(n, 7);
   const int m0 = 6;
@@ -824,19 +844,20 @@ TEST(FeastKrylovResolventTests, InnerNonConvergenceIsReported) {
   auto handle = shared_device();
   Handles h = make_handles(handle);
   KrylovFixture<double> fx(handle, h.blas, n, a, m0);
+  NaNBlockOperator op{fx.op};
   ShiftedCocgOptions<double> inner;
   inner.tolerance = 1e-12;
-  inner.max_iterations = 2;
-  Krylov<double> krylov{fx.op, n, fx.slices, inner};
+  inner.max_iterations = 20 * n;
+  KrylovResolvent<NaNBlockOperator, double> krylov{op, n, fx.slices, inner};
 
-  const auto wrap = [&](auto &) -> Krylov<double> & { return krylov; };
+  const auto wrap = [&](auto &) -> KrylovResolvent<NaNBlockOperator, double> & { return krylov; };
   const auto q0 = random_matrix<double>(n, m0, 8);
   const auto r = run_feast<double, 8>(handle, h, n, a, -0.5, 0.5, m0, q0, {}, wrap);
 
   EXPECT_EQ(r.status, wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
   EXPECT_EQ(r.info.reason, FeastStopReason::NumericalFailure);
-  EXPECT_EQ(krylov.last_solve().reason, ShiftedCocgStopReason::MaxIterations);
-  EXPECT_EQ(krylov.last_solve().iterations, 2);
+  EXPECT_EQ(krylov.last_solve().reason, ShiftedCocgStopReason::NumericalFailure);
+  EXPECT_EQ(r.info.iterations, 0) << "failed inside the first filter";
   destroy_handles(h);
 }
 
@@ -1071,9 +1092,11 @@ struct MatrixFreeRun {
 };
 
 /// feast through the model entry point over KrylovResolvent<LaplacianOperator>,
-/// inner tolerance @p inner_tol, in residual form or (@p plain) not.
+/// inner tolerance @p inner_tol and step cap @p inner_cap (0: 8 n), in residual
+/// form or (@p plain) not.
 MatrixFreeRun run_laplacian(const LaplacianProblem &p, const double inner_tol, const bool plain,
-                            const FeastOptions<double> &opts, const unsigned seed = 2024) {
+                            const FeastOptions<double> &opts, const unsigned seed = 2024,
+                            const int inner_cap = 0) {
   auto handle = shared_device();
   Handles h = make_handles(handle);
 
@@ -1097,7 +1120,7 @@ MatrixFreeRun run_laplacian(const LaplacianProblem &p, const double inner_tol, c
             wwr::WWRBLAS_STATUS_SUCCESS);
   ShiftedCocgOptions<double> inner;
   inner.tolerance = inner_tol;
-  inner.max_iterations = 8 * p.n;
+  inner.max_iterations = inner_cap > 0 ? inner_cap : 8 * p.n;
   Laplacian krylov{op, p.n, slices, inner};
 
   std::size_t bytes = 0;
@@ -1165,6 +1188,38 @@ TEST(FeastMatrixFreeTests, PlainFormStallsWhereResidualFormConverges) {
   ASSERT_EQ(residual.r.status, wwr::WWRBLAS_STATUS_SUCCESS);
   EXPECT_CONVERGED(residual.r.info);
   EXPECT_LT(residual.r.info.iterations, opts.max_iterations);
+}
+
+// A step cap that stops inner solves short does not stop feast: each partial
+// X_e still filters, the outer residuals judge the result, and FeastInfo counts
+// the under-converged filters and their worst inner residual. At this cap every
+// filter stops short (uncapped, none does) and the solve still converges.
+TEST(FeastMatrixFreeTests, InnerStopShortStillConverges) {
+  const LaplacianProblem p;
+  FeastOptions<double> opts;
+  opts.max_iterations = 30;
+  constexpr int kInnerCap = 32;
+  const auto run = run_laplacian(p, kLooseInnerTol, false, opts, 2024, kInnerCap);
+
+  ASSERT_EQ(run.r.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_CONVERGED(run.r.info);
+  EXPECT_LT(run.r.info.max_residual, opts.tol);
+  EXPECT_EQ(run.last_solve.reason, ShiftedCocgStopReason::MaxIterations);
+  EXPECT_EQ(run.last_solve.iterations, kInnerCap);
+  EXPECT_GT(run.r.info.inner_under_converged, 0);
+  EXPECT_LE(run.r.info.inner_under_converged, run.r.info.iterations);
+  EXPECT_GT(run.r.info.max_inner_residual, kLooseInnerTol) << "stopped short of the inner tol";
+  ASSERT_EQ(run.r.info.m, p.count) << "count in [Emin, Emax]";
+  const double tol = test::factorization_tol<double>(8.0, p.n, p.n);
+  for (int i = 0; i < p.count; ++i) {
+    EXPECT_NEAR(run.r.lambda[i], p.w[p.lo + i], tol) << "eigenvalue " << i;
+  }
+
+  // Uncapped, the same solve reports no under-converged filter.
+  const auto full = run_laplacian(p, kLooseInnerTol, false, opts);
+  ASSERT_EQ(full.r.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_EQ(full.r.info.inner_under_converged, 0);
+  EXPECT_LE(full.r.info.max_inner_residual, kLooseInnerTol);
 }
 
 // Convergence must not hang on the start block: filtered in residual form, a

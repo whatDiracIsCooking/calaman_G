@@ -19,7 +19,7 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 | `:quadrature` | Gauss–Legendre nodes and weights, `N = 4, 8` |
 | `:compute_quadrature` | the contour `Z_e, w_e` for an interval, and the rational filter `ρ` it defines |
 | `:buffer_size` | the driver's `O(n·m0)` workspace, the dense entry point's single-buffer layout, and their sizing |
-| `:resolvent` | the `feast_resolvent` concept and its two optional hooks, and `DenseResolvent`: `ρ(A) Y` as `Ne` shifted solves in batched BLAS calls |
+| `:resolvent` | the `feast_resolvent` concept and its three optional hooks, and `DenseResolvent`: `ρ(A) Y` as `Ne` shifted solves in batched BLAS calls |
 | `:krylov_resolvent` | `KrylovResolvent<Op, T>`: the matrix-free model, `ρ(A) Y` by `calaman.shifted_cocg` over any `linear_operator`, in plain or residual form, with its own workspace sizing |
 | `:rayleigh_ritz` | QR, projection, `syevd`, selection, residuals |
 | `:driver` | the iteration, and the two `feast` entry points |
@@ -27,7 +27,8 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 Only the two `feast` overloads (dense, and over a caller's model),
 `feast_bufferSize`, `feast_driver_bufferSize`, `FeastOptions`, `FeastInfo`,
 `FeastStopReason`, `feast_rational_filter`, the `feast_resolvent` concept and
-its optional `feast_norm1_hook` and `feast_residual_hook` (with
+its optional `feast_norm1_hook`, `feast_residual_hook` and `feast_inner_hook`
+(with `FeastInnerReport`; with
 `linear_operator`, re-exported from `calaman.linear_operator`), and
 `KrylovResolvent` with `KrylovResolventSlices`, `make_krylov_resolvent_slices`
 and `krylov_resolvent_bufferSize` (with `calaman.shifted_cocg`, re-exported) are
@@ -191,7 +192,7 @@ to 7 steps past the slowest pair's convergence (those steps leave X alone).
 | `Converged` | `m` is the same as last iteration and every residual is below `tol` |
 | `MaxIterations` | the budget ran out |
 | `SubspaceTooSmall` | every Ritz value landed inside the interval after the first iteration — raise `m0` |
-| `NumericalFailure` | a factorization reported a breakdown, a kernel failed, or a `KrylovResolvent` inner solve stopped short of `τ` (its `last_solve()` says why) |
+| `NumericalFailure` | a factorization reported a breakdown, a kernel failed, or a `KrylovResolvent` inner solve turned NaN (its `last_solve()` says why) |
 
 `FeastInfo` derives from `calaman.iterative`'s `IterationInfo`, so
 `converged(info)` reads `reason == Converged`. Non-convergence is an outcome,
@@ -286,8 +287,18 @@ feast<double, 8>(cublas, cusolver, stream, model, n, Emin, Emax, m0,
                  d_lambda, d_Q, d_work, lwork, {}, &info);
 ```
 
-The model must be carved for at least `feast`'s `Ne` (here 8) and `m0` columns. Give `inner.max_iterations`
-room: the inner solves slow as `Im Z_e` — the interval's radius — shrinks.
+The model must be carved for at least `feast`'s `Ne` (here 8) and `m0` columns.
+
+An inner solve that reaches `inner.max_iterations` before `τ` is not a failure:
+its partial `X_e` is still a filtered vector, so it is accumulated and the outer
+iteration judges it by its own residuals (IFEAST's view of inexact solves). The
+inner solves slow as `Im Z_e` — the interval's radius — shrinks, and the node
+nearest the real axis gates them all, so a cap is routinely met. `KrylovResolvent`
+tallies it through the optional `feast_inner_hook`, and `feast` reports it:
+`info.inner_under_converged` counts the filters whose inner solve stopped short,
+and `info.max_inner_residual` is the worst inner relative residual seen. A large
+count alongside `MaxIterations` says the cap, not the subspace, is what to
+raise. Only a NaN in an inner solve stops `feast`, with `NumericalFailure`.
 
 ## Workspace
 

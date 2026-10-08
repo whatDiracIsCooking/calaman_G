@@ -78,6 +78,10 @@ struct FeastInfo : IterationInfo<FeastStopReason> {
   int m = 0;             ///< eigenvalues found in [Emin, Emax]: the leading m of d_lambda, d_Q
   T max_residual = T(0); ///< largest relative residual among those m, at the last iteration
   T norm_a = T(0);       ///< the residuals' ||A||_1: exact, or lacn2's lower bound on it
+  /// @brief With a feast_inner_hook model: filters whose inner solve hit its
+  ///        step cap -- kept, not failed -- and the worst inner residual seen.
+  int inner_under_converged = 0;
+  T max_inner_residual = T(0);
 };
 
 } // namespace calaman
@@ -106,6 +110,11 @@ Status feast_iterate(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_
   FeastInfo<T> local{};
   const auto publish = [&](const FeastStopReason reason, const Status st) {
     local.reason = reason;
+    if constexpr (feast_inner_hook<R, T>) {
+      const FeastInnerReport<T> inner = r.inner_report();
+      local.inner_under_converged = inner.under_converged;
+      local.max_inner_residual = inner.max_residual;
+    }
     if (info != nullptr) {
       *info = local;
     }
