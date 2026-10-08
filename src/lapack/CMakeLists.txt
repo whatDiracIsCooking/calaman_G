@@ -61,6 +61,10 @@ add_subdirectory(laset)
 # for readability.
 add_subdirectory(lascl2)
 
+# calaman.larscl2 is lascl2's inverse twin, x <-- D^-1 x, with no build edge
+# to it -- added next to it only for readability.
+add_subdirectory(larscl2)
+
 # calaman.lascl is lascl2's near-namesake and structural twin (the same
 # hand-launched per-element kernel), here LAPACK's ?lascl: scale a full matrix
 # by cto/cfrom via a host-side over/underflow-guarded multiplier chain rather
