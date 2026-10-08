@@ -176,8 +176,10 @@ and the batched solve that runs every iteration keeps all `Ne` systems on one
 stream in one call.
 
 `KrylovResolvent` is on the same one stream, but not one sync per iteration:
-`shifted_cocg` reads its convergence back once per Lanczos step, so a
-matrix-free filter synchronizes once per inner step.
+`shifted_cocg` reads its convergence back once every
+`ShiftedCocgOptions::check_interval` Lanczos steps (default 8), so a
+matrix-free filter synchronizes about once per 8 inner steps, and may run up
+to 7 steps past the slowest pair's convergence (those steps leave X alone).
 
 ## Stopping
 

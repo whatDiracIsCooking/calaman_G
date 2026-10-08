@@ -7,8 +7,11 @@
 //     kSlack * tol, and forward error within kSlack * kappa_e * tol of zgesv's,
 //     kappa_e = max |z_e - lambda| / min |z_e - lambda| (the 2-norm condition
 //     number of the normal matrix z_e I - A, eigenvalues from LAPACKE_dsyevd);
-//   * per-shift iteration counts: within [1, iterations], the slowest equal to
-//     iterations, a near-axis node slower than a contour node, one apply a step;
+//   * per-shift iteration counts: within [1, iterations], the slowest rounded
+//     up to the check interval equal to iterations, a near-axis node slower
+//     than a contour node, one apply a step;
+//   * the check interval: one host sync per check_interval steps, and the same
+//     X, per-shift counts and residuals at every interval;
 //   * max_iterations exhaustion (success, reason MaxIterations), a zero column
 //     of B (X's column zero), an invariant subspace (exact after one step);
 //   * the argument checks and the workspace sizing, which need no card.
@@ -293,11 +296,17 @@ struct Rig {
   }
 };
 
+/// The steps a converged solve runs: @p slowest rounded up to a check.
+int rounded_to_check(const int slowest, const int interval) {
+  return (slowest + interval - 1) / interval * interval;
+}
+
 /// Solve on a random symmetric A for @p z, then check every X_e against zgesv.
 /// Returns the info for the caller's iteration-count assertions.
 template<typename T>
-ShiftedCocgInfo<T> solve_and_check(const int n, const int k,
-                                   const std::vector<std::complex<double>> &z, const T tol) {
+ShiftedCocgInfo<T>
+solve_and_check(const int n, const int k, const std::vector<std::complex<double>> &z, const T tol,
+                const int check_interval = ShiftedCocgOptions<T>{}.check_interval) {
   const int ne = static_cast<int>(z.size());
   Rig<T> rig(random_symmetric(n, 17U),
              random_block(static_cast<std::size_t>(n) * static_cast<std::size_t>(k), 29U), n, k,
@@ -307,6 +316,7 @@ ShiftedCocgInfo<T> solve_and_check(const int n, const int k,
   ShiftedCocgOptions<T> options;
   options.tolerance = tol;
   options.max_iterations = 20 * n;
+  options.check_interval = check_interval;
   ShiftedCocgInfo<T> info;
   EXPECT_TRUE(rig.solve(z, options, &info).ok());
   EXPECT_CONVERGED(info);
@@ -329,7 +339,8 @@ ShiftedCocgInfo<T> solve_and_check(const int n, const int k,
     EXPECT_LE(true_residual(rig.a, rig.b, x, n, k, z[ez]), bound);
     EXPECT_LE(relative_error(x, ref), kappa(lambda, z[ez]) * bound);
   }
-  EXPECT_EQ(slowest, info.iterations);
+  EXPECT_EQ(rounded_to_check(slowest, check_interval), info.iterations);
+  EXPECT_EQ(info.convergence_checks, 1 + info.iterations / check_interval);
   return info;
 }
 
@@ -368,6 +379,9 @@ TEST(ShiftedCocgArgCheckTests, RejectsBadArguments) {
   EXPECT_EQ(call(4, 2, zr, zi, &info, bad), kInvalidValue);
   bad = ok_options;
   bad.max_iterations = -1;
+  EXPECT_EQ(call(4, 2, zr, zi, &info, bad), kInvalidValue);
+  bad = ok_options;
+  bad.check_interval = 0;
   EXPECT_EQ(call(4, 2, zr, zi, &info, bad), kInvalidValue);
   const ShiftedCocgSlices<double> uncarved;
   EXPECT_EQ(shifted_cocg<double>(nullptr, op, 4, 2, zr, zi, &dummy, &dummy, &dummy, uncarved, &info,
@@ -413,6 +427,47 @@ TEST(ShiftedCocgReferenceTests, SingleColumnDouble) {
   solve_and_check<double>(64, 1, contour(0.1, 0.6, 4), 1e-11);
 }
 
+TEST(ShiftedCocgReferenceTests, CheckEveryStepDouble) {
+  const ShiftedCocgInfo<double> info =
+      solve_and_check<double>(120, 2, contour(-0.3, 0.3, 6), 1e-10, 1);
+  EXPECT_EQ(info.convergence_checks, 1 + info.iterations);
+}
+
+TEST(ShiftedCocgReferenceTests, CheckIntervalChangesOnlyTheStepCount) {
+  // A converged pair freezes, so X, the per-shift counts and the residuals are
+  // the same at every interval; only the steps (and the syncs) differ.
+  const int n = 150;
+  const int k = 2;
+  const std::vector<std::complex<double>> z = contour(-0.25, 0.25, 6);
+  Rig<double> rig(random_symmetric(n, 41U), random_block(static_cast<std::size_t>(n) * k, 43U), n,
+                  k, static_cast<int>(z.size()));
+  ShiftedCocgOptions<double> options;
+  options.tolerance = 1e-10;
+  options.max_iterations = 20 * n;
+  options.check_interval = 1;
+  ShiftedCocgInfo<double> every;
+  ASSERT_TRUE(rig.solve(z, options, &every).ok());
+  EXPECT_CONVERGED(every);
+  std::vector<std::vector<std::complex<double>>> x_every;
+  for (int e = 0; e < static_cast<int>(z.size()); ++e) {
+    x_every.push_back(rig.x(e));
+  }
+  for (const int interval : {3, 8, 64}) {
+    SCOPED_TRACE(::testing::Message() << "check_interval " << interval);
+    options.check_interval = interval;
+    ShiftedCocgInfo<double> info;
+    ASSERT_TRUE(rig.solve(z, options, &info).ok());
+    EXPECT_CONVERGED(info);
+    EXPECT_EQ(info.iterations, rounded_to_check(every.iterations, interval));
+    EXPECT_EQ(info.convergence_checks, 1 + info.iterations / interval);
+    EXPECT_EQ(info.shift_iterations, every.shift_iterations);
+    EXPECT_EQ(info.shift_residual, every.shift_residual);
+    for (int e = 0; e < static_cast<int>(z.size()); ++e) {
+      EXPECT_EQ(rig.x(e), x_every[static_cast<std::size_t>(e)]) << "shift " << e;
+    }
+  }
+}
+
 TEST(ShiftedCocgReferenceTests, MaxIterationsIsAnOutcome) {
   const int n = 100;
   const int k = 2;
@@ -421,12 +476,14 @@ TEST(ShiftedCocgReferenceTests, MaxIterationsIsAnOutcome) {
   ShiftedCocgOptions<double> options;
   options.tolerance = 1e-12;
   options.max_iterations = 5;
+  options.check_interval = 2; // checks at steps 2, 4 and the last, 5
   ShiftedCocgInfo<double> info;
   ASSERT_TRUE(rig.solve(contour(-0.2, 0.2, 3), options, &info).ok());
   EXPECT_EQ(info.reason, ShiftedCocgStopReason::MaxIterations);
   EXPECT_FALSE(converged(info));
   EXPECT_EQ(info.iterations, 5);
   EXPECT_EQ(rig.op.applies, 5);
+  EXPECT_EQ(info.convergence_checks, 4);
   for (std::size_t e = 0; e < 3; ++e) {
     EXPECT_EQ(info.shift_iterations[e], 5);
     EXPECT_GT(info.shift_residual[e], 1e-12);
@@ -465,10 +522,12 @@ TEST(ShiftedCocgReferenceTests, AllZeroRightHandSideTakesNoStep) {
   EXPECT_EQ(info.iterations, 0);
   EXPECT_EQ(rig.op.applies, 0);
   EXPECT_EQ(info.shift_iterations[0], 0);
+  EXPECT_EQ(info.convergence_checks, 1);
 }
 
 TEST(ShiftedCocgReferenceTests, InvariantSubspaceIsExactInOneStep) {
-  // A diagonal and b = e_0: K(A, b) = span{e_0}, so beta_2 = 0 and step 1 is exact.
+  // A diagonal and b = e_0: K(A, b) = span{e_0}, so beta_2 = 0 and step 1 is
+  // exact; the steps after it, to the first check, leave X alone.
   const int n = 32;
   const auto nz = static_cast<std::size_t>(n);
   std::vector<double> a(nz * nz, 0.0);
@@ -484,9 +543,10 @@ TEST(ShiftedCocgReferenceTests, InvariantSubspaceIsExactInOneStep) {
   ShiftedCocgInfo<double> info;
   ASSERT_TRUE(rig.solve(z, options, &info).ok());
   EXPECT_CONVERGED(info);
-  EXPECT_EQ(info.iterations, 1);
+  EXPECT_EQ(info.iterations, options.check_interval);
   for (int e = 0; e < 2; ++e) {
     const auto ez = static_cast<std::size_t>(e);
+    EXPECT_EQ(info.shift_iterations[ez], 1);
     const std::vector<std::complex<double>> x = rig.x(e);
     const std::complex<double> expected = 2.0 / (z[ez] - a[0]);
     EXPECT_LE(std::abs(x[0] - expected),
