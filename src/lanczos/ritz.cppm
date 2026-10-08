@@ -63,7 +63,7 @@ struct LanczosRitz {
 template<calaman::real_fp T>
 RitzSelection<T> lanczos_ritz_select(const LanczosRitz<T> &ritz, const LanczosWhich which,
                                      const int count, const T tolerance) {
-  std::vector<int> index = ritz_select(which, static_cast<int>(ritz.theta.size()), count);
+  std::vector<int> index = ritz_select<T>(which, ritz.theta, count);
   std::vector<T> values;
   std::vector<T> residuals;
   values.reserve(index.size());

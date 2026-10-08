@@ -293,7 +293,7 @@ Status lanczos_solve(wwr::wwrblasHandle_t blas_handle, wwr::wwrsolverDnHandle_t 
     // Selections nest, so the wanted pairs sit inside the kept ones; their
     // estimates must be read before the restart compacts S.
     sel = lanczos_ritz_select(ritz, which, nev, options.tolerance);
-    const std::vector<int> kept = ritz_select(which, ncv, k);
+    const std::vector<int> kept = ritz_select<T>(which, ritz.theta, k);
     for (std::size_t j = 0; j < cols.size(); ++j) {
       cols[j] = static_cast<int>(std::ranges::lower_bound(kept, sel.index[j]) - kept.begin());
     }

@@ -1,6 +1,7 @@
 // Suite for calaman.ritz:
 //
-//   * ritz_select -- positions per RitzWhich and the nested-selection property
+//   * ritz_select -- positions per RitzWhich, the span form's largest_magnitude
+//     (mixed signs, magnitude ties) and the nested-selection property
 //     (host-only);
 //   * classify_ritz -- the convergence predicate, the scale floor, the boundary,
 //     relative-not-absolute thresholds, a length mismatch and the vacuous empty
@@ -44,6 +45,81 @@ TEST(RitzSelectTests, LargerSelectionContainsSmaller) {
       const std::vector<int> wanted = ritz_select(which, 12, nev);
       for (int k = nev; k <= 12; ++k) {
         const std::vector<int> kept = ritz_select(which, 12, k);
+        EXPECT_TRUE(std::ranges::includes(kept, wanted)) << nev << " in " << k;
+      }
+    }
+  }
+}
+
+// The span form: largest_magnitude reads the values, every other end ignores them.
+
+TEST(RitzSelectTests, LargestMagnitudeMixedSign) {
+  using V = std::vector<int>;
+  const std::vector<double> values{-9.0, -4.0, -0.5, 0.1, 2.0, 3.0, 7.0};
+  constexpr auto kMag = RitzWhich::largest_magnitude;
+  EXPECT_EQ(ritz_select<double>(kMag, values, 1), (V{0}));          // |-9| beats 7
+  EXPECT_EQ(ritz_select<double>(kMag, values, 2), (V{0, 6}));       // then 7
+  EXPECT_EQ(ritz_select<double>(kMag, values, 3), (V{0, 1, 6}));    // |-4| beats 3
+  EXPECT_EQ(ritz_select<double>(kMag, values, 4), (V{0, 1, 5, 6})); // then 3
+  EXPECT_EQ(ritz_select<double>(kMag, values, 7), (V{0, 1, 2, 3, 4, 5, 6}));
+  // One-signed spectra reduce to an end.
+  const std::vector<float> positive{0.5f, 1.0f, 4.0f, 8.0f};
+  const std::vector<float> negative{-8.0f, -4.0f, -1.0f, -0.5f};
+  EXPECT_EQ(ritz_select<float>(kMag, positive, 2), (V{2, 3}));
+  EXPECT_EQ(ritz_select<float>(kMag, negative, 2), (V{0, 1}));
+  EXPECT_TRUE(ritz_select<double>(kMag, values, 0).empty());
+  EXPECT_TRUE(ritz_select<double>(kMag, values, 8).empty());
+  EXPECT_TRUE(ritz_select<double>(kMag, std::span<const double>{}, 1).empty());
+  // The count-only form cannot see magnitudes, so it refuses.
+  EXPECT_TRUE(ritz_select(kMag, 7, 3).empty());
+}
+
+TEST(RitzSelectTests, LargestMagnitudeTiesGoToTheTop) {
+  using V = std::vector<int>;
+  constexpr auto kMag = RitzWhich::largest_magnitude;
+  const std::vector<double> values{-3.0, -2.0, -1.0, 1.0, 2.0, 3.0};
+  EXPECT_EQ(ritz_select<double>(kMag, values, 1), (V{5}));
+  EXPECT_EQ(ritz_select<double>(kMag, values, 2), (V{0, 5}));
+  EXPECT_EQ(ritz_select<double>(kMag, values, 3), (V{0, 4, 5}));
+  EXPECT_EQ(ritz_select<double>(kMag, values, 4), (V{0, 1, 4, 5}));
+  const std::vector<double> flat{-1.0, -1.0, 1.0, 1.0};
+  EXPECT_EQ(ritz_select<double>(kMag, flat, 1), (V{3}));
+  EXPECT_EQ(ritz_select<double>(kMag, flat, 3), (V{1, 2, 3}));
+}
+
+TEST(RitzSelectTests, SpanFormMatchesCountFormOffMagnitude) {
+  const std::vector<double> values{-9.0, -4.0, -0.5, 0.1, 2.0, 3.0, 7.0};
+  for (const RitzWhich which : {RitzWhich::smallest, RitzWhich::largest, RitzWhich::both_ends}) {
+    for (int count = 0; count <= 8; ++count) {
+      EXPECT_EQ(ritz_select<double>(which, values, count), ritz_select(which, 7, count)) << count;
+    }
+  }
+}
+
+TEST(RitzSelectTests, LargestMagnitudeSelectionsNest) {
+  const std::vector<std::vector<double>> spectra{
+      {-9.0, -4.0, -0.5, 0.1, 2.0, 3.0, 7.0, 8.0, 9.0, 11.0, 12.0, 20.0},
+      {-6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0}, // all ties
+      {-2.0, -2.0, -2.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0},
+  };
+  for (const auto &values : spectra) {
+    const int available = static_cast<int>(values.size());
+    for (int nev = 1; nev <= available; ++nev) {
+      const auto wanted = ritz_select<double>(RitzWhich::largest_magnitude, values, nev);
+      ASSERT_EQ(static_cast<int>(wanted.size()), nev);
+      // The selection is the nev largest |value|: none left out exceeds one kept.
+      double kept_min = std::numeric_limits<double>::infinity();
+      for (const int i : wanted) {
+        kept_min = std::min(kept_min, std::abs(values[static_cast<std::size_t>(i)]));
+      }
+      for (int i = 0; i < available; ++i) {
+        if (!std::ranges::binary_search(wanted, i)) {
+          EXPECT_LE(std::abs(values[static_cast<std::size_t>(i)]), kept_min) << i;
+        }
+      }
+      for (int k = nev; k <= available; ++k) {
+        const auto kept = ritz_select<double>(RitzWhich::largest_magnitude, values, k);
+        EXPECT_TRUE(std::ranges::is_sorted(kept));
         EXPECT_TRUE(std::ranges::includes(kept, wanted)) << nev << " in " << k;
       }
     }
