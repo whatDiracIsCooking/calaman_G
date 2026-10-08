@@ -379,9 +379,16 @@ at that floor. Measured on the 2-D Dirichlet Laplacian (`N = 16`, `n = 256`,
 applied in Kronecker form, 11 eigenvalues in the interval, `m0 = 19`, `Ne = 8`)
 with `tau = 1e-4` and the double default `tol = 1e-12`: the plain form ran out
 its 30 iterations with the backward error stuck at `2.2e-6`; the residual form
-converged in 17, to `1.5e-16`, with every eigenvalue within `4.4e-16` of the
+converged in 5-6, to `1.5e-16`, with every eigenvalue within `4.4e-16` of the
 closed form. The error the residual form leaves is `tau * ||r||` instead, so it
 shrinks with `r`.
+
+The residual form is chosen **per column**, by whichever error bound is
+smaller (#326). Applied to every column, it re-polluted the guard and spurious
+pairs -- large `r`, `lambda` by a near-axis node, `1 / |z - lambda|` near
+`1 / Im z` -- and spurious pairs inside the interval flickered in and out: the
+Laplacian converged in 17 on the NVIDIA card by luck and never on the AMD one.
+Per column, 12 random starts converge in 3-19 on both.
 
 That is why FEAST, and not Lanczos, is where the Krylov shifted solve shipped:
 subspace iteration re-filters a fresh block every iteration, so an inexact
