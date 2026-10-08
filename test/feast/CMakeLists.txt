@@ -13,7 +13,8 @@ endif()
 
 # The two test/shared/ modules back the device buffers that stage the matrices;
 # wwr.blas / wwr.solver supply the handles feast needs, wwr.wrappers.common
-# the real_fp/RealToComplexType traits, wwr.runtime_api the stream/sync. feast
+# the real_fp/RealToComplexType traits, wwr.wrappers.blas the symm behind the
+# KrylovResolvent tests' operator, wwr.runtime_api the stream/sync. feast
 # allocates nothing -- the test supplies the workspace.
 calaman_add_gtest_executable(
   NAME
@@ -30,6 +31,7 @@ calaman_add_gtest_executable(
   wwr::solver
   wwr::runtime_api
   wwr::wrappers::common
+  wwr::wrappers::blas
   wwr::extension::memory_buffer
   calaman::lapack_reference
 )
@@ -56,5 +58,6 @@ calaman_add_gtest_suite_tests(
   FeastReferenceTests
   FeastEmptyIntervalTests
   FeastHiddenNormTests
+  FeastKrylovResolventTests
   REQUIRES_GPU
 )

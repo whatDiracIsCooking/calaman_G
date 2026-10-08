@@ -90,10 +90,17 @@ add_subdirectory(nnls)
 # error_handling, reduce_columns) so their targets exist when it links them.
 add_subdirectory(expm)
 
+# calaman.shifted_cocg -- multi-shift block COCG for complex-symmetric shifted
+# systems (z_e I - A) X_e = B over a linear_operator. Links only common,
+# error_handling, iterative and linear_operator from src/; placed before feast,
+# whose KrylovResolvent model links it.
+add_subdirectory(shifted_cocg)
+
 # calaman.feast -- the FEAST eigensolver for real symmetric matrices. A host
 # driver over wrapped batched BLAS + symm/gemm + the eigensolver +
 # calaman.orthogonalize, plus its own fused kernels. Added after its calaman
-# dependencies (common, orthogonalize) so their targets exist when linked.
+# dependencies (common, orthogonalize, shifted_cocg) so their targets exist
+# when linked.
 add_subdirectory(feast)
 
 # calaman.davidson -- block-Davidson eigensolver for the lowest n_roots
@@ -108,12 +115,6 @@ add_subdirectory(davidson)
 # common and error_handling from src/, so its placement is free; grouped with
 # davidson as the other callback-driven eigensolver.
 add_subdirectory(lanczos)
-
-# calaman.shifted_cocg -- multi-shift block COCG for complex-symmetric shifted
-# systems (z_e I - A) X_e = B over a linear_operator. Links only common,
-# error_handling, iterative and linear_operator from src/, so its placement is
-# free; grouped with lanczos as the other Krylov method.
-add_subdirectory(shifted_cocg)
 
 # calaman.diis -- Pulay DIIS extrapolation over a device-resident ring of
 # (vector, residual) pairs. Links only common and error_handling from src/, so

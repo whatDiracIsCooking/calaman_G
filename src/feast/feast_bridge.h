@@ -98,6 +98,13 @@ template<typename ComplexT, typename RealT>
 void feast_accumulate(wwr::wwrStream_t stream, std::size_t elems, FeastContour<RealT> contour,
                       const ComplexT *d_X, std::size_t stride, RealT *d_out);
 
+/// @brief feast_accumulate for X_e held split, Re in @p d_Xr and Im in @p d_Xi,
+///        as shifted_cocg returns it.
+template<typename RealT>
+void feast_accumulate_split(wwr::wwrStream_t stream, std::size_t elems,
+                            FeastContour<RealT> contour, const RealT *d_Xr, const RealT *d_Xi,
+                            std::size_t stride, RealT *d_out);
+
 /// @brief ||A||_1 of the symmetric matrix whose @p lower (else upper) triangle is
 ///        stored, into the device scalar @p d_norm. @p d_colsum: n scratch.
 ///

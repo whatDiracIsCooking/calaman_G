@@ -163,6 +163,23 @@ __global__ void accumulate_kernel(const std::size_t elems, const FeastContour<R>
   }
 }
 
+/// accumulate_kernel over split storage: X_e = Xr_e + i Xi_e, two real arrays.
+template<typename R>
+__global__ void accumulate_split_kernel(const std::size_t elems, const FeastContour<R> contour,
+                                        const R *Xr, const R *Xi, const std::size_t stride,
+                                        R *out) {
+  const std::size_t step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
+  for (std::size_t k = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x; k < elems;
+       k += step) {
+    R acc = R(0);
+    for (int e = 0; e < contour.count; ++e) {
+      const std::size_t at = static_cast<std::size_t>(e) * stride + k;
+      acc += contour.wr[e] * Xr[at] - contour.wi[e] * Xi[at]; // Re(w x)
+    }
+    out[k] = acc;
+  }
+}
+
 /// One block per column j: colsum[j] = sum_i |A(i, j)|.
 template<typename R>
 __global__ void sym_colsum_kernel(const int lower, const int n, const R *A, const std::size_t lda,
@@ -337,6 +354,24 @@ void feast_accumulate(const wwr::wwrStream_t stream, const std::size_t elems,
 }
 
 template<typename RealT>
+void feast_accumulate_split(const wwr::wwrStream_t stream, const std::size_t elems,
+                            const FeastContour<RealT> contour, const RealT *const d_Xr,
+                            const RealT *const d_Xi, const std::size_t stride,
+                            RealT *const d_out) {
+  if (d_Xr == nullptr || d_Xi == nullptr || d_out == nullptr || stride < elems) {
+    return;
+  }
+  if (contour.count < 1 || contour.count > kFeastMaxNodes) {
+    return;
+  }
+  if (elems == 0) {
+    return;
+  }
+  accumulate_split_kernel<RealT>
+      <<<blocks_for(elems), kBlock, 0, stream>>>(elems, contour, d_Xr, d_Xi, stride, d_out);
+}
+
+template<typename RealT>
 void feast_sym_norm1(const wwr::wwrStream_t stream, const bool lower, const int n,
                      const RealT *const d_A, const int lda, RealT *const d_colsum,
                      RealT *const d_norm) {
@@ -411,6 +446,12 @@ template void feast_accumulate<wwrDoubleComplex, double>(wwr::wwrStream_t, std::
                                                          FeastContour<double>,
                                                          const wwrDoubleComplex *, std::size_t,
                                                          double *);
+
+template void feast_accumulate_split<float>(wwr::wwrStream_t, std::size_t, FeastContour<float>,
+                                           const float *, const float *, std::size_t, float *);
+template void feast_accumulate_split<double>(wwr::wwrStream_t, std::size_t, FeastContour<double>,
+                                            const double *, const double *, std::size_t,
+                                            double *);
 
 template void feast_sym_norm1<float>(wwr::wwrStream_t, bool, int, const float *, int, float *,
                                      float *);

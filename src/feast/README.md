@@ -12,7 +12,7 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 
 ## Module
 
-`calaman.feast` — one module, six partitions:
+`calaman.feast` — one module, seven partitions:
 
 | Partition | Contents |
 |---|---|
@@ -20,12 +20,15 @@ a partition of a LAPACK-named one, like `calaman.expm`.
 | `:compute_quadrature` | the contour `Z_e, w_e` for an interval, and the rational filter `ρ` it defines |
 | `:buffer_size` | the driver's `O(n·m0)` workspace, the dense entry point's single-buffer layout, and its sizing |
 | `:resolvent` | the `feast_resolvent` concept, and `DenseResolvent`: `ρ(A) Y` as `Ne` shifted solves in batched BLAS calls |
+| `:krylov_resolvent` | `KrylovResolvent<Op, T>`: the matrix-free model, `ρ(A) Y` by `calaman.shifted_cocg` over any `linear_operator`, with its own workspace sizing |
 | `:rayleigh_ritz` | QR, projection, `syevd`, selection, residuals |
 | `:driver` | the iteration |
 
 Only `feast`, `feast_bufferSize`, `FeastOptions`, `FeastInfo`,
 `FeastStopReason`, `feast_rational_filter`, the `feast_resolvent` concept and
-its optional `feast_norm1_hook` (with `linear_operator`, re-exported from `calaman.linear_operator`) are
+its optional `feast_norm1_hook` (with `linear_operator`, re-exported from `calaman.linear_operator`),
+and `KrylovResolvent` with `KrylovResolventSlices`, `make_krylov_resolvent_slices`
+and `krylov_resolvent_bufferSize` (with `calaman.shifted_cocg`, re-exported) are
 exported. The rest — the per-iteration steps, `DenseResolvent`, `FeastSlices`,
 the contour and quadrature tables — are
 module-internal: reachable from the header-only `feast` template when an

@@ -15,6 +15,10 @@
 //   * the dense model behind a wrapper hiding its norm1_estimate hook, so the
 //     residuals' ||A||_1 is lacn2's estimate: same eigenpairs, and an estimate
 //     never above the exact norm (and equal to it on a diagonal matrix).
+//   * KrylovResolvent, the matrix-free model: its filter against the dense
+//     model's on the blocks FEAST filters, within the inner tolerance's bound;
+//     a whole solve through it against the reference eigenvalues; and an inner
+//     solve cut short failing the solve rather than passing silently.
 //
 // The host arithmetic is done in double regardless of T, so the oracle shares
 // none of feast's device code. float and double (FEAST is real-symmetric only).
@@ -34,12 +38,21 @@
 
 #include "shared/expect_converged.h"
 
+// Returns a failing Status from the enclosing function, as CLM_TRY does in src/.
+#define FEAST_TEST_TRY(expr)                                                                       \
+  do {                                                                                             \
+    if (const ::calaman::Status feast_test_status_ = (expr); !feast_test_status_.ok()) {           \
+      return feast_test_status_;                                                                   \
+    }                                                                                              \
+  } while (0)
+
 import std;
 
 import wwr.blas;
 import wwr.solver;
 import wwr.runtime_api;
 import wwr.wrappers.common;
+import wwr.wrappers.blas;
 import wwr.extension.memory_buffer;
 import calaman.feast;
 import calaman.test.shared.abort_policy;
@@ -556,6 +569,262 @@ TEST(FeastHiddenNormTests, DenseSymmetricFloat) {
   const auto a = random_symmetric<float>(n, 7);
   check_hidden_norm<float, 8>(n, a, reference_eigenvalues<float>(n, a), n / 4, n / 4, n / 4 + 4,
                               false, 8);
+}
+
+// ========================================================================
+// KrylovResolvent: the matrix-free model, shifted_cocg over a linear_operator
+// ========================================================================
+
+/// Y = A X for a dense symmetric n x n device matrix (lower triangle): the test
+/// matrix as a plain linear_operator, sharing no code with DenseResolvent.
+template<typename T>
+struct SymmOperator {
+  wwr::wwrblasHandle_t blas{};
+  int n = 0;
+  const T *d_a = nullptr;
+
+  Status apply(wwr::wwrStream_t, const int k, const T *X, T *Y) {
+    const T one{1};
+    const T zero{0};
+    return wwr::symm<T, int>(blas, wwr::WWRBLAS_SIDE_LEFT, wwr::WWRBLAS_FILL_MODE_LOWER, n, k, &one,
+                             d_a, n, X, n, &zero, Y, n);
+  }
+};
+
+template<typename T>
+using Krylov = KrylovResolvent<SymmOperator<T>, T>;
+
+static_assert(feast_resolvent<Krylov<double>, double>);
+static_assert(feast_resolvent<Krylov<float>, float>);
+static_assert(!feast_resolvent<Krylov<double>, float>);
+static_assert(!feast_norm1_hook<Krylov<double>, double>, "no hook: lacn2 scales the residuals");
+
+/// The gap allowed between the inner solves' residual estimate and the filter
+/// difference it bounds: rounding in the recurrences and the dense LU (as in
+/// shifted_cocg_tests).
+constexpr double kInnerSlack = 10.0;
+
+TEST(FeastArgCheckTests, KrylovResolventBufferSize) {
+  std::size_t bytes = 0;
+  EXPECT_EQ(krylov_resolvent_bufferSize<double>(8, 2, 8, nullptr),
+            wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "null lwork";
+  EXPECT_EQ(krylov_resolvent_bufferSize<double>(0, 2, 8, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "n < 1";
+  EXPECT_EQ(krylov_resolvent_bufferSize<double>(8, 0, 8, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "k_max < 1";
+  EXPECT_EQ(krylov_resolvent_bufferSize<double>(8, 2, 0, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "ne < 1";
+  EXPECT_EQ(krylov_resolvent_bufferSize<double>(8, 2, 9, &bytes), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "ne > kFeastMaxNodes";
+
+  // At least shifted_cocg's workspace plus the 2 Ne split solution blocks.
+  std::size_t cocg = 0;
+  ASSERT_EQ(shifted_cocg_bufferSize<double>(16, 3, 8, &cocg), wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_EQ(krylov_resolvent_bufferSize<double>(16, 3, 8, &bytes), wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_GE(bytes, cocg + 2 * 16 * 3 * 8 * sizeof(double));
+}
+
+/// A KrylovResolvent over SymmOperator, with its own copy of A and workspace.
+template<typename T>
+struct KrylovFixture {
+  DeviceBuffer<T> d_a;
+  DeviceBuffer<T> d_work;
+  SymmOperator<T> op;
+  KrylovResolventSlices<T> slices;
+
+  KrylovFixture(std::shared_ptr<DeviceHandle> handle, wwr::wwrblasHandle_t blas, int n,
+                const std::vector<T> &a, int k_max)
+      : d_a(to_device(handle, a)), d_work(work_elems(n, k_max), handle), op{blas, n, d_a.data()} {
+    EXPECT_EQ(make_krylov_resolvent_slices<T>(n, k_max, 8, d_work.data(), &slices, nullptr),
+              wwr::WWRBLAS_STATUS_SUCCESS);
+  }
+
+  static std::size_t work_elems(int n, int k_max) {
+    std::size_t bytes = 0;
+    EXPECT_EQ(krylov_resolvent_bufferSize<T>(n, k_max, 8, &bytes), wwr::WWRBLAS_STATUS_SUCCESS);
+    return bytes / sizeof(T) + 1;
+  }
+};
+
+/// Passes the dense model through to feast, and on every filter also runs the
+/// Krylov model on the same block and contour, recording per column
+///
+///   ||out_krylov - out_dense||_2 / (tol * sum_e |w_e| / Im Z_e * ||y||_2),
+///
+/// the difference in units of what the inner tolerance allows: X_e's error is
+/// at most ||(Z_e I - A)^{-1}||_2 tol ||y|| <= tol ||y|| / Im Z_e.
+template<class Dense, typename T>
+struct CompareFilters {
+  Dense &dense;
+  Krylov<T> &krylov;
+  T *d_kout; // n x k_max
+  int n;
+  double tol;
+  std::vector<double> &ratios; // one per filter call: the worst column
+  std::vector<int> &inner_iterations;
+
+  Status apply(wwr::wwrStream_t stream, int k, const T *X, T *Y) {
+    return dense.apply(stream, k, X, Y);
+  }
+  template<class Contour>
+  Status prepare(wwr::wwrStream_t stream, const Contour &contour) {
+    FEAST_TEST_TRY(krylov.prepare(stream, contour));
+    return dense.prepare(stream, contour);
+  }
+  template<class Contour>
+  Status filter(wwr::wwrStream_t stream, const Contour &contour, int k, const T *Y, T *out) {
+    FEAST_TEST_TRY(dense.filter(stream, contour, k, Y, out));
+    FEAST_TEST_TRY(krylov.filter(stream, contour, k, Y, d_kout));
+    inner_iterations.push_back(krylov.last_solve().iterations);
+
+    const std::size_t len = static_cast<std::size_t>(n) * static_cast<std::size_t>(k);
+    std::vector<T> y(len);
+    std::vector<T> od(len);
+    std::vector<T> ok(len);
+    FEAST_TEST_TRY(wwr::wwrMemcpyAsync(y.data(), Y, len * sizeof(T), wwr::wwrMemcpyDeviceToHost,
+                                     stream));
+    FEAST_TEST_TRY(wwr::wwrMemcpyAsync(od.data(), out, len * sizeof(T), wwr::wwrMemcpyDeviceToHost,
+                                     stream));
+    FEAST_TEST_TRY(wwr::wwrMemcpyAsync(ok.data(), d_kout, len * sizeof(T),
+                                     wwr::wwrMemcpyDeviceToHost, stream));
+    FEAST_TEST_TRY(wwr::wwrStreamSynchronize(stream));
+
+    double gain = 0.0; // sum_e |w_e| / Im Z_e
+    for (int e = 0; e < contour.count; ++e) {
+      gain += std::hypot(static_cast<double>(contour.wr[e]), static_cast<double>(contour.wi[e])) /
+              static_cast<double>(contour.zi[e]);
+    }
+    double worst = 0.0;
+    for (int j = 0; j < k; ++j) {
+      double diff = 0.0;
+      double ynorm = 0.0;
+      for (int i = 0; i < n; ++i) {
+        const std::size_t at = static_cast<std::size_t>(j) * n + i;
+        const double d = static_cast<double>(ok[at]) - static_cast<double>(od[at]);
+        diff += d * d;
+        ynorm += static_cast<double>(y[at]) * static_cast<double>(y[at]);
+      }
+      worst = std::max(worst, std::sqrt(diff) / (tol * gain * std::sqrt(ynorm)));
+    }
+    ratios.push_back(worst);
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+};
+
+// Runs feast's dense model for a few iterations with CompareFilters in the
+// seam, so the Krylov filter is checked on the blocks FEAST actually filters:
+// the random start, then partly converged subspaces.
+template<typename T>
+void check_krylov_filter(int n, unsigned seed, T inner_tol) {
+  const auto a = random_symmetric<T>(n, seed);
+  const auto w = reference_eigenvalues<T>(n, a);
+  const int lo = n / 4;
+  const int hi = n / 2;
+  const T emin = static_cast<T>((static_cast<double>(w[lo - 1]) + w[lo]) / 2.0);
+  const T emax = static_cast<T>((static_cast<double>(w[hi - 1]) + w[hi]) / 2.0);
+  const int m0 = hi - lo + 4;
+
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  KrylovFixture<T> fx(handle, h.blas, n, a, m0);
+  ShiftedCocgOptions<T> inner;
+  inner.tolerance = inner_tol;
+  inner.max_iterations = 20 * n;
+  Krylov<T> krylov{fx.op, n, fx.slices, inner};
+  DeviceBuffer<T> d_kout(static_cast<std::size_t>(n) * m0, handle);
+
+  std::vector<double> ratios;
+  std::vector<int> inner_iterations;
+  const auto wrap = [&](auto &dense) {
+    return CompareFilters<std::remove_reference_t<decltype(dense)>, T>{
+        dense, krylov, d_kout.data(), n, static_cast<double>(inner_tol), ratios, inner_iterations};
+  };
+  FeastOptions<T> opts;
+  opts.max_iterations = 3;
+  const auto q0 = random_matrix<T>(n, m0, seed + 1);
+  const auto r = run_feast<T, 8>(handle, h, n, a, emin, emax, m0, q0, opts, wrap);
+
+  ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_FALSE(ratios.empty());
+  for (std::size_t c = 0; c < ratios.size(); ++c) {
+    EXPECT_LE(ratios[c], kInnerSlack) << "filter call " << c;
+    EXPECT_GE(inner_iterations[c], 1) << "filter call " << c;
+  }
+  destroy_handles(h);
+}
+
+TEST(FeastKrylovResolventTests, FilterMatchesDenseDouble) {
+  check_krylov_filter<double>(24, 7, 1e-10);
+}
+TEST(FeastKrylovResolventTests, FilterMatchesDenseFloat) {
+  check_krylov_filter<float>(16, 7, 1e-4F);
+}
+
+// The whole solve through the Krylov model -- inner solves tight enough that
+// the plain (non-residual) form reaches the outer tolerance -- against the
+// reference eigenvalues.
+TEST(FeastKrylovResolventTests, SolveThroughKrylovDouble) {
+  const int n = 24;
+  const auto a = random_symmetric<double>(n, 7);
+  const auto w = reference_eigenvalues<double>(n, a);
+  const int lo = n / 4;
+  const int hi = n / 2;
+  const int count = hi - lo;
+  const double emin = (w[lo - 1] + w[lo]) / 2.0;
+  const double emax = (w[hi - 1] + w[hi]) / 2.0;
+  const int m0 = count + 4;
+
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  KrylovFixture<double> fx(handle, h.blas, n, a, m0);
+  ShiftedCocgOptions<double> inner;
+  inner.tolerance = 1e-14;
+  inner.max_iterations = 20 * n;
+  Krylov<double> krylov{fx.op, n, fx.slices, inner};
+
+  const auto wrap = [&](auto &) -> Krylov<double> & { return krylov; };
+  const auto q0 = random_matrix<double>(n, m0, 8);
+  const auto r = run_feast<double, 8>(handle, h, n, a, emin, emax, m0, q0, {}, wrap);
+
+  ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_CONVERGED(r.info);
+  EXPECT_TRUE(converged(krylov.last_solve()));
+  ASSERT_EQ(r.info.m, count);
+  const double norm_a = host_norm1(n, a);
+  for (int i = 0; i < count; ++i) {
+    EXPECT_NEAR(r.lambda[i], w[lo + i], 1e-8 * std::max(1.0, norm_a)) << "eigenvalue " << i;
+    const double be =
+        pair_backward_error(n, a, norm_a, r.lambda[i], &r.q[static_cast<std::size_t>(i) * n]);
+    EXPECT_LE(be, 1e-9) << "backward error of pair " << i;
+  }
+  destroy_handles(h);
+}
+
+// An inner solve cut off before its tolerance fails the filter -- feast stops
+// with NumericalFailure -- and last_solve() says why: never a silent pass.
+TEST(FeastKrylovResolventTests, InnerNonConvergenceIsReported) {
+  const int n = 24;
+  const auto a = random_symmetric<double>(n, 7);
+  const int m0 = 6;
+
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  KrylovFixture<double> fx(handle, h.blas, n, a, m0);
+  ShiftedCocgOptions<double> inner;
+  inner.tolerance = 1e-12;
+  inner.max_iterations = 2;
+  Krylov<double> krylov{fx.op, n, fx.slices, inner};
+
+  const auto wrap = [&](auto &) -> Krylov<double> & { return krylov; };
+  const auto q0 = random_matrix<double>(n, m0, 8);
+  const auto r = run_feast<double, 8>(handle, h, n, a, -0.5, 0.5, m0, q0, {}, wrap);
+
+  EXPECT_EQ(r.status, wwr::WWRBLAS_STATUS_EXECUTION_FAILED);
+  EXPECT_EQ(r.info.reason, FeastStopReason::NumericalFailure);
+  EXPECT_EQ(krylov.last_solve().reason, ShiftedCocgStopReason::MaxIterations);
+  EXPECT_EQ(krylov.last_solve().iterations, 2);
+  destroy_handles(h);
 }
 
 } // namespace
