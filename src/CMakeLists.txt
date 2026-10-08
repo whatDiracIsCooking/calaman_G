@@ -27,7 +27,7 @@ add_subdirectory(iterative)
 
 # calaman.linear_operator -- linear_operator, the block-operator concept the
 # matrix-free solvers share. Links only error_handling from src/; it must
-# precede feast and lanczos, which link it.
+# precede feast, davidson and lanczos, which link it.
 add_subdirectory(linear_operator)
 
 # calaman.ritz -- ritz_select/classify_ritz/ritz_rotate, the Ritz-pair layer
@@ -104,10 +104,10 @@ add_subdirectory(shifted_cocg)
 add_subdirectory(feast)
 
 # calaman.davidson -- block-Davidson eigensolver for the lowest n_roots
-# eigenpairs of a symmetric operator given as a matrix-vector-product callback.
-# A host driver over wrapped BLAS + the wrapped eigensolver, with no device code
-# of its own. Links only common and error_handling (both added at the top), so
-# its placement is free; grouped after feast as the other subspace eigensolver.
+# eigenpairs of a symmetric linear_operator (or a block sigma callback). A host
+# driver over wrapped BLAS + the wrapped eigensolver, with no device code of its
+# own. After the iterative, linear_operator and ritz layers it links; grouped
+# after feast as the other subspace eigensolver.
 add_subdirectory(davidson)
 
 # calaman.lanczos -- thick-restart Lanczos for the extreme eigenpairs of a
