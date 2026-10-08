@@ -24,7 +24,10 @@ calaman::la_geamv<wwr::wwrDoubleComplex>(stream, calaman::Trans::N, m, n,
 ## The conventions the other `?la_*amv` modules copy
 
 `?la_gbamv` (#291) and `?la_heamv`/`?la_syamv` (#292) run the same loop over a
-different storage scheme. Copy these three decisions.
+different storage scheme. Copy these three decisions. The loop body itself is
+shared: `la_amv_row` in `la_amv.cuh` (target `calaman::la_amv`) takes a `j`
+range and an accessor for `op(A)(i, j)`, so a sibling's kernel supplies only
+its storage.
 
 ### 1. `TRANS` is `calaman::Trans`
 

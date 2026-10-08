@@ -1,16 +1,26 @@
 # calaman.la_geamv -- y := alpha * |op(A)| * |x| + beta * |y| for a general A,
 # with the symbolic-zero nudge: the GPU counterpart of LAPACK's ?la_geamv.
 
+# calaman.la_amv -- la_amv.cuh, the per-y(i) body shared by every ?la_*amv
+# kernel (la_geamv, la_gbamv). Not a module: a kernel reaches it by #include,
+# as "lapack/la_geamv/la_amv.cuh" off the src/ root calaman.common exports.
+calaman_add_interface_library(
+  NAME
+  calaman.la_amv
+  LINK_PUBLIC
+  calaman::common
+)
+
 # The device-kernel library: one thread per element of y. calaman.common carries
-# the src/ root for common/align_up.h, common/elem_ops.cuh and common/enums.h
-# plus, through it, wwr.device (runtime.h, complex.h, math.cuh).
+# the src/ root for common/align_up.h and common/enums.h plus, through it,
+# wwr.device (runtime.h, complex.h, math.cuh).
 calaman_add_gpu_device_library(
   NAME
   calaman.la_geamv.device
   SOURCES
   la_geamv.cu
   LINK_PRIVATE
-  calaman::common
+  calaman::la_amv
 )
 
 # The module: host C++23 over the launcher declared in la_geamv_bridge.h, which

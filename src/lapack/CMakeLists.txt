@@ -541,6 +541,10 @@ add_subdirectory(lagtm)
 # kernel. A leaf: links only calaman.common and calaman.error_handling.
 add_subdirectory(la_geamv)
 
+# calaman.la_gbamv -- the same product for a band A (LAPACK's ?la_gbamv); runs
+# la_geamv's per-row body (calaman.la_amv) over the band, so it follows it.
+add_subdirectory(la_gbamv)
+
 # calaman.lacrm -- complex times real matrix multiply (LAPACK's ?lacrm): two
 # real gemms around calaman.complex_cast's split_planes / merge_planes (added
 # one level up), which calaman.larcm reuses.
