@@ -1,6 +1,7 @@
 # Suite for calaman.lanczos: the argument-checking contract, the workspace
 # sizing/carving, the device kernels behind lanczos_bridge.h, and the Ritz
-# extraction and the solve against the reference LAPACK.
+# extraction, the solve and the shift-invert entry point against the reference
+# LAPACK.
 #
 # lanczos_kernel_tests.cpp and lanczos_ritz_tests.cpp #include
 # "lanczos/lanczos_bridge.h" to reach the launchers: the src/ root comes through
@@ -116,5 +117,45 @@ calaman_add_gtest_suite_tests(
   lanczos_solve_tests
   SUITES
   LanczosSolveReferenceTests
+  REQUIRES_GPU
+)
+
+# The shift-invert entry point on calaman.shift_invert's DenseShiftInvert,
+# against LAPACKE_?syevd (plus ?geqrf/?orgqr for the random orthogonal Q). Same
+# lapack_reference guard. The back-transform suite is host math and runs on a
+# card-less runner; the reference suite factors and solves on the device.
+calaman_add_gtest_executable(
+  NAME
+  lanczos_shift_invert_tests
+  SOURCES
+  lanczos_shift_invert_tests.cpp
+  LINK
+  calaman::lanczos
+  calaman::shift_invert
+  calaman::common
+  calaman::test::shared::abort_policy
+  calaman::test::shared::expect_converged
+  calaman::test::shared::device_handle
+  calaman::test::shared::tolerance
+  calaman::test::utils::shared_device
+  calaman::lapack_reference
+  wwr::blas
+  wwr::solver
+  wwr::runtime_api
+  wwr::extension::memory_buffer
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  lanczos_shift_invert_tests
+  SUITES
+  LanczosShiftInvertTransformTests
+)
+
+calaman_add_gtest_suite_tests(
+  TARGET
+  lanczos_shift_invert_tests
+  SUITES
+  LanczosShiftInvertReferenceTests
   REQUIRES_GPU
 )
