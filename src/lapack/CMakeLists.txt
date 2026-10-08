@@ -98,6 +98,12 @@ add_subdirectory(larnv)
 # lib uses it.
 add_subdirectory(lange)
 
+# calaman.ilalr / calaman.ilalc -- the last non-zero row / column (LAPACK's
+# ila?lr / ila?lc), max-reductions whose stage two is calaman.reduce_columns,
+# added one level up like lange's.
+add_subdirectory(ilalr)
+add_subdirectory(ilalc)
+
 # calaman.langb -- the norm of a general band matrix in band storage (LAPACK's
 # ?langb). Links only calaman.common and calaman.error_handling.
 add_subdirectory(langb)
