@@ -19,6 +19,12 @@
 //     model's on the blocks FEAST filters, within the inner tolerance's bound;
 //     a whole solve through it against the reference eigenvalues; and an inner
 //     solve cut short failing the solve rather than passing silently.
+//   * its residual form (IFEAST): filter_residual against the dense filter on
+//     the Ritz pairs FEAST produces, within the bound that shrinks with r.
+//   * matrix-free end to end: a 2-D Dirichlet Laplacian applied in Kronecker
+//     form (never assembled), through the model feast entry point, against its
+//     closed-form eigenvalues -- with a loose inner tolerance at which the
+//     plain form stalls and the residual form reaches the outer tol.
 //
 // The host arithmetic is done in double regardless of T, so the oracle shares
 // none of feast's device code. float and double (FEAST is real-symmetric only).
@@ -57,6 +63,7 @@ import wwr.extension.memory_buffer;
 import calaman.feast;
 import calaman.test.shared.abort_policy;
 import calaman.test.shared.device_handle;
+import calaman.test.shared.tolerance;
 import calaman.test.utils.shared_device;
 
 namespace calaman {
@@ -825,6 +832,377 @@ TEST(FeastKrylovResolventTests, InnerNonConvergenceIsReported) {
   EXPECT_EQ(krylov.last_solve().reason, ShiftedCocgStopReason::MaxIterations);
   EXPECT_EQ(krylov.last_solve().iterations, 2);
   destroy_handles(h);
+}
+
+// ========================================================================
+// The residual form (IFEAST): filter_residual against the dense filter
+// ========================================================================
+
+/// Passes the dense model through to feast; on every residual-form call also
+/// runs the Krylov model's filter_residual on the same Ritz pairs, recording per
+/// column the difference from the dense filter of X in units of its bound
+///
+///   tol ||r_j|| sum_e |w_e| / (Im Z_e)^2   (+ the dense solves' rounding),
+///
+/// since X_e's error is at most tol ||r_j|| / Im Z_e and |Z_e - lambda| >= Im Z_e.
+template<class Dense, typename T>
+struct CompareResidualFilters {
+  Dense &dense;
+  Krylov<T> &krylov;
+  T *d_kout; // n x k_max
+  int n;
+  double norm_a;
+  double tol;
+  std::vector<double> &ratios; // one per filter_residual call: the worst column
+
+  Status apply(wwr::wwrStream_t stream, int k, const T *X, T *Y) {
+    return dense.apply(stream, k, X, Y);
+  }
+  template<class Contour>
+  Status prepare(wwr::wwrStream_t stream, const Contour &contour) {
+    FEAST_TEST_TRY(krylov.prepare(stream, contour));
+    return dense.prepare(stream, contour);
+  }
+  template<class Contour>
+  Status filter(wwr::wwrStream_t stream, const Contour &contour, int k, const T *Y, T *out) {
+    return dense.filter(stream, contour, k, Y, out);
+  }
+  template<class Contour>
+  Status filter_residual(wwr::wwrStream_t stream, const Contour &contour, int k, const T *X,
+                         const T *lambda, const T *R, T *out) {
+    FEAST_TEST_TRY(dense.filter(stream, contour, k, X, out));
+    FEAST_TEST_TRY(krylov.filter_residual(stream, contour, k, X, lambda, R, d_kout));
+
+    const std::size_t len = static_cast<std::size_t>(n) * static_cast<std::size_t>(k);
+    std::vector<T> x(len);
+    std::vector<T> r(len);
+    std::vector<T> od(len);
+    std::vector<T> ok(len);
+    const auto copy = [&](std::vector<T> &to, const T *from) {
+      return wwr::wwrMemcpyAsync(to.data(), from, len * sizeof(T), wwr::wwrMemcpyDeviceToHost,
+                                 stream);
+    };
+    FEAST_TEST_TRY(copy(x, X));
+    FEAST_TEST_TRY(copy(r, R));
+    FEAST_TEST_TRY(copy(od, out));
+    FEAST_TEST_TRY(copy(ok, d_kout));
+    FEAST_TEST_TRY(wwr::wwrStreamSynchronize(stream));
+
+    double gain2 = 0.0; // sum_e |w_e| / (Im Z_e)^2
+    double zmax = 0.0;
+    for (int e = 0; e < contour.count; ++e) {
+      const double zi = static_cast<double>(contour.zi[e]);
+      gain2 += std::hypot(static_cast<double>(contour.wr[e]), static_cast<double>(contour.wi[e])) /
+               (zi * zi);
+      zmax = std::max(zmax, std::hypot(static_cast<double>(contour.zr[e]), zi));
+    }
+    // The dense LU's own error on (Z_e I - A)^{-1} x: eps (||A|| + |Z_e|) / Im Z_e^2.
+    const double rounding = 64.0 * static_cast<double>(test::eps<T>()) * (norm_a + zmax) * gain2;
+    double worst = 0.0;
+    for (int j = 0; j < k; ++j) {
+      double diff = 0.0;
+      double rnorm = 0.0;
+      double xnorm = 0.0;
+      for (int i = 0; i < n; ++i) {
+        const std::size_t at = static_cast<std::size_t>(j) * n + i;
+        const double d = static_cast<double>(ok[at]) - static_cast<double>(od[at]);
+        diff += d * d;
+        rnorm += static_cast<double>(r[at]) * static_cast<double>(r[at]);
+        xnorm += static_cast<double>(x[at]) * static_cast<double>(x[at]);
+      }
+      const double bound = tol * gain2 * std::sqrt(rnorm) + rounding * std::sqrt(xnorm);
+      worst = std::max(worst, std::sqrt(diff) / bound);
+    }
+    ratios.push_back(worst);
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+};
+
+TEST(FeastKrylovResolventTests, ResidualFilterMatchesDenseDouble) {
+  const int n = 24;
+  const unsigned seed = 7;
+  const double inner_tol = 1e-6;
+  const auto a = random_symmetric<double>(n, seed);
+  const auto w = reference_eigenvalues<double>(n, a);
+  const int lo = n / 4;
+  const int hi = n / 2;
+  const double emin = (w[lo - 1] + w[lo]) / 2.0;
+  const double emax = (w[hi - 1] + w[hi]) / 2.0;
+  const int m0 = hi - lo + 4;
+
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+  KrylovFixture<double> fx(handle, h.blas, n, a, m0);
+  ShiftedCocgOptions<double> inner;
+  inner.tolerance = inner_tol;
+  inner.max_iterations = 20 * n;
+  Krylov<double> krylov{fx.op, n, fx.slices, inner};
+  DeviceBuffer<double> d_kout(static_cast<std::size_t>(n) * m0, handle);
+
+  std::vector<double> ratios;
+  const auto wrap = [&](auto &dense) {
+    return CompareResidualFilters<std::remove_reference_t<decltype(dense)>, double>{
+        dense, krylov, d_kout.data(), n, host_norm1(n, a), inner_tol, ratios};
+  };
+  FeastOptions<double> opts;
+  opts.max_iterations = 3;
+  const auto q0 = random_matrix<double>(n, m0, seed + 1);
+  const auto r = run_feast<double, 8>(handle, h, n, a, emin, emax, m0, q0, opts, wrap);
+
+  ASSERT_EQ(r.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  ASSERT_FALSE(ratios.empty()) << "the driver never took the residual form";  for (std::size_t c = 0; c < ratios.size(); ++c) {
+    EXPECT_LE(ratios[c], kInnerSlack) << "filter_residual call " << c;
+  }
+  destroy_handles(h);
+}
+
+// ========================================================================
+// Matrix-free end to end: the 2-D Dirichlet Laplacian, never assembled
+// ========================================================================
+
+/// The 5-point Laplacian on an N x N grid, n = N^2, as the Kronecker sum
+/// L = I (x) T + T (x) I with T = tridiag(-1, 2, -1): each column of X, read as
+/// an N x N grid U, maps to T U + U T. Only the N x N T is stored, never L.
+template<typename T>
+struct LaplacianOperator {
+  wwr::wwrblasHandle_t blas{};
+  int grid = 0;           // N
+  const T *d_t = nullptr; // N x N
+
+  Status apply(wwr::wwrStream_t, const int k, const T *X, T *Y) {
+    const T one{1};
+    const T zero{0};
+    // T U for every column at once: X is N x (N k).
+    FEAST_TEST_TRY((wwr::gemm<T, int>(blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, grid, grid * k,
+                                      grid, &one, d_t, grid, X, grid, &zero, Y, grid)));
+    // + U T per column, T broadcast with stride 0.
+    const long long sq = static_cast<long long>(grid) * grid;
+    return wwr::gemmStridedBatched<T, int>(blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, grid, grid,
+                                           grid, &one, X, grid, sq, d_t, grid, 0, &one, Y, grid,
+                                           sq, k);
+  }
+};
+
+/// The Laplacian's eigenvalues in closed form, ascending:
+/// (2 - 2 cos(p pi / (N+1))) + (2 - 2 cos(q pi / (N+1))), 1 <= p, q <= N.
+std::vector<double> laplacian_eigenvalues(const int grid) {
+  std::vector<double> mu(grid);
+  for (int p = 1; p <= grid; ++p) {
+    mu[p - 1] = 2.0 - 2.0 * std::cos(p * std::numbers::pi / (grid + 1));
+  }
+  std::vector<double> w;
+  for (const double a : mu) {
+    for (const double b : mu) {
+      w.push_back(a + b);
+    }
+  }
+  std::ranges::sort(w);
+  return w;
+}
+
+/// Forwards apply/prepare/filter only, hiding filter_residual: the plain form.
+template<class Inner>
+struct PlainForm {
+  Inner &inner;
+
+  template<class T>
+  Status apply(wwr::wwrStream_t stream, int k, const T *X, T *Y) {
+    return inner.apply(stream, k, X, Y);
+  }
+  template<class Contour>
+  Status prepare(wwr::wwrStream_t stream, const Contour &contour) {
+    return inner.prepare(stream, contour);
+  }
+  template<class Contour, class T>
+  Status filter(wwr::wwrStream_t stream, const Contour &contour, int k, const T *Y, T *out) {
+    return inner.filter(stream, contour, k, Y, out);
+  }
+};
+
+using Laplacian = KrylovResolvent<LaplacianOperator<double>, double>;
+static_assert(feast_residual_hook<Laplacian, double>);
+static_assert(feast_resolvent<PlainForm<Laplacian>, double>);
+static_assert(!feast_residual_hook<PlainForm<Laplacian>, double>);
+
+/// The Laplacian problem: grid, closed-form spectrum, and an interval whose ends
+/// sit in gaps of the spectrum (it has double eigenvalues, p != q).
+struct LaplacianProblem {
+  int grid = 16;
+  int n = 256;
+  std::vector<double> w;
+  int lo = 0;
+  int count = 0;
+  double emin = 0.0;
+  double emax = 0.0;
+  int m0 = 0;
+
+  LaplacianProblem() : w(laplacian_eigenvalues(grid)) {
+    int first = 6;
+    int last = 16;
+    while (w[first] - w[first - 1] < 1e-2) {
+      ++first;
+    }
+    while (w[last] - w[last - 1] < 1e-2) {
+      ++last;
+    }
+    lo = first;
+    count = last - first;
+    emin = (w[first - 1] + w[first]) / 2.0;
+    emax = (w[last - 1] + w[last]) / 2.0;
+    m0 = count + 8;
+  }
+};
+
+struct MatrixFreeRun {
+  FeastResult<double> r;
+  ShiftedCocgInfo<double> last_solve;
+};
+
+/// feast through the model entry point over KrylovResolvent<LaplacianOperator>,
+/// inner tolerance @p inner_tol, in residual form or (@p plain) not.
+MatrixFreeRun run_laplacian(const LaplacianProblem &p, const double inner_tol, const bool plain,
+                            const FeastOptions<double> &opts) {
+  auto handle = shared_device();
+  Handles h = make_handles(handle);
+
+  std::vector<double> t(static_cast<std::size_t>(p.grid) * p.grid, 0.0);
+  for (int i = 0; i < p.grid; ++i) {
+    t[static_cast<std::size_t>(i) * p.grid + i] = 2.0;
+    if (i + 1 < p.grid) {
+      t[static_cast<std::size_t>(i) * p.grid + i + 1] = -1.0;
+      t[static_cast<std::size_t>(i + 1) * p.grid + i] = -1.0;
+    }
+  }
+  auto d_t = to_device(handle, t);
+  LaplacianOperator<double> op{h.blas, p.grid, d_t.data()};
+
+  std::size_t model_bytes = 0;
+  EXPECT_EQ(krylov_resolvent_bufferSize<double>(p.n, p.m0, 8, &model_bytes),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+  DeviceBuffer<double> d_model(model_bytes / sizeof(double) + 1, handle);
+  KrylovResolventSlices<double> slices;
+  EXPECT_EQ(make_krylov_resolvent_slices<double>(p.n, p.m0, 8, d_model.data(), &slices, nullptr),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+  ShiftedCocgOptions<double> inner;
+  inner.tolerance = inner_tol;
+  inner.max_iterations = 8 * p.n;
+  Laplacian krylov{op, p.n, slices, inner};
+
+  std::size_t bytes = 0;
+  EXPECT_EQ(feast_driver_bufferSize<double>(h.solver, p.n, p.m0, &bytes),
+            wwr::WWRBLAS_STATUS_SUCCESS);
+  DeviceBuffer<double> d_work(bytes / sizeof(double) + 1, handle);
+  DeviceBuffer<double> d_lambda(p.m0, handle);
+  auto d_q = to_device(handle, random_matrix<double>(p.n, p.m0, 2024));
+
+  MatrixFreeRun run;
+  const auto solve = [&](auto &model) {
+    return feast<double, 8>(h.blas, h.solver, handle->stream().get(), model, p.n, p.emin, p.emax,
+                            p.m0, d_lambda.data(), d_q.data(), d_work.data(), bytes, opts,
+                            &run.r.info);
+  };
+  if (plain) {
+    PlainForm<Laplacian> model{krylov};
+    run.r.status = solve(model);
+  } else {
+    run.r.status = solve(krylov);
+  }
+  wwr::wwrStreamSynchronize(handle->stream().get());
+  run.r.lambda = from_device(handle, d_lambda, p.m0);
+  run.last_solve = krylov.last_solve();
+  destroy_handles(h);
+  return run;
+}
+
+/// Loose next to the outer tol (1e-12): the plain form's floor sits far above it.
+constexpr double kLooseInnerTol = 1e-4;
+
+TEST(FeastMatrixFreeTests, LaplacianResidualFormMatchesClosedForm) {
+  const LaplacianProblem p;
+  ASSERT_GT(p.count, 0);
+  FeastOptions<double> opts;
+  opts.max_iterations = 30;
+  const auto run = run_laplacian(p, kLooseInnerTol, false, opts);
+
+  ASSERT_EQ(run.r.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_CONVERGED(run.r.info);
+  EXPECT_LT(run.r.info.max_residual, opts.tol);
+  EXPECT_TRUE(converged(run.last_solve));
+  ASSERT_EQ(run.r.info.m, p.count) << "count in [Emin, Emax]";
+  // ||L||_1 = 8: an interior grid point's column is 4 + 4 * |-1|.
+  const double tol = test::factorization_tol<double>(8.0, p.n, p.n);
+  for (int i = 0; i < p.count; ++i) {
+    EXPECT_NEAR(run.r.lambda[i], p.w[p.lo + i], tol) << "eigenvalue " << i;
+  }
+}
+
+TEST(FeastMatrixFreeTests, PlainFormStallsWhereResidualFormConverges) {
+  const LaplacianProblem p;
+  FeastOptions<double> opts;
+  opts.max_iterations = 30;
+  const auto plain = run_laplacian(p, kLooseInnerTol, true, opts);
+  const auto residual = run_laplacian(p, kLooseInnerTol, false, opts);
+
+  // Same inner tolerance, same start: the plain form runs out of iterations
+  // with its residual stuck orders of magnitude above tol ...
+  ASSERT_EQ(plain.r.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_EQ(plain.r.info.reason, FeastStopReason::MaxIterations);
+  EXPECT_EQ(plain.r.info.iterations, opts.max_iterations);
+  EXPECT_GT(plain.r.info.max_residual, 1e3 * opts.tol);
+  // ... while the residual form converges, well inside the budget.
+  ASSERT_EQ(residual.r.status, wwr::WWRBLAS_STATUS_SUCCESS);
+  EXPECT_CONVERGED(residual.r.info);
+  EXPECT_LT(residual.r.info.iterations, opts.max_iterations);
+}
+
+// The model entry point's argument checks return before any device work.
+struct NullModel {
+  Status apply(wwr::wwrStream_t, int, const double *, double *) {
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+  template<class Contour>
+  Status prepare(wwr::wwrStream_t, const Contour &) {
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+  template<class Contour>
+  Status filter(wwr::wwrStream_t, const Contour &, int, const double *, double *) {
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+};
+
+TEST(FeastArgCheckTests, ModelEntryPointRejectsBadArguments) {
+  static_assert(feast_resolvent<NullModel, double>);
+  const int n = 4;
+  const int m0 = 2;
+  std::vector<double> lambda(m0, 0.0);
+  std::vector<double> q(static_cast<std::size_t>(n) * m0, 1.0);
+  std::vector<double> work(1024, 0.0);
+  wwr::wwrblasHandle_t null_blas{};
+  wwr::wwrsolverDnHandle_t null_solver{};
+  NullModel model;
+
+  auto call = [&](int nn, int mm0, double lo, double hi, double *d_lambda) {
+    return feast<double, 8>(null_blas, null_solver, wwr::wwrStream_t{}, model, nn, lo, hi, mm0,
+                            d_lambda, q.data(), work.data(), work.size() * sizeof(double));
+  };
+  EXPECT_EQ(call(0, m0, 1.0, 2.0, lambda.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "n < 1";
+  EXPECT_EQ(call(n, 0, 1.0, 2.0, lambda.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "m0 < 1";
+  EXPECT_EQ(call(n, n + 1, 1.0, 2.0, lambda.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "m0 > n";
+  EXPECT_EQ(call(n, m0, 2.0, 1.0, lambda.data()), wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "Emin >= Emax";
+  EXPECT_EQ(call(n, m0, 1.0, std::numeric_limits<double>::infinity(), lambda.data()),
+            wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "non-finite Emax";
+  EXPECT_EQ(call(n, m0, 1.0, 2.0, nullptr), wwr::WWRBLAS_STATUS_INVALID_VALUE) << "null lambda";
+
+  std::size_t bytes = 0;
+  EXPECT_EQ(feast_driver_bufferSize<double>(null_solver, n, m0, nullptr),
+            wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "null lwork";
+  EXPECT_EQ(feast_driver_bufferSize<double>(null_solver, n, n + 1, &bytes),
+            wwr::WWRBLAS_STATUS_INVALID_VALUE)
+      << "m0 > n";
 }
 
 } // namespace

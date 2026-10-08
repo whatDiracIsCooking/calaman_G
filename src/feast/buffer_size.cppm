@@ -124,6 +124,17 @@ struct DenseFeastWorkspace {
 
 namespace calaman {
 
+/// @brief The orthogonalize and syevd lworks, in elements of T, at (n, m0).
+template<calaman::real_fp T>
+Status feast_solver_lworks(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, const int m0,
+                           int &lwork_qr, int &lwork_eig) {
+  CLM_TRY(orthogonalize_bufferSize<T>(cusolver_handle, n, m0, &lwork_qr));
+  CLM_TRY(wwr::syevd_bufferSize<T>(cusolver_handle, wwr::WWRSOLVER_EIG_MODE_VECTOR,
+                                   wwr::WWRBLAS_FILL_MODE_LOWER, m0, static_cast<T *>(nullptr), m0,
+                                   static_cast<T *>(nullptr), &lwork_eig));
+  return wwr::WWRBLAS_STATUS_SUCCESS;
+}
+
 /**
  * @brief Carve @p d_work into a DenseFeastWorkspace for an n x n problem with an
  *        m0-column subspace and Ne quadrature nodes.
@@ -139,17 +150,32 @@ Status make_feast_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, 
   if (n < 1 || m0 < 1 || m0 > n) {
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
-
   int lwork_qr = 0;
-  CLM_TRY(orthogonalize_bufferSize<T>(cusolver_handle, n, m0, &lwork_qr));
-
   int lwork_eig = 0;
-  CLM_TRY(wwr::syevd_bufferSize<T>(cusolver_handle, wwr::WWRSOLVER_EIG_MODE_VECTOR,
-                                   wwr::WWRBLAS_FILL_MODE_LOWER, m0, static_cast<T *>(nullptr), m0,
-                                   static_cast<T *>(nullptr), &lwork_eig));
+  CLM_TRY(feast_solver_lworks<T>(cusolver_handle, n, m0, lwork_qr, lwork_eig));
 
   const std::size_t bytes =
       carve_workspace(d_work, slices, n, m0, static_cast<int>(Ne), lwork_qr, lwork_eig);
+  if (lwork_bytes != nullptr) {
+    *lwork_bytes = bytes;
+  }
+  return wwr::WWRBLAS_STATUS_SUCCESS;
+}
+
+/// @brief Carve @p d_work into the driver's FeastSlices alone, for a caller-built
+///        model that carves its own workspace. Arguments as make_feast_slices.
+template<calaman::real_fp T>
+Status make_feast_driver_slices(wwr::wwrsolverDnHandle_t cusolver_handle, const int n,
+                                const int m0, void *d_work, FeastSlices<T> *slices,
+                                std::size_t *lwork_bytes) {
+  if (n < 1 || m0 < 1 || m0 > n) {
+    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
+  }
+  int lwork_qr = 0;
+  int lwork_eig = 0;
+  CLM_TRY(feast_solver_lworks<T>(cusolver_handle, n, m0, lwork_qr, lwork_eig));
+
+  const std::size_t bytes = carve_workspace(d_work, slices, n, m0, lwork_qr, lwork_eig);
   if (lwork_bytes != nullptr) {
     *lwork_bytes = bytes;
   }
@@ -173,6 +199,17 @@ Status feast_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n, c
     return wwr::WWRBLAS_STATUS_INVALID_VALUE;
   }
   return make_feast_slices<T, Ne>(cusolver_handle, n, m0, nullptr, nullptr, lwork_bytes);
+}
+
+/// @brief Device workspace, in bytes, that feast over a caller's model needs:
+///        the driver's own O(n m0) part. The model's is sized separately.
+export template<calaman::real_fp T>
+Status feast_driver_bufferSize(wwr::wwrsolverDnHandle_t cusolver_handle, const int n,
+                               const int m0, std::size_t *lwork_bytes) {
+  if (lwork_bytes == nullptr) {
+    return wwr::WWRBLAS_STATUS_INVALID_VALUE;
+  }
+  return make_feast_driver_slices<T>(cusolver_handle, n, m0, nullptr, nullptr, lwork_bytes);
 }
 
 } // namespace calaman

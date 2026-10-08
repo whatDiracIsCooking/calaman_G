@@ -180,6 +180,44 @@ __global__ void accumulate_split_kernel(const std::size_t elems, const FeastCont
   }
 }
 
+/// The residual-form quadrature sum: c_e = w_e / (Z_e - lambda_j) per column, and
+/// out = sum_e Re[ c_e (x + Xr_e + i Xi_e) ]. Im Z_e > 0, so Z_e - lambda_j != 0.
+template<typename R>
+__global__ void accumulate_residual_split_kernel(const std::size_t n, const std::size_t elems,
+                                                 const FeastContour<R> contour, const R *X,
+                                                 const R *lambda, const R *Xr, const R *Xi,
+                                                 const std::size_t stride, R *out) {
+  const std::size_t step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
+  for (std::size_t k = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x; k < elems;
+       k += step) {
+    const R lam = lambda[k / n];
+    const R x = X[k];
+    R acc = R(0);
+    for (int e = 0; e < contour.count; ++e) {
+      // c = w / d with d = Z - lambda: (w conj(d)) / |d|^2.
+      const R dr = contour.zr[e] - lam;
+      const R di = contour.zi[e];
+      const R inv = R(1) / (dr * dr + di * di);
+      const R cr = (contour.wr[e] * dr + contour.wi[e] * di) * inv;
+      const R ci = (contour.wi[e] * dr - contour.wr[e] * di) * inv;
+      const std::size_t at = static_cast<std::size_t>(e) * stride + k;
+      acc += cr * (x + Xr[at]) - ci * Xi[at];
+    }
+    out[k] = acc;
+  }
+}
+
+/// AX(:, j) -= lambda_j X(:, j), elementwise.
+template<typename R>
+__global__ void ritz_residual_kernel(const std::size_t n, const std::size_t elems, const R *X,
+                                     const R *lambda, R *AX) {
+  const std::size_t step = static_cast<std::size_t>(gridDim.x) * blockDim.x;
+  for (std::size_t k = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x; k < elems;
+       k += step) {
+    AX[k] -= lambda[k / n] * X[k];
+  }
+}
+
 /// One block per column j: colsum[j] = sum_i |A(i, j)|.
 template<typename R>
 __global__ void sym_colsum_kernel(const int lower, const int n, const R *A, const std::size_t lda,
@@ -372,6 +410,41 @@ void feast_accumulate_split(const wwr::wwrStream_t stream, const std::size_t ele
 }
 
 template<typename RealT>
+void feast_accumulate_residual_split(const wwr::wwrStream_t stream, const int n, const int k,
+                                     const FeastContour<RealT> contour, const RealT *const d_X,
+                                     const RealT *const d_lambda, const RealT *const d_Xr,
+                                     const RealT *const d_Xi, const std::size_t stride,
+                                     RealT *const d_out) {
+  if (n < 1 || k < 1) {
+    return;
+  }
+  const std::size_t nz = static_cast<std::size_t>(n);
+  const std::size_t elems = nz * static_cast<std::size_t>(k);
+  if (d_X == nullptr || d_lambda == nullptr || d_Xr == nullptr || d_Xi == nullptr ||
+      d_out == nullptr || stride < elems) {
+    return;
+  }
+  if (contour.count < 1 || contour.count > kFeastMaxNodes) {
+    return;
+  }
+  accumulate_residual_split_kernel<RealT><<<blocks_for(elems), kBlock, 0, stream>>>(
+      nz, elems, contour, d_X, d_lambda, d_Xr, d_Xi, stride, d_out);
+}
+
+template<typename RealT>
+void feast_ritz_residual_block(const wwr::wwrStream_t stream, const int n, const int k,
+                               const RealT *const d_X, const RealT *const d_lambda,
+                               RealT *const d_AX) {
+  if (n < 1 || k < 1 || d_X == nullptr || d_lambda == nullptr || d_AX == nullptr) {
+    return;
+  }
+  const std::size_t nz = static_cast<std::size_t>(n);
+  const std::size_t elems = nz * static_cast<std::size_t>(k);
+  ritz_residual_kernel<RealT>
+      <<<blocks_for(elems), kBlock, 0, stream>>>(nz, elems, d_X, d_lambda, d_AX);
+}
+
+template<typename RealT>
 void feast_sym_norm1(const wwr::wwrStream_t stream, const bool lower, const int n,
                      const RealT *const d_A, const int lda, RealT *const d_colsum,
                      RealT *const d_norm) {
@@ -452,6 +525,20 @@ template void feast_accumulate_split<float>(wwr::wwrStream_t, std::size_t, Feast
 template void feast_accumulate_split<double>(wwr::wwrStream_t, std::size_t, FeastContour<double>,
                                             const double *, const double *, std::size_t,
                                             double *);
+
+template void feast_accumulate_residual_split<float>(wwr::wwrStream_t, int, int,
+                                                     FeastContour<float>, const float *,
+                                                     const float *, const float *, const float *,
+                                                     std::size_t, float *);
+template void feast_accumulate_residual_split<double>(wwr::wwrStream_t, int, int,
+                                                      FeastContour<double>, const double *,
+                                                      const double *, const double *,
+                                                      const double *, std::size_t, double *);
+
+template void feast_ritz_residual_block<float>(wwr::wwrStream_t, int, int, const float *,
+                                               const float *, float *);
+template void feast_ritz_residual_block<double>(wwr::wwrStream_t, int, int, const double *,
+                                                const double *, double *);
 
 template void feast_sym_norm1<float>(wwr::wwrStream_t, bool, int, const float *, int, float *,
                                      float *);

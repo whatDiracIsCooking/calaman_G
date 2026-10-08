@@ -17,7 +17,8 @@
  * a general LU, never singular: every Im Z_e > 0 and A's spectrum is real.
  *
  * A model may add the optional feast_norm1_hook, ||A||_1 for the residuals'
- * scale; DenseResolvent's is exact.
+ * scale; DenseResolvent's is exact. An inexact model may add feast_residual_hook,
+ * the residual form; DenseResolvent's solves are exact, so it keeps the plain one.
  *
  * Every member expects the BLAS handle's stream to be the @p stream it is
  * given.
@@ -66,6 +67,17 @@ template<class R, class T>
 concept feast_norm1_hook = requires(R &r, wwr::wwrStream_t stream, T *d_out) {
   { r.norm1_estimate(stream, d_out) } -> std::convertible_to<Status>;
 };
+
+/// @brief The optional residual-form hook (IFEAST): r.filter_residual(stream,
+///        contour, k, X, lambda, R, out) enqueues out = rho(A) X for Ritz pairs
+///        (lambda_j, x_j) given R = A X - X diag(lambda), so the inner solves'
+///        right-hand side is R. A model without it is filtered by filter alone.
+template<class R, class T>
+concept feast_residual_hook =
+    requires(R &r, wwr::wwrStream_t stream, const device::FeastContour<T> &contour, int k,
+             const T *X, const T *lambda, const T *res, T *out) {
+      { r.filter_residual(stream, contour, k, X, lambda, res, out) } -> std::convertible_to<Status>;
+    };
 
 } // namespace calaman
 
@@ -215,5 +227,6 @@ static_assert(feast_resolvent<DenseResolvent<float>, float>);
 static_assert(feast_resolvent<DenseResolvent<double>, double>);
 static_assert(!feast_resolvent<DenseResolvent<double>, float>);
 static_assert(feast_norm1_hook<DenseResolvent<double>, double>);
+static_assert(!feast_residual_hook<DenseResolvent<double>, double>, "exact solves: plain form");
 
 } // namespace calaman

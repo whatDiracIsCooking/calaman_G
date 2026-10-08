@@ -9,10 +9,11 @@
  * device kernels of feast.cu -- written once against WarpWraps's `wwr*` names and
  * built for either backend.
  *
- * Exported: feast, feast_bufferSize, FeastOptions/FeastInfo/
- * FeastStopReason, feast_rational_filter, the feast_resolvent concept and its
- * optional feast_norm1_hook, the matrix-free KrylovResolvent model with its
- * slices and krylov_resolvent_bufferSize, and
+ * Exported: feast (dense, or over a caller's model), feast_bufferSize,
+ * feast_driver_bufferSize, FeastOptions/FeastInfo/FeastStopReason,
+ * feast_rational_filter, the feast_resolvent concept and its optional
+ * feast_norm1_hook and feast_residual_hook, the matrix-free KrylovResolvent
+ * model with its slices and krylov_resolvent_bufferSize, and
  * linear_operator (calaman.linear_operator). The other partitions' declarations
  * are module-internal; they are re-exported only because every interface
  * partition must be.

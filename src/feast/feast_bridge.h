@@ -105,6 +105,23 @@ void feast_accumulate_split(wwr::wwrStream_t stream, std::size_t elems,
                             FeastContour<RealT> contour, const RealT *d_Xr, const RealT *d_Xi,
                             std::size_t stride, RealT *d_out);
 
+/// @brief The residual form of the filter (IFEAST), X_e solving (Z_e I - A) X_e = R:
+///
+///     out(:, j) = sum_e Re[ w_e / (Z_e - lambda_j) (x_j + X_e(:, j)) ],
+///
+/// which is rho(A) x_j when r_j = A x_j - lambda_j x_j. All blocks n x k, ld n.
+template<typename RealT>
+void feast_accumulate_residual_split(wwr::wwrStream_t stream, int n, int k,
+                                     FeastContour<RealT> contour, const RealT *d_X,
+                                     const RealT *d_lambda, const RealT *d_Xr, const RealT *d_Xi,
+                                     std::size_t stride, RealT *d_out);
+
+/// @brief In place, d_AX(:, j) -= lambda_j d_X(:, j): A x_j becomes the
+///        eigen-residual r_j of the pair. n x k blocks, ld n.
+template<typename RealT>
+void feast_ritz_residual_block(wwr::wwrStream_t stream, int n, int k, const RealT *d_X,
+                               const RealT *d_lambda, RealT *d_AX);
+
 /// @brief ||A||_1 of the symmetric matrix whose @p lower (else upper) triangle is
 ///        stored, into the device scalar @p d_norm. @p d_colsum: n scratch.
 ///
