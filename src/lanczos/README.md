@@ -23,7 +23,7 @@ deferred — [`docs/architecture.md` §9](../../docs/architecture.md) says why.
 
 ## Module
 
-`calaman.lanczos` — one module, four partitions:
+`calaman.lanczos` — one module, five partitions:
 
 | Partition | Contents |
 |---|---|
@@ -31,6 +31,7 @@ deferred — [`docs/architecture.md` §9](../../docs/architecture.md) says why.
 | `:buffer_size` | `LanczosSlices`, `lanczos_shape_ok`, `lanczos_restart_keep`, `make_lanczos_slices` / `lanczos_bufferSize` |
 | `:ritz` | `LanczosRitz`, `lanczos_ritz_extract` / `_select` / `_compact` / `_vectors` |
 | `:solve` | `lanczos_solve` |
+| `:shift_invert` | the `shifted_operator` concept, `shift_invert_back_transform`, `lanczos_shift_invert_solve` |
 
 ## The idea
 

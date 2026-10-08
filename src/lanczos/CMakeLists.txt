@@ -18,12 +18,13 @@ calaman_add_gpu_device_library(
 
 # The module: :types holds the options/result/which/callback and its operator
 # adapter; :buffer_size the
-# workspace; :ritz the Ritz extraction; :solve the driver. Header-only
-# templates, so no instantiations.cpp.
+# workspace; :ritz the Ritz extraction; :solve the driver; :shift_invert the
+# shift-invert entry point over it. Header-only templates, so no
+# instantiations.cpp.
 #
 # LINK_PUBLIC is what the exported surface names: the stream (wwr.runtime_api),
 # the BLAS/solver handles and enums (wwr.blas, wwr.solver), wwrrandState
-# (wwr.rand), gemm/gemv/nrm2 (wwr.wrappers.blas), syevd
+# (wwr.rand), gemm/gemv/nrm2/swap (wwr.wrappers.blas), syevd
 # (wwr.wrappers.solver), ScopedPointerMode (wwr.extension.blas), the random
 # start (wwr.extension.init_state, wwr.extension.random_normal), real_fp and
 # the workspace carving (calaman.common), Status (calaman.error_handling),
@@ -46,6 +47,7 @@ calaman_add_cxx_module_library(
   buffer_size.cppm
   ritz.cppm
   solve.cppm
+  shift_invert.cppm
   LINK_PUBLIC
   wwr::runtime_api
   wwr::blas
