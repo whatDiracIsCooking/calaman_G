@@ -1,7 +1,9 @@
 # calaman.davidson
 
 Block **Davidson** solver for the lowest `n_roots` eigenpairs of a symmetric
-operator known only through a matrix-vector-product callback.
+operator known only as a [`linear_operator`](../linear_operator/linear_operator.cppm)
+(the block-operator concept shared with lanczos and feast) or a block
+matrix-vector-product callback.
 
 Not a LAPACK routine (LAPACK ships no Davidson), so it is its own module rather
 than a partition of a LAPACK-named one, like `calaman.feast` and `calaman.expm`.
@@ -19,13 +21,19 @@ than a partition of a LAPACK-named one, like `calaman.feast` and `calaman.expm`.
 | Partition | Contents |
 |---|---|
 | `:buffer_size` | `DavidsonSlices`, the single-buffer workspace layout, `make_davidson_slices` / `davidson_bufferSize` |
-| `:solve` | `DavidsonOptions`, `DavidsonStopReason`, `DavidsonInfo`, the three callback concepts + `DavidsonNoMetric`, `davidson_solve` |
+| `:solve` | `DavidsonOptions`, `DavidsonStopReason`, `DavidsonInfo`, the three callback concepts + `DavidsonNoMetric`, the `DavidsonSigmaOperator` adapter, `davidson_solve` |
 
 ## The idea
 
-The operator enters as a caller callable (`davidson_sigma`: `sigma(B) -> A B`,
-block-in block-out on device buffers), so the module knows nothing about what the
-operator *is*. A second callable (`davidson_preconditioner`) turns a residual
+The operator enters as a model of `calaman.linear_operator`'s
+`linear_operator<Op, T>` (`op.apply(stream, k, X, Y)`, `Y = A X`, block-in
+block-out on device buffers), so the module knows nothing about what the
+operator *is*. `op` is taken by non-const lvalue reference: a model may hold
+state. A plain callable constrained by `davidson_sigma`
+(`sigma(stream, k, B, out)`, the same block shape) still works: an overload of
+`davidson_solve` wraps it in `DavidsonSigmaOperator` (one callback call per
+apply) and forwards, so the call sequence is the operator path's exactly. A
+type that models both concepts takes the operator path. A second callable (`davidson_preconditioner`) turns a residual
 block into a correction block (the diagonal Davidson correction
 `delta = r / (theta - diag)` is the usual choice, but unknown here). An optional
 third callable (`davidson_metric`) supplies an SPD metric `M`, selecting a
@@ -40,13 +48,13 @@ compile time.
 Per `solve`:
 
 1. **Subspace expansion.** The orthonormal guess seeds `V`; each iteration calls
-   `sigma` once, on only the newly appended columns (`V`, `Sigma_V` grow in
+   `op.apply` once, on only the newly appended columns (`V`, `Sigma_V` grow in
    lockstep), so the expensive operator is never reapplied to a direction already
    in the subspace.
 2. **Rayleigh–Ritz.** `H = V^T Sigma_V`, diagonalized by `syevd` (Euclidean) or
    the generalized `sygvd` (metric). Ritz vectors `X = V S_k` and their image
    `A X = Sigma_V S_k` come from the same rotation (`ritz_rotate`) — no second
-   `sigma`.
+   apply.
 3. **Residuals and locking.** `R = A X - X diag(theta)`; the per-root norms are
    classified by `calaman.ritz`'s `classify_ritz`, relative to
    `max(|theta_i|, ||H||_2)` with `||H||_2 = max |theta|` over the subspace
@@ -100,8 +108,9 @@ make_davidson_slices<double>(cusolver, n, n_roots, max_subspace, false, d_work, 
 
 DavidsonInfo<double> info;
 davidson_solve<double>(cublas, cusolver, stream, n, n_roots, max_subspace,
-                       d_guess, guess_count, s, sigma, precondition,
+                       d_guess, guess_count, s, op, precondition,
                        d_eigenvalues, d_eigenvectors, &info);
+// op: any linear_operator<double> lvalue, or a davidson_sigma<double> callable
 // d_eigenvalues[0 .. n_roots) are the lowest Ritz values, ascending (device),
 // and converged(info) says whether they met the residual_tolerance bound.
 ```
@@ -113,6 +122,6 @@ Both handles must already be set to `stream`.
 | File | Role |
 |------|------|
 | `buffer_size.cppm` | `:buffer_size` — slices, workspace layout, sizing |
-| `solve.cppm` | `:solve` — options, result, callbacks, `davidson_solve` |
+| `solve.cppm` | `:solve` — options, result, callbacks and the sigma adapter, `davidson_solve` |
 | `interface.cppm` | primary interface; re-exports the partitions |
 | `CMakeLists.txt` | build configuration |

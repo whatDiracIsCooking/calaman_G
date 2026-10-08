@@ -11,7 +11,9 @@
 //   * the Euclidean solve against the reference LAPACK -- on a diagonally
 //     dominant symmetric operator driven through a gemv callback with a diagonal
 //     preconditioner, davidson_solve converges the lowest n_roots eigenvalues to
-//     LAPACKE_?syevd's, over float and double (REQUIRES_GPU);
+//     LAPACKE_?syevd's, over float and double, and a linear_operator model takes
+//     the sigma lambda's exact path (REQUIRES_GPU);
+//   * which operator shapes davidson_solve accepts (static_asserts);
 //   * the non-converged stops -- a one-iteration budget (MaxIterations) and a
 //     zero preconditioner (Stagnated) both return success with the first
 //     iteration's Ritz values written (REQUIRES_GPU).
@@ -77,6 +79,48 @@ static_assert(davidson_preconditioner<decltype(kNoopPrecondition), double>);
 static_assert(!davidson_sigma<decltype(kNoopPrecondition), double>);
 static_assert(!davidson_sigma<decltype(kNoopBlock), float>);
 
+using SigmaPtr = Status (*)(wwr::wwrStream_t, int, const double *, double *);
+using SigmaFunction = std::function<Status(wwr::wwrStream_t, int, const double *, double *)>;
+
+/// A linear_operator model with apply only, and no call operator.
+struct NoopOperator {
+  Status apply(wwr::wwrStream_t, int, const double *, double *) {
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+};
+
+/// Models both concepts: overload resolution must pick the operator path.
+struct NoopBoth : NoopOperator {
+  Status operator()(wwr::wwrStream_t, int, const double *, double *) const {
+    return wwr::WWRBLAS_STATUS_SUCCESS;
+  }
+};
+
+// The adapter makes any davidson_sigma a linear_operator; the two concepts are
+// disjoint for the plain models, so overload resolution picks exactly one path.
+static_assert(linear_operator<DavidsonSigmaOperator<double, decltype(kNoopBlock)>, double>);
+static_assert(linear_operator<DavidsonSigmaOperator<double, SigmaPtr>, double>);
+static_assert(linear_operator<NoopOperator, double>);
+static_assert(!davidson_sigma<NoopOperator, double>);
+static_assert(!linear_operator<decltype(kNoopBlock), double>);
+static_assert(linear_operator<NoopBoth, double> && davidson_sigma<NoopBoth, double>);
+
+/// davidson_solve accepts @p Op as an lvalue (a const one for a sigma callable).
+template<class Op>
+concept solve_accepts =
+    requires(Op &op, const DavidsonSlices<double> &s, double *out, DavidsonInfo<double> *info) {
+      davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{}, wwr::wwrStream_t{},
+                             16, 4, 8, out, 4, s, op, kNoopPrecondition, out, out, info);
+    };
+static_assert(solve_accepts<NoopOperator>);
+static_assert(solve_accepts<NoopBoth>);
+static_assert(solve_accepts<decltype(kNoopBlock)>); // constexpr: already const
+static_assert(solve_accepts<std::remove_const_t<decltype(kNoopBlock)>>);
+static_assert(solve_accepts<SigmaPtr>);
+static_assert(solve_accepts<const SigmaFunction>);
+static_assert(!solve_accepts<const NoopOperator>); // apply is non-const
+static_assert(!solve_accepts<int>);
+
 // ── argument checking (host-only; the handle is never dereferenced) ──────────
 
 TEST(DavidsonArgCheckTests, RejectsBadShape) {
@@ -136,6 +180,27 @@ TEST(DavidsonArgCheckTests, RejectsMetricWithoutMetricWorkspace) {
       wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{}, wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4,
       s, kNoopBlock, kNoopPrecondition, g_fake_values, g_fake_vectors, &info, {}, kNoopBlock);
   EXPECT_EQ(st.code, kInvalidValue);
+}
+
+TEST(DavidsonArgCheckTests, OperatorSolveRejectsBadArguments) {
+  // The linear_operator path runs the same checks before any handle use.
+  DavidsonSlices<double> s;
+  NoopOperator op;
+  DavidsonInfo<double> info;
+  const auto solve = [&](int guess_count, DavidsonInfo<double> *out) {
+    return davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
+                                  wwr::wwrStream_t{}, 16, 4, 8, nullptr, guess_count, s, op,
+                                  kNoopPrecondition, g_fake_values, g_fake_vectors, out);
+  };
+  EXPECT_EQ(solve(3, &info).code, kInvalidValue);
+  EXPECT_EQ(solve(9, &info).code, kInvalidValue);
+  EXPECT_EQ(solve(4, nullptr).code, kInvalidValue);
+  EXPECT_EQ(davidson_solve<double>(wwr::wwrblasHandle_t{}, wwr::wwrsolverDnHandle_t{},
+                                   wwr::wwrStream_t{}, 16, 4, 8, nullptr, 4, s, op,
+                                   kNoopPrecondition, g_fake_values, g_fake_vectors, &info, {},
+                                   kNoopBlock)
+                .code,
+            kInvalidValue); // a metric against a workspace not sized with_metric
 }
 
 // ── shared device plumbing ───────────────────────────────────────────────────
@@ -322,6 +387,30 @@ std::vector<T> to_host(std::shared_ptr<DeviceHandle> handle, const T *device, st
   return host;
 }
 
+/// A (n x n, device) as a linear_operator model: one gemm per apply, counting
+/// its applies and noting any made outside HOST pointer mode.
+template<typename T>
+struct GemmOperator {
+  wwr::wwrblasHandle_t blas;
+  int n;
+  const T *d_a;
+  int applies = 0;
+  bool host_mode = true;
+
+  Status apply(wwr::wwrStream_t, int k, const T *X, T *Y) {
+    ++applies;
+    wwr::wwrblasPointerMode_t mode{};
+    const Status got = wwr::wwrblasGetPointerMode(blas, &mode);
+    host_mode = host_mode && got.ok() && mode == wwr::WWRBLAS_POINTER_MODE_HOST;
+    const T one{1};
+    const T zero{0};
+    return wwr::gemm<T, int>(blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, k, n, &one, d_a, n, X,
+                             n, &zero, Y, n);
+  }
+};
+static_assert(linear_operator<GemmOperator<float>, float>);
+static_assert(linear_operator<GemmOperator<double>, double>);
+
 /// The Euclidean problem every solve below runs: A = diag_plus_perturbation,
 /// unit-vector guesses, a gemm sigma and the diagonal preconditioner (or, with
 /// zero_correction, one that returns a zero block, which forces stagnation).
@@ -375,12 +464,24 @@ struct EuclideanProblem {
       return wwr::gemm<T, int>(h.blas, wwr::WWRBLAS_OP_N, wwr::WWRBLAS_OP_N, n, block, n, &one,
                                d_a.data(), n, b, n, &zero, out, n);
     };
+    return davidson_solve<T>(h.blas, h.solver, handle->stream().get(), n, n_roots, max_subspace,
+                             d_guess.data(), n_roots, s, sigma, precondition(zero_correction),
+                             d_vals.data(), d_vecs.data(), info, options);
+  }
 
-    // Diagonal Davidson preconditioner correction = residual / (theta - diag),
-    // computed on the host (no kernel needed for a test), guarding the near-zero
-    // denominator when a Ritz value approaches its own diagonal entry.
-    const auto precondition = [&](wwr::wwrStream_t stream, int roots, const T *theta,
-                                  const T *residual, T *correction) -> Status {
+  /// The same solve with @p op, a linear_operator model, in place of the lambda.
+  Status solve(const DavidsonOptions<T> &options, DavidsonInfo<T> *info, GemmOperator<T> &op) {
+    return davidson_solve<T>(h.blas, h.solver, handle->stream().get(), n, n_roots, max_subspace,
+                             d_guess.data(), n_roots, s, op, precondition(false), d_vals.data(),
+                             d_vecs.data(), info, options);
+  }
+
+  /// Diagonal Davidson preconditioner correction = residual / (theta - diag),
+  /// computed on the host (no kernel needed for a test), guarding the near-zero
+  /// denominator when a Ritz value approaches its own diagonal entry.
+  auto precondition(bool zero_correction) {
+    return [this, zero_correction](wwr::wwrStream_t stream, int roots, const T *theta,
+                                   const T *residual, T *correction) -> Status {
       const std::size_t cnt = static_cast<std::size_t>(n) * roots;
       if (zero_correction) {
         return wwr::wwrMemsetAsync(correction, 0, sizeof(T) * cnt, stream);
@@ -408,10 +509,6 @@ struct EuclideanProblem {
       wwr::wwrStreamSynchronize(stream);
       return st;
     };
-
-    return davidson_solve<T>(h.blas, h.solver, handle->stream().get(), n, n_roots, max_subspace,
-                             d_guess.data(), n_roots, s, sigma, precondition, d_vals.data(),
-                             d_vecs.data(), info, options);
   }
 
   std::vector<T> eigenvalues() { return to_host(handle, d_vals.data(), n_roots); }
@@ -462,6 +559,42 @@ void check_reference() {
 
 TEST(DavidsonReferenceTests, LowestEigenpairsDouble) { check_reference<double>(); }
 TEST(DavidsonReferenceTests, LowestEigenpairsFloat) { check_reference<float>(); }
+
+// A linear_operator model and the sigma lambda over the same A take the same
+// path: the same iterations, one apply per iteration (a block of new columns
+// each), every one in HOST pointer mode, and LAPACKE_?syevd's eigenvalues.
+template<typename T>
+void check_operator_model() {
+  const bool is_float = std::is_same_v<T, float>;
+  EuclideanProblem<T> p;
+  const auto ref = reference_eigenvalues<T>(p.n, p.a);
+  const double eig_tol = is_float ? 5e-3 : 1e-6;
+
+  DavidsonOptions<T> options;
+  options.residual_tolerance = is_float ? T{1e-4} : T{1e-8};
+  options.max_iterations = 300;
+  DavidsonInfo<T> by_sigma;
+  ASSERT_TRUE(p.solve(options, &by_sigma).ok());
+
+  GemmOperator<T> op{p.h.blas, p.n, p.d_a.data()};
+  DavidsonInfo<T> by_operator;
+  const Status st = p.solve(options, &by_operator, op);
+  EXPECT_TRUE(st.ok()) << "domain " << static_cast<int>(st.domain) << " code " << st.code;
+  EXPECT_CONVERGED(by_operator);
+  EXPECT_EQ(by_operator.iterations, by_sigma.iterations);
+  EXPECT_EQ(op.applies, by_operator.iterations);
+  EXPECT_TRUE(op.host_mode);
+
+  const auto vals = p.eigenvalues();
+  for (int i = 0; i < p.n_roots; ++i) {
+    EXPECT_NEAR(static_cast<double>(vals[static_cast<std::size_t>(i)]),
+                static_cast<double>(ref[static_cast<std::size_t>(i)]), eig_tol)
+        << i;
+  }
+}
+
+TEST(DavidsonReferenceTests, OperatorModelMatchesSigmaDouble) { check_operator_model<double>(); }
+TEST(DavidsonReferenceTests, OperatorModelMatchesSigmaFloat) { check_operator_model<float>(); }
 
 /// The two non-converged stops: each is success, with the reason set and the
 /// first iteration's Ritz values (A's leading block) still written.

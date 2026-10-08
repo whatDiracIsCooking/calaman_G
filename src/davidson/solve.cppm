@@ -5,26 +5,20 @@
  *
  * The :solve partition of calaman.davidson.
  *
- * davidson_solve iterates: extend Sigma_V (and, on the metric path, M V) on only
- * the newly appended columns (one sigma call), form the subspace problem and
- * diagonalize it, rotate the lowest n_roots Ritz pairs and their operator images,
- * test each residual's norm, lock the converged, precondition the full block,
- * collapse the subspace when a full new block would overflow max_subspace, and
- * expand by the twice-modified-Gram-Schmidt-orthonormalized corrections.
+ * davidson_solve applies a linear_operator (calaman.linear_operator) to only the
+ * newly appended columns each iteration, diagonalizes the subspace problem,
+ * tests each Ritz residual, locks the converged, preconditions, collapses the
+ * subspace before it would overflow max_subspace, and expands by the
+ * twice-Gram-Schmidt-orthonormalized corrections. A davidson_sigma callable is
+ * wrapped in DavidsonSigmaOperator, so it takes the same path.
  *
- * Two problems share the loop, chosen at compile time by the metric's type:
- *   - EUCLIDEAN (DavidsonNoMetric, the default): H = V^T Sigma_V, standard syevd, residual and
- *     orthogonality in the Euclidean inner product.
- *   - GENERALIZED (any other metric): the operator is self-adjoint in the metric
- *     <x,y>_M = x^T M y. H = (M V)^T Sigma_V and S = (M V)^T V, generalized sygvd;
- *     the residual norm is sqrt(R^T M R) and the subspace is expanded
- *     M-orthonormally -- M C is carried in lockstep through every projection so
- *     the inner products stay in the metric. The workspace must have been sized
- *     with_metric (make_davidson_slices); it is a usage error otherwise.
+ * The metric's type picks the problem at compile time:
+ *   - EUCLIDEAN (DavidsonNoMetric, the default): H = V^T Sigma_V, syevd.
+ *   - GENERALIZED (any other metric): self-adjoint in <x,y>_M = x^T M y;
+ *     H = (M V)^T Sigma_V, S = (M V)^T V, sygvd, M-norm residuals and
+ *     M-orthonormal expansion. Needs a workspace sized with_metric.
  *
- * Like calaman.feast, the solver owns neither the handles nor the stream (bind
- * them with wwrblasSetStream/wwrsolverDnSetStream and pass them in) and writes
- * the Ritz pairs to caller device buffers, reporting the run in a DavidsonInfo.
+ * The solver owns neither the handles nor the stream (bind both to it first).
  * Non-convergence is an outcome (calaman.iterative): a failing Status means a
  * BLAS/solver/runtime fault or a bad argument, never an exhausted budget.
  */
@@ -48,8 +42,9 @@ import wwr.extension.blas;  // ScopedPointerMode (forces host mode for the solve
 import :buffer_size;        // DavidsonSlices
 import calaman.common;      // kOne, kZero, kNegativeOne, real_fp
 import calaman.ritz;        // RitzSelection, classify_ritz, ritz_rotate
-export import calaman.error_handling; // Status, PointerModeStatus
-export import calaman.iterative;      // IterationInfo, stop_reason, converged
+export import calaman.error_handling;  // Status, PointerModeStatus
+export import calaman.iterative;       // IterationInfo, stop_reason, converged
+export import calaman.linear_operator; // linear_operator -- what the solve applies
 
 export namespace calaman {
 
@@ -93,6 +88,17 @@ concept davidson_sigma =
       { f(stream, block_size, b, sigma_out) } -> std::convertible_to<Status>;
     };
 
+/// @brief The linear_operator over a davidson_sigma: apply(stream, k, X, Y) is
+///        sigma(stream, k, X, Y), one call per apply. Holds a reference to it.
+template<calaman::real_fp T, davidson_sigma<T> F>
+struct DavidsonSigmaOperator {
+  const F &sigma;
+
+  Status apply(wwr::wwrStream_t stream, const int k, const T *X, T *Y) {
+    return sigma(stream, k, X, Y);
+  }
+};
+
 /// @brief precondition(stream, n_roots, theta, residual, correction): turn the
 ///        residual block (n x n_roots, device) into a correction block (same
 ///        shape, device), given the current Ritz values @p theta (n_roots, HOST).
@@ -117,11 +123,11 @@ concept davidson_metric = std::same_as<F, DavidsonNoMetric> || davidson_sigma<F,
 export namespace calaman {
 
 /**
- * @brief Converge the lowest @p n_roots eigenpairs of a symmetric operator known
- *        only through @p sigma, from an initial @p guess.
+ * @brief Converge the lowest @p n_roots eigenpairs of the symmetric operator
+ *        @p op (applied in HOST pointer mode), from an initial @p guess.
  *
  * @param stream          Stream both handles are bound to; must outlive the call.
- * @param n,n_roots,max_subspace  The shape @p s was carved for.
+ * @param n,n_roots,max_subspace  The shape @p s was carved for; n is also @p op's.
  * @param guess           n x guess_count device, column-major (ld n). Full column
  *                        rank; orthonormal (Euclidean) is the usual seed.
  * @param guess_count     n_roots <= guess_count <= max_subspace.
@@ -139,14 +145,14 @@ export namespace calaman {
  *         with a workspace not sized with_metric; else a propagated fault, with
  *         info->reason NumericalFailure.
  */
-template<calaman::real_fp T, davidson_sigma<T> Sigma, davidson_preconditioner<T> Precondition,
+template<calaman::real_fp T, linear_operator<T> Op, davidson_preconditioner<T> Precondition,
          davidson_metric<T> Metric = DavidsonNoMetric>
 Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
                       wwr::wwrStream_t stream, int n, int n_roots, int max_subspace, const T *guess,
-                      int guess_count, const DavidsonSlices<T> &s, const Sigma &sigma,
-                      const Precondition &precondition, T *eigenvalues_out,
-                      T *eigenvectors_out, DavidsonInfo<T> *info,
-                      const DavidsonOptions<T> &options = {}, const Metric &metric = {}) {
+                      int guess_count, const DavidsonSlices<T> &s, Op &op,
+                      const Precondition &precondition, T *eigenvalues_out, T *eigenvectors_out,
+                      DavidsonInfo<T> *info, const DavidsonOptions<T> &options = {},
+                      const Metric &metric = {}) {
   CLM_REQUIRE(info != nullptr && eigenvalues_out != nullptr && eigenvectors_out != nullptr,
               wwr::WWRBLAS_STATUS_INVALID_VALUE);
   CLM_REQUIRE(guess_count >= n_roots && guess_count <= max_subspace,
@@ -180,7 +186,7 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
                               wwr::wwrMemcpyDeviceToDevice, stream));
 
   int dim = guess_count;
-  int filled = 0; // columns of s.av already holding sigma(s.v[:, :filled])
+  int filled = 0; // columns of s.av already holding A s.v[:, :filled]
 
   // The last Rayleigh-Ritz left the n_roots lowest Ritz values in s.ritz; with
   // no iteration run there are none, so the output is zeroed.
@@ -201,11 +207,12 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
   const auto m_norm = [](T dot_val) -> T { return dot_val > T{0} ? std::sqrt(dot_val) : T{0}; };
 
   for (int iter = 1; iter <= options.max_iterations; ++iter) {
-    // 1. Extend Sigma_V (and M V on the metric path) for the new columns only.
+    // 1. Extend Sigma_V (and M V on the metric path) for the new columns only:
+    //    one op.apply per iteration.
     if (dim > filled) {
       const int new_count = dim - filled;
       const std::size_t offset = static_cast<std::size_t>(filled) * nz;
-      CLM_TRY(sigma(stream, new_count, s.v + offset, s.av + offset));
+      CLM_TRY(op.apply(stream, new_count, s.v + offset, s.av + offset));
       if constexpr (use_metric) {
         CLM_TRY(metric(stream, new_count, s.v + offset, s.mv + offset));
       }
@@ -395,6 +402,23 @@ Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle
   }
 
   return finish(std::max(options.max_iterations, 0), DavidsonStopReason::MaxIterations);
+}
+
+/// @brief davidson_solve over a davidson_sigma callable, through
+///        DavidsonSigmaOperator: same calls, same contract.
+template<calaman::real_fp T, davidson_sigma<T> Sigma, davidson_preconditioner<T> Precondition,
+         davidson_metric<T> Metric = DavidsonNoMetric>
+  requires(!linear_operator<Sigma, T>)
+Status davidson_solve(wwr::wwrblasHandle_t cublas_handle, wwr::wwrsolverDnHandle_t cusolver_handle,
+                      wwr::wwrStream_t stream, int n, int n_roots, int max_subspace, const T *guess,
+                      int guess_count, const DavidsonSlices<T> &s, const Sigma &sigma,
+                      const Precondition &precondition, T *eigenvalues_out, T *eigenvectors_out,
+                      DavidsonInfo<T> *info, const DavidsonOptions<T> &options = {},
+                      const Metric &metric = {}) {
+  DavidsonSigmaOperator<T, Sigma> op{sigma};
+  return davidson_solve<T>(cublas_handle, cusolver_handle, stream, n, n_roots, max_subspace, guess,
+                           guess_count, s, op, precondition, eigenvalues_out, eigenvectors_out,
+                           info, options, metric);
 }
 
 } // namespace calaman
