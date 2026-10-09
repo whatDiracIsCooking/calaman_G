@@ -233,6 +233,10 @@ add_subdirectory(sytrs2)
 # it follows them here.
 add_subdirectory(sysv)
 
+# calaman.posv -- the positive definite solve driver (LAPACK's ?posv): vendor
+# wwr::potrf then wwr::potrs. Links only wwr and calaman.common/error_handling.
+add_subdirectory(posv)
+
 # calaman.hetrs -- the Hermitian cousin of calaman.sytrs (LAPACK ?hetrs): solve
 # A X = B for a Hermitian matrix already Bunch-Kaufman factored. A host walk of
 # the pivot sequence over wrapped BLAS (geru/gemv/swap) plus its own
