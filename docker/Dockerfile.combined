@@ -73,8 +73,9 @@ RUN --mount=type=bind,source=docker/install-rocm-ds.sh,target=/tmp/install-rocm-
 # and both backends are findable in this image by design.
 ENV CMAKE_PREFIX_PATH=/opt/rocm-ds:${CMAKE_PREFIX_PATH}
 
-# Claude Code, PINNED -- the last root layer in this file on purpose: a version
-# bump re-runs only this and the two lines after it, never the SDK above it.
+# Claude Code, PINNED -- an agent layer at the END of this file on purpose: a
+# version bump re-runs only this and the agy layer below it, never the SDK
+# above it.
 # docker/install-claude-code.sh carries the rest (why not Dockerfile.base, and
 # which drift this ended). It is the fourth version to bump in more than one
 # place: the same ARG is declared by Dockerfile.cuda, .hip and .combined, so
@@ -89,6 +90,40 @@ ARG CLAUDE_CODE_VERSION=2.1.292
 ENV CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION}
 RUN --mount=type=bind,source=docker/install-claude-code.sh,target=/tmp/install-claude-code.sh \
     bash /tmp/install-claude-code.sh
+
+# The Antigravity CLI (`agy`), PINNED -- the second agent layer, and the last
+# root layer in this file. docker/install-agy.sh carries the reasoning: why it
+# does NOT run upstream's bootstrapper (which cannot be asked for a version at
+# all), and why the binary is installed USER-OWNED and so free to self-update
+# off this pin -- the pin is what the IMAGE SHIPS, and devtools/agy-version.sh
+# reports the gap rather than pretending there is none.
+#
+# THE FIFTH VERSION TO BUMP IN MORE THAN ONE PLACE, after ROCM_VERSION,
+# GPU_TARGETS, HIPCOMP_VERSION and CLAUDE_CODE_VERSION -- and the only one
+# spanning two KINDS of file: this ARG (three copies, one per GPU Dockerfile)
+# plus the artifact coordinate and sha512 in docker/agy-pin.json (one copy,
+# both architectures). The two are cross-checked at build time, so a bump that
+# reaches one and not the other fails here instead of installing the other
+# one's answer. `devtools/agy-version.sh --apply` rewrites every copy at once.
+#
+# Like install-claude-code.sh, this script runs a SECOND time here: the parent
+# is the `cuda` image, which already installed agy. It overwrites rather than
+# skipping, so a pin bumped only in this file still lands.
+#
+# ENV as well as ARG for the same reason as Claude Code above: the INTENDED
+# version stays readable inside a running container, which is what lets
+# doctor.sh tell the pin apart from whatever the self-updater has since
+# fetched over the top of it.
+ARG AGY_VERSION=1.3.3
+ENV AGY_VERSION=${AGY_VERSION}
+RUN --mount=type=bind,source=docker/install-agy.sh,target=/tmp/install-agy.sh \
+    --mount=type=bind,source=docker/agy-pin.json,target=/tmp/agy-pin.json \
+    bash /tmp/install-agy.sh
+
+# No `ENV PATH=/home/ubuntu/.local/bin:...` here, unlike Dockerfile.cuda and
+# .hip: the parent image is `cuda`, whose ENV already carries it, and repeating
+# it would only duplicate the entry. Re-parent this file and that stops being
+# true -- add the line back then.
 
 USER ubuntu
 RUN nvcc --version | grep release && hipconfig --version

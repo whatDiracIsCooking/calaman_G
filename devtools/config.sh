@@ -366,7 +366,7 @@ DOCTOR_GPU_VENDORS=${DOCTOR_GPU_VENDORS:-"nvidia amd"}
 DOCTOR_REQUIRED_PATHS=${DOCTOR_REQUIRED_PATHS:-"deps/WarpWraps/CMakeLists.txt:the WarpWraps submodule -- nothing under src/ can compile without it
 /usr/include/lapacke.h:the CPU reference LAPACK oracle; tests that check numerical output against it are not built"}
 
-# --- the agent in the images -----------------------------------------------
+# --- the agents in the images ----------------------------------------------
 
 # Where the Claude Code version pin lives, one path per line, relative to the
 # repo root: every file carrying an `ARG CLAUDE_CODE_VERSION=` line. These are
@@ -387,3 +387,29 @@ docker/Dockerfile.combined"}
 # before giving up and reporting the pin alone.
 CLAUDE_NPM_PACKAGE=${CLAUDE_NPM_PACKAGE:-@anthropic-ai/claude-code}
 CLAUDE_REGISTRY_TIMEOUT=${CLAUDE_REGISTRY_TIMEOUT:-8}
+
+# The SECOND agent: the Antigravity CLI (`agy`). Same three GPU Dockerfiles,
+# each carrying an `ARG AGY_VERSION=` line and running docker/install-agy.sh
+# after install-claude-code.sh; same empty-to-drop and missing-path-is-an-error
+# rules as CLAUDE_PIN_FILES above.
+AGY_PIN_FILES=${AGY_PIN_FILES:-"docker/Dockerfile.cuda
+docker/Dockerfile.hip
+docker/Dockerfile.combined"}
+
+# The other half of that pin, and the reason agy needs one more setting than
+# claude does. npm resolves a version to an artifact, so CLAUDE_CODE_VERSION is
+# the whole pin; agy has no such index -- see docker/install-agy.sh -- so the
+# immutable GCS object path and its sha512 are pinned HERE, once, for both
+# architectures. docker/install-agy.sh fails the build when this file and the
+# ARG disagree.
+AGY_PIN_MANIFEST=${AGY_PIN_MANIFEST:-docker/agy-pin.json}
+
+# Upstream's release manifest: agy's stand-in for the npm registry, and the
+# only way to learn what the current version is. It is LATEST-ONLY -- there is
+# no per-version endpoint (they 404) -- which is why
+# `devtools/agy-version.sh --apply` can resolve "the newest one" but cannot
+# resolve an arbitrary older version. `<platform>` is linux_amd64 or
+# linux_arm64; the keys of AGY_PIN_MANIFEST's `platforms` map are the dpkg
+# spellings (amd64, arm64) of the same two.
+AGY_MANIFEST_URL=${AGY_MANIFEST_URL:-https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests}
+AGY_REGISTRY_TIMEOUT=${AGY_REGISTRY_TIMEOUT:-8}

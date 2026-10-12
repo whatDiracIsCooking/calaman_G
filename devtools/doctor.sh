@@ -474,6 +474,75 @@ if [ -n "${CLAUDE_PIN_FILES:-}" ] && [ -x "$CV" ]; then
   fi
 fi
 
+# --- antigravity cli pin (the second agent) --------------------------------
+# The same shape as the Claude Code block above, with ONE extra check and one
+# inverted verdict, both because agy's pin is built differently:
+#
+#   - it has two halves. `ARG AGY_VERSION` names a version; docker/agy-pin.json
+#     names the artifact that version means, because upstream publishes no
+#     per-version index for agy the way npm does for claude. Either half can
+#     drift alone, and a build fails rather than choosing between them.
+#   - `installed` ABOVE the pin is not a fault. agy lives user-owned in
+#     ~/.local/bin and self-updates on a 15-minute check with no setting, flag
+#     or environment variable to stop it, so a container that has been up a
+#     while is EXPECTED to be ahead of the image. docker/install-agy.sh has why
+#     that was chosen rather than worked around.
+#
+# AGY_PIN_FILES in config.sh is the file list; empty drops the section.
+AV="$TOP/devtools/agy-version.sh"
+if [ -n "${AGY_PIN_FILES:-}" ] && [ -x "$AV" ]; then
+  echo "antigravity cli pin"
+  av=$("$AV" --porcelain 2>/dev/null)
+  av_pinned=$(printf '%s\n' "$av" | sed -n 's/^pinned //p')
+  av_files=$(printf '%s\n' "$av" | sed -n 's/^files //p')
+  av_coord=$(printf '%s\n' "$av" | sed -n 's/^coordinate //p')
+  av_problems=$(printf '%s\n' "$av" | sed -n 's/^coordinate_problems //p')
+  av_upstream=$(printf '%s\n' "$av" | sed -n 's/^upstream //p')
+  av_installed=$(printf '%s\n' "$av" | sed -n 's/^installed //p')
+
+  # 1. the ARG copies agree with each other.
+  if [ -z "$av_pinned" ] || [ "$av_pinned" = "-" ]; then
+    warn "the agy pin disagrees across the Dockerfiles"
+    note "$av_files"
+    note "fix: devtools/agy-version.sh --apply"
+  # 2. the artifact coordinate is usable at all, and agrees with the ARG. This
+  #    is the check claude does not need.
+  elif [ -n "${av_problems// /}" ]; then
+    warn "the agy artifact coordinate is unusable: ${av_problems%;}"
+    note "fix: devtools/agy-version.sh --apply"
+  elif [ -n "$av_coord" ] && [ "$av_coord" != "-" ] && [ "$av_pinned" != "$av_coord" ]; then
+    warn "the two halves of the agy pin disagree: ARG $av_pinned, coordinate $av_coord"
+    note "a build would fail in docker/install-agy.sh; fix: devtools/agy-version.sh --apply"
+  # 3. and with upstream. Behind is a WARN, never a FAIL -- a pin is a
+  #    deliberate choice, and the point is only that the gap is visible.
+  elif [ -z "$av_upstream" ]; then
+    ok "agy pinned at $av_pinned"
+    note "upstream manifest unreachable from here -- cannot say whether it is current"
+  elif [ "$av_pinned" != "$av_upstream" ]; then
+    warn "agy pin $av_pinned is behind upstream ($av_upstream)"
+    note "bump: devtools/agy-version.sh --apply && docker/build.sh cuda"
+  else
+    ok "agy pinned at $av_pinned (current)"
+  fi
+
+  # 4. and, inside an image built from that pin, with what is on PATH.
+  #    AGY_VERSION in the environment is the image's own ENV, so its presence
+  #    is what tells container from host.
+  if [ -n "${AGY_VERSION:-}" ]; then
+    if [ -z "$av_installed" ]; then
+      warn "this image pinned agy $AGY_VERSION but none is on PATH"
+      note "PATH should carry /home/ubuntu/.local/bin -- docker/Dockerfile.cuda sets it"
+    elif [ "$av_installed" != "$AGY_VERSION" ]; then
+      ok "agy here is $av_installed, moved on from the image's $AGY_VERSION"
+      note "expected: agy self-updates with no opt-out (docker/install-agy.sh)"
+    else
+      ok "agy in here is the pinned $AGY_VERSION"
+    fi
+  else
+    note "agy here is ${av_installed:-not installed} (a host install, unrelated to the pin)"
+  fi
+fi
+
 # --- docker hygiene (report-only) -----------------------------------------
 # Worktree containers/volumes/images leak when a worktree is removed with plain
 # `git worktree remove` (bypassing worktree.sh rm), or via an agent's worktrees
