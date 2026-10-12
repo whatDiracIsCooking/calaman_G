@@ -24,7 +24,7 @@ like a registry problem. See `../docker/Dockerfile.base`'s header.
 > supported paths are unaffected. If you want just the image, use
 > `docker/build.sh cuda`, which is what the hook calls anyway.
 | `post-create.sh` | The `postCreateCommand` for all three variants, written once: seed the Claude config, trust the checkout, init submodules, install the pre-commit hook (leaving a host-installed one alone), and wire `gh` into git. JSON cannot share a fragment, so each `devcontainer.json` just calls this. |
-| `seed-claude-config.sh` | Copies the agent's host config into the container once, at create time. Invoked by `post-create.sh`. |
+| `seed-claude-config.sh` | Copies Claude Code's host config into the container once, at create time. Invoked by `post-create.sh`. There is **no agy counterpart**: `~/.gemini` is bind-mounted whole (see below), so there is no sidecar file to seed. |
 
 ## Handing each one its GPU
 
@@ -236,6 +236,18 @@ feature's `install.sh` runs an unpinned `npm install -g
 the installed. Claude Code is installed by the images instead, at an explicit
 `ARG CLAUDE_CODE_VERSION` — `docker/README.md` ("Claude Code is pinned") and
 `docker/install-claude-code.sh` have it.
+
+**The Antigravity CLI (`agy`) was never a feature and has none to pin.** The
+images install it too, at an `ARG AGY_VERSION` plus a checksummed artifact
+coordinate in `docker/agy-pin.json`, because upstream's installer cannot be
+asked for a version at all — `docker/README.md` ("The Antigravity CLI (`agy`)
+is pinned too") and `docker/install-agy.sh` have that story. Its credentials
+reach the container through a read-write bind of `~/.gemini`, the same bargain
+`~/.claude` already makes: one directory shared by the host and every worktree
+container, so its sqlite stores and logs are last-writer-wins across
+concurrent sessions. `devtools/devcontainer.sh up` creates the directory before
+handing it to docker, which would otherwise create a missing bind source as
+root and leave `agy` unable to write its own token.
 
 Tracking them is what keeps `devtools/devcontainer.sh` from dirtying the tree.
 Verified against the devcontainer CLI 0.89.0, both directions:

@@ -84,6 +84,21 @@
   "mounts": [
     "source=${localEnv:HOME}/.claude,target=/home/ubuntu/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}/.claude.json,target=/home/ubuntu/.claude.json.host,type=bind,readonly",
+    // The second agent's config and credentials, mounted READ-WRITE for the
+    // same reason ~/.claude is above: without it a container comes up logged
+    // out, and agy's sign-in is a browser flow (or, over SSH, copy-paste of an
+    // authorization code) rather than something a postCreate can do. There is
+    // no .gemini.json-style sidecar to seed, so the directory itself is the
+    // mount and there is no counterpart to seed-claude-config.sh.
+    //
+    // NOTE WHAT IS SHARED, since this is read-write and unsuffixed: the host
+    // and every worktree container see ONE ~/.gemini/antigravity-cli, so they
+    // share its sqlite stores (conversation_summaries.db), its logs, and the
+    // `last_check.timestamp` that paces agy's self-update. Concurrent writers
+    // are last-writer-wins on anything it rewrites whole. That is the same
+    // bargain ~/.claude already makes; devtools/devcontainer.sh creates the
+    // directory before `up` so docker cannot create it root-owned instead.
+    "source=${localEnv:HOME}/.gemini,target=/home/ubuntu/.gemini,type=bind,consistency=cached",
     "source=calaman-claude-plugins-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/plugins,type=volume",  // EDIT
     "source=calaman-claude-backups-${localWorkspaceFolderBasename},target=/home/ubuntu/.claude/backups,type=volume",  // EDIT
     "source=calaman-pytest-tmp-${localWorkspaceFolderBasename},target=/tmp/pytest-of-ubuntu,type=volume",             // EDIT

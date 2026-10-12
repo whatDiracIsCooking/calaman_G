@@ -192,6 +192,25 @@ the registry. The feature it replaced npm-installed an *unpinned* version into
 a permanently cached layer, and `devcontainer-lock.json` pins that feature's
 digest rather than the version it installs, so images drifted silently.
 
+**A second agent rides beside it: the Antigravity CLI (`agy`)**, installed by
+`docker/install-agy.sh` as each GPU file's last root layer, at
+`~/.local/bin/agy` (user-owned, and added to `PATH`, which the image otherwise
+lacks). Its pin takes **two files, not three copies of one line**: `ARG
+AGY_VERSION` in the GPU Dockerfiles names a version, and `docker/agy-pin.json`
+names the immutable artifact — URL plus sha512, both architectures — that
+version means. That split is forced: upstream publishes a *latest-only*
+manifest with no per-version endpoint, so its installer cannot be asked for a
+version at all. The two halves are cross-checked at build time, so a
+half-applied bump **fails the build** rather than installing the other half's
+answer; `devtools/agy-version.sh --apply` rewrites both, and `doctor.sh` and
+`devcontainer.sh up`/`rebuild` report a mismatch first. **Unlike claude, this
+pin is what the image shipped, not what you are running** — `agy` self-updates
+with no opt-out and succeeds from a user-owned path, which is deliberate (the
+container tracks the host install), so `agy-version.sh` reports pinned /
+coordinate / upstream / installed instead of asserting they agree. Credentials
+come from a read-write `~/.gemini` bind in the three `devcontainer.json`
+files; `compose.yaml` mounts neither agent's config.
+
 Two front ends, both onto the `cuda` image: **`docker/compose.yaml`** for
 one-shot batch runs, and **`.devcontainer/cuda/`** (via `devtools/devcontainer.sh`)
 for interactive work. They cannot share a build directory — a CMake cache
