@@ -287,6 +287,34 @@ require_sccache_dir() {
   export CALAMAN_SCCACHE_DIR="$d"
 }
 
+# ~/.gemini, the Antigravity CLI's config and credential directory, is
+# bind-mounted read-write by the three devcontainer.json files so a container
+# comes up logged in rather than asking for the SSH copy-paste code flow on
+# first run. It is mounted directly from $HOME, not through a CALAMAN_* path
+# like the two above, because it is not machine-specific the way a git dir or a
+# cache store is -- ${localEnv:HOME}/.gemini resolves on any host.
+#
+# WHY THE mkdir, same trap as require_sccache_dir: docker does not refuse a
+# bind whose source is missing, it CREATES it, owned by root. The container
+# runs as uid 1000, so agy's first run then fails to write its own settings or
+# token under a directory it cannot touch -- and unlike the sccache case the
+# symptom is a login loop rather than a permission error that names a path.
+#
+# Created EMPTY and left alone otherwise: a host that has never run agy gets a
+# directory agy will populate itself on first sign-in, and a host that has one
+# keeps every credential in it. Non-fatal, unlike the sccache store -- agy is
+# not on the path of a build, so a home directory that cannot be written is a
+# reason to warn and carry on, not to refuse to bring the container up.
+require_gemini_dir() {
+  local d="$HOME/.gemini"
+  [ -d "$d" ] && return 0
+  if ! mkdir -p "$d" 2>/dev/null; then
+    echo "warn: cannot create $d -- docker will create it root-owned and" >&2
+    echo "      agy in the container will not be able to sign in." >&2
+  fi
+  return 0
+}
+
 # Resolve ROCM_GROUPS to numeric HOST gids and export one CALAMAN_<NAME>_GID
 # per group, which is what the `${localEnv:...}` references in the hip and
 # combined runArgs read.
@@ -480,6 +508,42 @@ report_claude_pin() {
   fi
 }
 
+# The same line for the second agent, with the same quiet-when-fine, never-
+# fatal rules. One extra case: agy's pin has two halves (an ARG naming a
+# version, and docker/agy-pin.json naming the artifact it means -- see
+# docker/install-agy.sh), and a build fails outright when they disagree, so
+# that is worth saying BEFORE the next rebuild rather than after it.
+#
+# Deliberately NOT reported: the installed version drifting above the pin. agy
+# self-updates with no opt-out, so that is the expected steady state, and a
+# warning on every `up` for it would be noise of exactly the kind this function
+# avoids.
+report_agy_pin() {
+  local av out pinned coord upstream files problems
+  av="$REPO_ROOT/devtools/agy-version.sh"
+  [ -x "$av" ] || return 0
+  [ -n "${AGY_PIN_FILES:-}" ] || return 0
+  out=$(AGY_REGISTRY_TIMEOUT=${AGY_REGISTRY_TIMEOUT:-3} "$av" --porcelain 2>/dev/null)
+  pinned=$(printf '%s\n' "$out" | sed -n 's/^pinned //p')
+  coord=$(printf '%s\n' "$out" | sed -n 's/^coordinate //p')
+  problems=$(printf '%s\n' "$out" | sed -n 's/^coordinate_problems //p')
+  upstream=$(printf '%s\n' "$out" | sed -n 's/^upstream //p')
+  files=$(printf '%s\n' "$out" | sed -n 's/^files //p')
+  if [ -z "$pinned" ] || [ "$pinned" = "-" ]; then
+    echo "agy: the version pin disagrees across the Dockerfiles -- $files" >&2
+    echo "     fix: devtools/agy-version.sh --apply" >&2
+  elif [ -n "${problems// /}" ]; then
+    echo "agy: the artifact coordinate is unusable -- ${problems%;}" >&2
+    echo "     a rebuild would fail; fix: devtools/agy-version.sh --apply" >&2
+  elif [ -n "$coord" ] && [ "$coord" != "-" ] && [ "$pinned" != "$coord" ]; then
+    echo "agy: pin halves disagree -- ARG $pinned, coordinate $coord" >&2
+    echo "     a rebuild would fail; fix: devtools/agy-version.sh --apply" >&2
+  elif [ -n "$upstream" ] && [ "$pinned" != "$upstream" ]; then
+    echo "agy: image pins $pinned, upstream has $upstream" >&2
+    echo "     bump: devtools/agy-version.sh --apply, then $0 rebuild" >&2
+  fi
+}
+
 # The CLI prints the whole `docker run` invocation on failure, GH_TOKEN and
 # all. Everything below routes through this so a secret cannot reach the
 # terminal; the exit status is the CLI's, not sed's.
@@ -505,12 +569,14 @@ case "${1:-}" in
     shift
     require_git_dir
     require_sccache_dir
+    require_gemini_dir
     export_host_gids
     run_cli up --workspace-folder "$WORKSPACE" "${DC_CONFIG[@]}" "$@"
     name_host_gids
     tag_variant_image
     apply_cpu_limits
     report_claude_pin
+    report_agy_pin
     ;;
   rebuild)
     # Needed after editing devcontainer.json or the Dockerfile: a plain `up`
@@ -521,6 +587,7 @@ case "${1:-}" in
     shift
     require_git_dir
     require_sccache_dir
+    require_gemini_dir
     export_host_gids
     run_cli up --workspace-folder "$WORKSPACE" \
       --remove-existing-container "${DC_CONFIG[@]}" "$@"
@@ -530,6 +597,7 @@ case "${1:-}" in
     tag_variant_image
     apply_cpu_limits
     report_claude_pin
+    report_agy_pin
     ;;
   shell)
     shift

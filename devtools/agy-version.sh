@@ -41,6 +41,16 @@
 # fail, the upstream column reads `-` and everything else still works, which is
 # what keeps doctor.sh usable on a box with no outbound route.
 #
+# WHAT THE COORDINATE CHECK DOES NOT PROVE. It checks the pin file's SHAPE --
+# that a version is there, that both architectures have a url and a
+# 128-character sha512, and that each url carries the version it claims. It
+# does NOT check the digest against the artifact, because that means
+# downloading ~62MB per architecture, and this runs on the path of every
+# `doctor.sh` and every `devcontainer.sh up`. So a well-formed but WRONG digest
+# reports "the pin is current" here and fails in docker/install-agy.sh instead.
+# That is the right place for it: the build is where the bytes are fetched, and
+# it is the one caller that has them to compare.
+#
 # NOTE what `installed` does and does not mean here. Unlike claude -- which
 # npm-installs into root-owned /usr and therefore cannot move -- agy is
 # installed USER-OWNED at ~/.local/bin/agy and self-updates on a 15-minute

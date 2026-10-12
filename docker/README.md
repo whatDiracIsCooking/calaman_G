@@ -138,6 +138,56 @@ the version it installs: measured on this box before the change, four images
 off one lockfile carried claude 2.1.197 (×3, built over three days) and 2.1.289
 — the version was a function of build date, and nothing reported it.
 
+### The Antigravity CLI (`agy`) is pinned too — in two files
+
+Each GPU file then runs `docker/install-agy.sh`, the second agent layer. It
+installs `agy` user-owned at `/home/ubuntu/.local/bin/agy` — the path upstream
+uses — and adds that directory to `PATH`, which the image otherwise does not
+carry (Ubuntu's `~/.profile` would, but only for a *login* shell, and neither
+`docker exec bash` nor a devcontainer terminal is one).
+
+```bash
+devtools/agy-version.sh              # pinned / coordinate / upstream / installed
+devtools/agy-version.sh --apply      # rewrite BOTH halves to upstream's latest
+devtools/agy-version.sh --rebuild    # ...and rebuild the images already built here
+```
+
+**The pin is in two files, and that is forced on us.** `npm install -g
+claude-code@X` works because npm resolves a version to an artifact; upstream
+publishes agy through a **latest-only** manifest with no per-version endpoint
+(they 404), so `curl … | install.sh` cannot be asked for a version at all.
+What *is* per-version addressable is the artifact: the GCS object path embeds
+`<version>-<build id>` and is immutable. So:
+
+| half | where | what it says |
+|---|---|---|
+| `ARG AGY_VERSION` | all three GPU files | the version |
+| `docker/agy-pin.json` | one file, both architectures | the URL and sha512 that version means |
+
+`install-agy.sh` **cross-checks the two and fails the build when they
+disagree**, so a bump that reaches one and not the other cannot quietly install
+the other half's answer. `devtools/agy-version.sh --apply` rewrites both
+together; `doctor.sh` and `devcontainer.sh up` report a mismatch before a
+rebuild hits it. One consequence of the missing index: `--apply <older
+version>` is **refused**, because the artifact coordinate for it is not
+obtainable — edit `agy-pin.json` by hand with a coordinate you already have,
+then re-run `--apply` with that version.
+
+**Unlike claude, this pin says what the image shipped — not what you are
+running.** `agy` self-updates on a 15-minute check and exposes no setting, flag
+or environment variable to stop it; installed user-owned, those updates
+succeed. That is the deliberate choice: the container tracks the host install
+instead of sitting pinned behind it. `agy-version.sh` therefore *reports* all
+four numbers rather than asserting any two are equal, and `doctor.sh` calls an
+installed version ahead of the pin `[ ok ]`.
+
+Credentials come from a read-write bind of `~/.gemini` in the three
+`devcontainer.json` files, so a container comes up logged in; `devcontainer.sh
+up` creates that directory first, because docker would otherwise create a
+missing bind source as root and leave `agy` unable to sign in. **`compose.yaml`
+mounts neither agent's config** — its services are one-shot build/test runs,
+not interactive sessions.
+
 ### The `-ci` variants, and the registry
 
 Three more environment knobs turn a local build into a published one. Only
