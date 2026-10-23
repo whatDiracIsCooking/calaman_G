@@ -13,8 +13,32 @@ and compiles for both. A build targets exactly one backend
 (`CALAMAN_GPU_BACKEND=CUDA|HIP`): a HIP build needs no CUDA toolkit, and a CUDA
 build needs no ROCm.
 
-> **Status: scaffolding.** The toolchain, containers, dependency wiring and dev
-> tooling are in place and `src/` is empty — there is no library to use yet.
+> **Status: the library builds and runs; it does not install yet.** `src/` and
+> `test/` are live and GPU-exercised — ~130 module libraries, 100+ routine
+> directories under `src/lapack/`, and ~130 GoogleTest executables that compare
+> device results against the reference LAPACK on a real card. What is still
+> dormant is the **install tier**: `CALAMAN_INSTALL` defaults OFF and
+> `find_package(calaman)` is not a thing yet (`docs/architecture.md` §2). Consume
+> this with `add_subdirectory` for now.
+
+## What is in it
+
+**One module per LAPACK routine, one routine per directory**, and a routine's
+call graph is expressed as real module imports rather than partitions of an
+umbrella module — `calaman.laqp2` imports `calaman.larfg` and `calaman.larf`,
+`calaman.geqp3` imports `calaman.laqp2` and `calaman.laqps`, and so on down.
+
+| | Routines |
+|---|---|
+| Eigenproblems | general real (`?geev`), symmetric/Hermitian (`?syev`/`?heev`), the Hessenberg→Schur chain (`?gehrd`, `?hseqr`, `?laqr0`…`?laqr5`, `?trevc3`, `?trexc`), tridiagonal (`?steqr`, `?sterf`), balancing (`?gebal`/`?gebak`) |
+| Linear solves | positive definite (`?posv`), symmetric and Hermitian indefinite (`?sysv`/`?hesv` + `?sytrs`/`?hetrs`/`?*trs2`), pivoted Cholesky (`?pstrf`/`?pstf2`) |
+| Orthogonal factorisations | column-pivoted QR (`?geqp3`, `?laqp2`, `?laqps`), Householder machinery (`?larf`, `?larfg`, `?larft`, `?larfb`, `?larfx`), `?orghr`/`?ormhr` |
+| Norms, scaling, utilities | the `?lan*` family across every storage form, `?lascl`/`?rscl`/`?lassq`, RFP↔packed↔full conversions (`?tfttr`, `?tpttf`, `?trttp`, …), `?larnv`/`?laruv` |
+| Beyond LAPACK | the matrix exponential (`expm` + Paterson–Stockmeyer + Horner), the `feast` eigensolver, `nnls`, inverse square root, and an iterative/Krylov tier (Lanczos, Davidson, shifted COCG, shift-invert, DIIS, orthogonalisation, Ritz selection) |
+
+Each one has its own suite under `test/`. The numerical suites are labelled
+`REQUIRES_GPU`, so `ctest -LE gpu` keeps the handful of host-only suites and
+excludes everything that needs a card.
 
 ## Build
 
@@ -31,17 +55,23 @@ devtools/devcontainer.sh shell -c devtools/cpp-tier.sh # configure, build, ctest
 For the AMD backend, `devtools/devcontainer.sh --hip shell`. Either way,
 `devtools/doctor.sh` is the first thing to run when something behaves oddly.
 
+**CI cannot run a kernel.** Both backends are built on GitHub-hosted runners and
+run `ctest -LE gpu` — compile-and-link plus the host-only suites — so every
+numerical claim this project makes rests on `devtools/cpp-tier.sh` on a box with
+a GPU. Run it before a PR that touches device behaviour, and say what you ran.
+
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `src/` | the library: one backend-neutral tree (empty today) |
-| `test/` | its suites (empty today) |
+| `src/` | the library: one backend-neutral tree, one module per routine |
+| `test/` | its suites, one per module, checked against the reference LAPACK |
+| `experimental/` | unstable tier, gated behind `CALAMAN_BUILD_EXPERIMENTAL` (default OFF) |
 | `deps/` | the WarpWraps submodule and the GoogleTest fetch |
 | `cmake/` | the macros every target is declared through |
 | `docker/`, `.devcontainer/` | the images, in a four-file diamond |
 | `devtools/` | the tiers: `cpp-tier.sh`, `cross-backend-check.sh`, `install-check.sh`, `coverage.sh`, `doctor.sh`, and the container/worktree drivers |
-| `docs/` | `architecture.md` (decisions, dated) and `CONTRIBUTING.md` (the map) |
+| `docs/` | `architecture.md` (decisions, dated), `CONTRIBUTING.md` (the map), `sanitizers.md` |
 
 ## Where to read next
 
