@@ -1,6 +1,7 @@
 # Suite for calaman.ritz: ritz_select and classify_ritz (pure host), the
-# argument checks of ritz_rotate, and ritz_rotate's product against the
-# reference LAPACK.
+# argument checks of ritz_rotate, and ritz_rotate's product on the device
+# against a host product. No reference LAPACK: the inputs are Householder
+# reflectors, orthonormal by construction.
 
 # Host only: selection and classification are host math, and a bad
 # ritz_rotate argument is rejected before any handle use, so these run on a
@@ -24,16 +25,6 @@ calaman_add_gtest_suite_tests(
   RitzRotateArgTests
 )
 
-# The rotation's oracle is LAPACKE_?syevd plus ?geqrf/?orgqr, via
-# calaman::lapack_reference. Missing is a WARNING, not an error, so only this
-# binary is skipped where it is absent.
-if(NOT TARGET calaman::lapack_reference)
-  message(
-    STATUS "calaman::lapack_reference not found; skipping ritz_rotate_tests"
-  )
-  return()
-endif()
-
 calaman_add_gtest_executable(
   NAME
   ritz_rotate_tests
@@ -45,7 +36,6 @@ calaman_add_gtest_executable(
   calaman::test::shared::device_handle
   calaman::test::shared::tolerance
   calaman::test::utils::shared_device
-  calaman::lapack_reference
   wwr::blas
   wwr::runtime_api
   wwr::extension::memory_buffer

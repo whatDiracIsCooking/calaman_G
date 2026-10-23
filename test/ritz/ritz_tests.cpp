@@ -1,11 +1,11 @@
 // Suite for calaman.ritz:
 //
-//   * ritz_select -- positions per RitzWhich, the span form's largest_magnitude
-//     (mixed signs, magnitude ties) and the nested-selection property
-//     (host-only);
+//   * ritz_select -- positions per RitzWhich, largest_magnitude (mixed signs,
+//     magnitude ties), the other ends' indifference to the values and the
+//     nested-selection property (host-only);
 //   * classify_ritz -- the convergence predicate, the scale floor, the boundary,
-//     relative-not-absolute thresholds, a length mismatch and the vacuous empty
-//     selection (host-only);
+//     relative-not-absolute thresholds, and a length mismatch or an empty
+//     selection never reading as all converged (host-only);
 //   * ritz_rotate -- argument checks before any handle use (host-only; the
 //     device product is ritz_rotate_tests.cpp).
 //
@@ -24,34 +24,41 @@ namespace {
 
 constexpr auto kInvalidValue = wwr::WWRBLAS_STATUS_INVALID_VALUE;
 
+/// ritz_select over the ascending spectrum 0, 1, ..., available - 1.
+std::vector<int> select_over(const RitzWhich which, const int available, const int count) {
+  std::vector<double> values(static_cast<std::size_t>(available));
+  std::iota(values.begin(), values.end(), 0.0);
+  return ritz_select<double>(which, values, count);
+}
+
 // ── ritz_select (host-only) ──────────────────────────────────────────────────
 
 TEST(RitzSelectTests, PositionsPerWhich) {
   using V = std::vector<int>;
-  EXPECT_EQ(ritz_select(RitzWhich::smallest, 10, 3), (V{0, 1, 2}));
-  EXPECT_EQ(ritz_select(RitzWhich::largest, 10, 3), (V{7, 8, 9}));
-  EXPECT_EQ(ritz_select(RitzWhich::both_ends, 10, 3), (V{0, 8, 9})); // 2 top, 1 bottom
-  EXPECT_EQ(ritz_select(RitzWhich::both_ends, 10, 4), (V{0, 1, 8, 9}));
-  EXPECT_EQ(ritz_select(RitzWhich::both_ends, 10, 1), (V{9}));
-  EXPECT_EQ(ritz_select(RitzWhich::largest, 5, 5), (V{0, 1, 2, 3, 4}));
-  EXPECT_TRUE(ritz_select(RitzWhich::smallest, 10, 0).empty());
-  EXPECT_TRUE(ritz_select(RitzWhich::largest, 10, 11).empty());
-  EXPECT_TRUE(ritz_select(RitzWhich::both_ends, 0, 0).empty());
+  EXPECT_EQ(select_over(RitzWhich::smallest, 10, 3), (V{0, 1, 2}));
+  EXPECT_EQ(select_over(RitzWhich::largest, 10, 3), (V{7, 8, 9}));
+  EXPECT_EQ(select_over(RitzWhich::both_ends, 10, 3), (V{0, 8, 9})); // 2 top, 1 bottom
+  EXPECT_EQ(select_over(RitzWhich::both_ends, 10, 4), (V{0, 1, 8, 9}));
+  EXPECT_EQ(select_over(RitzWhich::both_ends, 10, 1), (V{9}));
+  EXPECT_EQ(select_over(RitzWhich::largest, 5, 5), (V{0, 1, 2, 3, 4}));
+  EXPECT_TRUE(select_over(RitzWhich::smallest, 10, 0).empty());
+  EXPECT_TRUE(select_over(RitzWhich::largest, 10, 11).empty());
+  EXPECT_TRUE(select_over(RitzWhich::both_ends, 0, 0).empty());
 }
 
 TEST(RitzSelectTests, LargerSelectionContainsSmaller) {
   for (const RitzWhich which : {RitzWhich::smallest, RitzWhich::largest, RitzWhich::both_ends}) {
     for (int nev = 1; nev <= 12; ++nev) {
-      const std::vector<int> wanted = ritz_select(which, 12, nev);
+      const std::vector<int> wanted = select_over(which, 12, nev);
       for (int k = nev; k <= 12; ++k) {
-        const std::vector<int> kept = ritz_select(which, 12, k);
+        const std::vector<int> kept = select_over(which, 12, k);
         EXPECT_TRUE(std::ranges::includes(kept, wanted)) << nev << " in " << k;
       }
     }
   }
 }
 
-// The span form: largest_magnitude reads the values, every other end ignores them.
+// largest_magnitude reads the values; every other end sees only their count.
 
 TEST(RitzSelectTests, LargestMagnitudeMixedSign) {
   using V = std::vector<int>;
@@ -70,8 +77,6 @@ TEST(RitzSelectTests, LargestMagnitudeMixedSign) {
   EXPECT_TRUE(ritz_select<double>(kMag, values, 0).empty());
   EXPECT_TRUE(ritz_select<double>(kMag, values, 8).empty());
   EXPECT_TRUE(ritz_select<double>(kMag, std::span<const double>{}, 1).empty());
-  // The count-only form cannot see magnitudes, so it refuses.
-  EXPECT_TRUE(ritz_select(kMag, 7, 3).empty());
 }
 
 TEST(RitzSelectTests, LargestMagnitudeTiesGoToTheTop) {
@@ -87,11 +92,11 @@ TEST(RitzSelectTests, LargestMagnitudeTiesGoToTheTop) {
   EXPECT_EQ(ritz_select<double>(kMag, flat, 3), (V{1, 2, 3}));
 }
 
-TEST(RitzSelectTests, SpanFormMatchesCountFormOffMagnitude) {
+TEST(RitzSelectTests, OtherEndsIgnoreTheValues) {
   const std::vector<double> values{-9.0, -4.0, -0.5, 0.1, 2.0, 3.0, 7.0};
   for (const RitzWhich which : {RitzWhich::smallest, RitzWhich::largest, RitzWhich::both_ends}) {
     for (int count = 0; count <= 8; ++count) {
-      EXPECT_EQ(ritz_select<double>(which, values, count), ritz_select(which, 7, count)) << count;
+      EXPECT_EQ(ritz_select<double>(which, values, count), select_over(which, 7, count)) << count;
     }
   }
 }
@@ -166,9 +171,10 @@ TEST(RitzClassifyTests, AllConvergedAndEmpty) {
   const std::vector<double> residuals = {0.0, 0.0};
   EXPECT_TRUE(classify_ritz<double>(values, residuals, 1e-12, 1.0).all_converged());
 
+  // Nothing classified is nothing converged, so an empty selection cannot stop a solve.
   const auto none = classify_ritz<double>({}, {}, 1e-6, 1.0);
   EXPECT_TRUE(none.values.empty());
-  EXPECT_TRUE(none.all_converged()); // vacuously
+  EXPECT_FALSE(none.all_converged());
 }
 
 TEST(RitzClassifyTests, LengthMismatchIsEmpty) {
@@ -179,6 +185,7 @@ TEST(RitzClassifyTests, LengthMismatchIsEmpty) {
   EXPECT_TRUE(sel.residuals.empty());
   EXPECT_TRUE(sel.converged.empty());
   EXPECT_EQ(sel.converged_count, 0);
+  EXPECT_FALSE(sel.all_converged()); // a sizing bug never reads as converged
 }
 
 // ── ritz_rotate argument checks (host-only) ──────────────────────────────────

@@ -204,7 +204,7 @@ TEST(LanczosSelectTests, ResidualEstimatesAndConvergence) {
 
   const auto none = lanczos_ritz_select(ritz, LanczosWhich::smallest, 0, 1e-6);
   EXPECT_TRUE(none.index.empty());
-  EXPECT_TRUE(none.all_converged()); // vacuously
+  EXPECT_FALSE(none.all_converged()); // nothing selected is nothing converged
 }
 
 TEST(LanczosSelectTests, RitzStagesRejectBadArguments) {
