@@ -1,13 +1,12 @@
-// Reference suite for calaman.ritz's ritz_rotate: C = B S(:, 0:count) on the
-// device against V Z_count, where V is an orthonormal basis (LAPACKE ?geqrf +
-// ?orgqr) and Z the eigenvectors of a random symmetric matrix (LAPACKE
-// ?syevd). Every operand carries a leading dimension larger than its rows, the
-// padding must survive, C must be orthonormal, and the handle's pointer mode
-// (host or device on entry) must be restored. REQUIRES_GPU; float and double.
+// Device suite for calaman.ritz's ritz_rotate: C = B S(:, 0:count) on the
+// device against the host product V Z_count, where V (n x k) and Z (k x k) are
+// leading columns of Householder reflectors -- orthonormal by construction, so
+// no LAPACK is needed. Every operand carries a leading dimension larger than
+// its rows, the padding must survive, C must be orthonormal, and the handle's
+// pointer mode (host or device on entry) must be restored. REQUIRES_GPU; float
+// and double.
 
 #include <gtest/gtest.h>
-
-#include <lapacke.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -39,27 +38,6 @@ using DeviceAbort = AbortPolicy<wwr::wwrError_t>;
 template<typename T>
 using DeviceBuffer = DeviceBufferWrapper<T, DeviceAbort, DeviceAbort, DeviceAbort, DeviceHandle>;
 
-// ── LAPACKE overloads ────────────────────────────────────────────────────────
-
-lapack_int ref_syevd(lapack_int n, float *a, float *w) {
-  return LAPACKE_ssyevd(LAPACK_COL_MAJOR, 'V', 'L', n, a, n, w);
-}
-lapack_int ref_syevd(lapack_int n, double *a, double *w) {
-  return LAPACKE_dsyevd(LAPACK_COL_MAJOR, 'V', 'L', n, a, n, w);
-}
-lapack_int ref_geqrf(lapack_int m, lapack_int n, float *a, float *tau) {
-  return LAPACKE_sgeqrf(LAPACK_COL_MAJOR, m, n, a, m, tau);
-}
-lapack_int ref_geqrf(lapack_int m, lapack_int n, double *a, double *tau) {
-  return LAPACKE_dgeqrf(LAPACK_COL_MAJOR, m, n, a, m, tau);
-}
-lapack_int ref_orgqr(lapack_int m, lapack_int n, float *a, const float *tau) {
-  return LAPACKE_sorgqr(LAPACK_COL_MAJOR, m, n, n, a, m, tau);
-}
-lapack_int ref_orgqr(lapack_int m, lapack_int n, double *a, const double *tau) {
-  return LAPACKE_dorgqr(LAPACK_COL_MAJOR, m, n, n, a, m, tau);
-}
-
 /// rows x cols column-major, leading dimension rows.
 template<typename T>
 std::vector<T> random_matrix(int rows, int cols, std::uint32_t seed) {
@@ -70,6 +48,26 @@ std::vector<T> random_matrix(int rows, int cols, std::uint32_t seed) {
     x = dist(gen);
   }
   return a;
+}
+
+/// The leading @p cols columns of the n x n reflector I - 2 u u^T / (u^T u), u
+/// random: orthonormal columns, ld n, without a factorisation to produce them.
+template<typename T>
+std::vector<T> householder_columns(int n, int cols, std::uint32_t seed) {
+  const std::vector<T> u = random_matrix<T>(n, 1, seed);
+  T uu = T(0);
+  for (const T x : u) {
+    uu += x * x;
+  }
+  std::vector<T> h(static_cast<std::size_t>(n) * static_cast<std::size_t>(cols));
+  for (int j = 0; j < cols; ++j) {
+    for (int i = 0; i < n; ++i) {
+      const T delta = i == j ? T(1) : T(0);
+      h[static_cast<std::size_t>(i + j * n)] =
+          delta - T(2) * u[static_cast<std::size_t>(i)] * u[static_cast<std::size_t>(j)] / uu;
+    }
+  }
+  return h;
 }
 
 /// Copy a rows x cols, ld = rows matrix into ld @p ld storage padded with @p pad.
@@ -105,9 +103,9 @@ DeviceBuffer<T> upload(const std::shared_ptr<DeviceHandle> &handle, const std::v
   return d;
 }
 
-/// C = V(:, 0:k) Z(:, 0:count) on the device, V orthonormal n x k, Z the
-/// eigenvectors of a symmetric k x k; checked against the host product, for
-/// orthonormality, for untouched padding and for the restored pointer mode.
+/// C = V(:, 0:k) Z(:, 0:count) on the device, V orthonormal n x k, Z an
+/// orthogonal k x k; checked against the host product, for orthonormality, for
+/// untouched padding and for the restored pointer mode.
 template<typename T>
 void check_rotate(int n, int k, int count, wwr::wwrblasPointerMode_t caller_mode) {
   const std::shared_ptr<DeviceHandle> handle = shared_device();
@@ -117,16 +115,10 @@ void check_rotate(int n, int k, int count, wwr::wwrblasPointerMode_t caller_mode
   ASSERT_EQ(wwr::wwrblasSetStream(blas, stream), wwr::WWRBLAS_STATUS_SUCCESS);
   ASSERT_EQ(wwr::wwrblasSetPointerMode(blas, caller_mode), wwr::WWRBLAS_STATUS_SUCCESS);
 
-  // The basis: an orthonormal n x k V.
-  std::vector<T> v = random_matrix<T>(n, k, 31);
-  std::vector<T> tau(static_cast<std::size_t>(k));
-  ASSERT_EQ(ref_geqrf(n, k, v.data(), tau.data()), 0);
-  ASSERT_EQ(ref_orgqr(n, k, v.data(), tau.data()), 0);
-
-  // The projected eigenvectors: Z of a random symmetric k x k (lower read).
-  std::vector<T> z = random_matrix<T>(k, k, 37);
-  std::vector<T> w(static_cast<std::size_t>(k));
-  ASSERT_EQ(ref_syevd(k, z.data(), w.data()), 0);
+  // The basis: an orthonormal n x k V. The projected eigenvectors: an
+  // orthogonal k x k Z, standing in for a syevd's.
+  const std::vector<T> v = householder_columns<T>(n, k, 31);
+  const std::vector<T> z = householder_columns<T>(k, k, 37);
 
   const int ldb = n + 3;
   const int lds = k + 2; // a projected matrix stored at a larger capacity
