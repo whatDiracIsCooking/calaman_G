@@ -56,10 +56,11 @@ For each `<name>/SKILL.md`:
   stale on a bump with nothing in this repo changing. Verify those against
   `deps/WarpWraps/` as it is checked out now, and say which WarpWraps commit you checked
   (`git submodule status`).
-- **Claims about tiers that do not exist yet.** `src/` and `test/` are empty, and
-  the install tier is dormant. A doc that describes what a tier *will* prove reads
-  exactly like one describing what it *does* prove. Flag any sentence that would
-  let a reader think a suite ran.
+- **Claims about tiers that do not exist yet.** `src/` and `test/` are live, but
+  the install tier is dormant and CI has no card — so a doc describing what a
+  tier *will* prove reads exactly like one describing what it *does* prove. Flag
+  any sentence that would let a reader think a suite ran, and in particular any
+  that lets a green CI run stand in for a numerical result.
 
 ## Auditing READMEs
 

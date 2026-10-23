@@ -32,15 +32,34 @@ cannot carry a capital. `doctor.sh` warns when `PROJECT_NAME` and any
 ## The state of the tree — read this before trusting any tier
 
 `src/` and `test/` **are live and GPU-exercised.** `src/` holds **one module per
-LAPACK routine, each in its own `src/` directory** — ~40 of them now, spanning the
-`calaman.common`/`calaman.diff_norm`/`calaman.lacpy` utilities, pivoted Cholesky
-(`pstrf`/`pstf2`), the matrix exponential (`expm` + `paterson_stockmeyer` +
-`horner`), balancing (`gebal`/`gebak`), the `feast` eigensolver, `nnls`, and the
-Hessenberg/Schur reduction chain (`gehd2`, `lahr2`, `larfb`, `larft`, `lanv2`,
-`lartg`, `lasy2`, …). The `geqp3` column-pivoted-QR call graph is the worked
-example of the shape — `calaman.larfg`, `calaman.larf`, `calaman.laqp2`,
-`calaman.laqps`, and the `calaman.geqp3` driver (all-free and fixed-prefix) — with
-the inter-routine edges as real module imports (`laqp2` imports `larfg`+`larf`,
+LAPACK routine, each in its own `src/` directory** — ~130 module libraries over
+~105 routine directories under `src/lapack/` plus ~25 beside it, with a suite
+each (~130 test executables). The breadth, by family:
+
+- **eigenproblems** — general real (`geev`), symmetric/Hermitian (`syev`/`heev`),
+  the Hessenberg→Schur chain (`gehd2`, `gehrd`, `hseqr`, `laqr0`…`laqr5`,
+  `trevc3`, `trexc`, `lahr2`, `lanv2`, `laexc`), tridiagonal (`steqr`, `sterf`),
+  balancing (`gebal`/`gebak`);
+- **linear solves** — positive definite (`posv`), symmetric and Hermitian
+  indefinite (`sysv`/`hesv` + `sytrs`/`hetrs`/`*trs2`/`hetf2`), pivoted Cholesky
+  (`pstrf`/`pstf2`);
+- **orthogonal factorisations** — column-pivoted QR (`geqp3`, `laqp2`, `laqps`),
+  the Householder machinery (`larf`, `larfg`, `larft`, `larfb`, `larfx`),
+  `orghr`/`ormhr`;
+- **norms, scaling, storage conversion** — the `lan*` family across every
+  storage form, `lascl`/`rscl`/`lassq`/`lasy2`/`lartg`, the RFP↔packed↔full
+  conversions (`tfttr`, `tpttf`, `trttp`, …), `larnv`/`laruv`;
+- **beyond LAPACK** — the matrix exponential (`expm` + `paterson_stockmeyer` +
+  `horner`), the `feast` eigensolver, `nnls`, `inv_sqrt`, and an
+  iterative/Krylov tier (`lanczos`, `davidson`, `shifted_cocg`, `shift_invert`,
+  `diis`, `orthogonalize`, `ritz`) on top of the
+  `calaman.common`/`calaman.diff_norm`/`calaman.lacpy`/`calaman.error_handling`
+  utilities.
+
+The `geqp3` column-pivoted-QR call graph is the worked example of the shape —
+`calaman.larfg`, `calaman.larf`, `calaman.laqp2`, `calaman.laqps`, and the
+`calaman.geqp3` driver (all-free and fixed-prefix) — with the inter-routine
+edges as real module imports (`laqp2` imports `larfg`+`larf`,
 `laqps` imports `larfg`, `geqp3` imports `laqp2`+`laqps`), not partitions of one
 umbrella module. The test tier checks each against the reference LAPACK on a real
 card. What is still NOT live is the install tier; the table says which is which,
@@ -51,12 +70,12 @@ so report the tier you actually touched.
 | `deps/` | **live.** WarpWraps submodule + GoogleTest fetch. |
 | `docker/`, `.devcontainer/`, `devtools/` | **live**, and the LAPACK layer in `docker/Dockerfile.base` is new here. |
 | `src/`, `test/` | **live.** The modules above plus their suites; `add_subdirectory(src)` and `(test)` are enabled. `#add_subdirectory(example)` stays commented — `example/` is a `README.md` stub with no `CMakeLists.txt` yet (a directory with no `CMakeLists.txt` is a configure error). |
-| `experimental/` | **live but opt-in.** `add_subdirectory(experimental)` is gated behind `CALAMAN_BUILD_EXPERIMENTAL` (default **OFF**) and runs after `src/` so an experimental module may link a shipped one; ships `calaman.experimental.xor_delta` and `calaman.experimental.byte_transpose`. |
+| `experimental/` | **live but opt-in.** `add_subdirectory(experimental)` is gated behind `CALAMAN_BUILD_EXPERIMENTAL` (default **OFF**) and runs after `src/` so an experimental module may link a shipped one; ships `calaman.experimental.xor_delta` and `calaman.experimental.byte_transpose` — and nothing else: `experimental/compression_demo/` is a numpy ratio spike with no `CMakeLists.txt`, deliberately not in `experimental/CMakeLists.txt`. |
 | `CMakeLists.txt` | **live**: toolchain discovery, backend choice, vendor packages, the LAPACK oracle, WarpWraps, and now `src/`, `test/`, and the gated `experimental/`. |
-| the `cmake/` target macros | **exercised** — `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` macros, and `calaman_add_gpu_device_library` all have call sites now, and so does `calaman_add_interface_library` (`calaman.sym2x2`, the header-only device helpers in `src/lapack/sym2x2/`). |
+| the `cmake/` target macros | **exercised** — `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` macros, and `calaman_add_gpu_device_library` all have call sites now, and so does `calaman_add_interface_library` — three of them: `calaman.sym2x2`, `calaman.tri_index` and `calaman.la_amv`, the header-only `__device__` helpers under `src/lapack/{sym2x2,tri_index,la_geamv}/`. (`src/reduce_columns/` and `src/lapack/lanst/` are header-only too but declare their targets by hand — the macro roots the include path at the declaring directory, which is the wrong root for those two; the CMake comments say so.) |
 | `calaman_install.cmake` | dormant, but **no longer wrong-shaped**: it does one recursive sweep of the single `src/` tree now; the old per-backend `src/{cuda,hip,wrappers}` sweep inherited from WarpWraps is gone. |
-| the install tier | **dormant.** `CALAMAN_INSTALL` defaults OFF; `calaman_install_package()` is still expected to fail on the unexported `wwr.*` interface targets until the two-package problem (docs/architecture.md §2) is decided. `devtools/install-check.sh` and CI's `install-check` job have nothing to prove until then. |
-| the C++ test tiers | **live and asserting.** The numerical suites compare device results against the reference LAPACK to a shared tolerance (`test/shared/tolerance.cppm`); they are `REQUIRES_GPU`, so `ctest -LE gpu` excludes them. One host-only suite (`linalg_scaffold_tests`) asserts without a card. |
+| the install tier | **dormant.** `CALAMAN_INSTALL` defaults OFF; `calaman_install_package()` is still expected to fail on the unexported `wwr.*` interface targets until the two-package problem (docs/architecture.md §2) is decided. `devtools/install-check.sh` exits 2 ("could not run") and has nothing to prove until then — and **CI has no `install-check` job at all**, deliberately; `.github/workflows/ci.yml` carries the note on what to restore when the tier goes live. |
+| the C++ test tiers | **live and asserting.** The numerical suites compare device results against the reference LAPACK to a shared tolerance (`test/shared/tolerance.cppm`); they are `REQUIRES_GPU`, so `ctest -LE gpu` excludes them. **Three** suites assert without a card — `linalg_scaffold_tests`, `iterative_tests` and `error_handling_tests` — plus `xor_delta_tests` and `byte_transpose_tests` when `CALAMAN_BUILD_EXPERIMENTAL=ON`. |
 
 When you run something, say which of these it touched.
 
@@ -231,12 +250,13 @@ it.
   require in a branch ruleset** — every other name is generated and moves.
 - Both backends are built on the server and run `ctest -LE gpu` — read that as
   **compile-and-link plus whatever CPU-only tests exist**, not as a test of GPU
-  behaviour. Today that is compile-and-link plus the one host-only suite
-  (`linalg_scaffold_tests`); every numerical suite is `REQUIRES_GPU` and excluded,
-  so CI still proves nothing about a kernel's numbers. A third leg, `cpp
-  (asan)` (preset `ci-asan`), runs that same host-only set under ASan+LSan,
-  plus the host sanitizer canaries that prove ASan is on; device code is never
-  sanitized in CI (`docs/sanitizers.md`, G5).
+  behaviour. Today that is compile-and-link plus the three host-only suites
+  (`linalg_scaffold_tests`, `iterative_tests`, `error_handling_tests`); every
+  numerical suite is `REQUIRES_GPU` and excluded, so CI still proves nothing
+  about a kernel's numbers. A third leg, `cpp (asan)` (preset `ci-asan`), runs
+  that same host-only set under ASan+LSan, plus the host sanitizer canaries
+  that prove ASan is on; device code is never sanitized in CI
+  (`docs/sanitizers.md`, G5).
 - **What CI cannot do: run a kernel.** Every numerical claim this project makes
   — a factorisation that agrees with the reference LAPACK to a tolerance — needs
   a card, which no hosted runner has. So **`devtools/cpp-tier.sh` on a box with
@@ -256,8 +276,11 @@ carries that cost instead.
   `calaman_add_cxx_module_library`, the `calaman_add_gtest_*` /
   `calaman_add_test_executable` test macros, and
   `calaman_add_gpu_device_library` for a module's device-kernel `.cu` library.
-  `calaman_add_interface_library` declares a header-only target (today only
-  `calaman.sym2x2`, the shared `__device__` ?lae2/?laev2/?lapy2 ports).
+  `calaman_add_interface_library` declares a header-only target whose include
+  root is the declaring directory — `calaman.sym2x2` (the shared `__device__`
+  ?lae2/?laev2/?lapy2 ports), `calaman.tri_index`, `calaman.la_amv`. A
+  header-only target needing a *different* root is declared by hand instead
+  (`src/reduce_columns/`, `src/lapack/lanst/`).
 - Target names use dots and are aliased to `::`; link lists name the `::`
   alias, and the installed package exports that same spelling
   (`cmake/README.md`, "One spelling").
@@ -284,7 +307,10 @@ carries that cost instead.
   bloat; run the skill's budget check after touching one. The judgement the skill
   encodes — constraint vs story, invariant vs mechanism — only constrains if it is
   exercised at the keystroke.
-- Python ≥3.13, `from __future__ import annotations` everywhere.
+- Python ≥3.13 (`requires-python`), and the interpreter `uv` picks is **pinned
+  to 3.13 by `.python-version`** — without it `uv` fetched the newest release it
+  could find and `cmake-lint` crashed on it, reddening every PR's `lint` job.
+  `from __future__ import annotations` everywhere.
 - Lint is deliberately narrow (`E,F,I,UP,B`) with **no formatter hook**. `ruff
   check .` is clean — the pre-commit hook fails on any finding in a file you
   touch. `src/` and `deps/` are excluded (C++).

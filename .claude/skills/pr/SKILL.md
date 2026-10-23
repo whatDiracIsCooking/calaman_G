@@ -74,11 +74,14 @@ gh pr merge <number> --squash
 # the remote branch is auto-deleted on merge (see below) -- nothing to run here
 ```
 
-- **Wait for CI.** `.github/workflows/ci.yml` runs lint, the Python tier, the
-  whole C++ tree for BOTH backends and the install check on every PR, so it
-  takes tens of minutes rather than seconds; the local pre-push gate is a small
-  subset of it. A PR touching `docker/` also builds the images. Check with
-  `gh pr checks <number> --watch` before merging, and do not merge red.
+- **Wait for CI.** `.github/workflows/ci.yml` runs lint, the Python tier and
+  the whole C++ tree on three legs — `cpp (cuda)`, `cpp (hip)` and `cpp (asan)`
+  — so a code change takes tens of minutes rather than seconds; the local
+  pre-push gate is a small subset of it. (There is **no** `install-check` job to
+  wait for: the package tier is dormant.) A docs-only PR skips the `cpp` legs
+  entirely and settles in under a minute. A PR touching `docker/` also builds
+  the images. Check with `gh pr checks <number> --watch` before merging, and do
+  not merge red — `ci-ok` is the aggregate to read.
 - **Never pass `--admin`.** It merges past required status checks, and it is the
   one move in this whole flow that can defeat the branch ruleset. Red checks
   mean fix them or hand the PR back — never override. A ruleset with an empty
