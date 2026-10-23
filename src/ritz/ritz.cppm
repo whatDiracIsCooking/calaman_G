@@ -3,8 +3,7 @@
  * @brief The calaman.ritz module -- the Ritz-pair bookkeeping every projection
  *        eigensolver shares: select, classify, rotate
  *
- * ritz_select picks the wanted positions of an ascending spectrum (by count
- * alone, or by its values for largest_magnitude);
+ * ritz_select picks the wanted positions of an ascending spectrum;
  * classify_ritz turns values plus residual estimates into a RitzSelection under
  * a convergence predicate; ritz_rotate forms the Ritz vectors C = B S with one
  * gemm. calaman.lanczos, calaman.davidson and calaman.feast import it.
@@ -17,7 +16,7 @@
  *
  * Usage:
  *   import calaman.ritz;
- *   const std::vector<int> index = ritz_select(RitzWhich::smallest, ncv, nev);
+ *   const std::vector<int> index = ritz_select<double>(RitzWhich::smallest, theta, nev);
  *   auto sel = classify_ritz<double>(values, residuals, tolerance, t_norm);
  *   CLM_TRY(ritz_rotate<double>(blas, n, ncv, nev, d_V, n, d_S, ncv, d_X, n));
  */
@@ -61,7 +60,7 @@ enum class RitzWhich {
   smallest,          ///< the count algebraically smallest values
   largest,           ///< the count algebraically largest values
   both_ends,         ///< ceil(count / 2) from the top, floor(count / 2) from the bottom
-  largest_magnitude, ///< the count largest |value|; needs the values (ritz_select's span form)
+  largest_magnitude, ///< the count largest |value|
 };
 
 /// @brief Classified Ritz pairs: values, residual estimates and convergence flags.
@@ -73,15 +72,22 @@ struct RitzSelection {
   std::vector<bool> converged; ///< residuals[i] within classify_ritz's threshold
   int converged_count = 0;
 
-  bool all_converged() const { return converged_count == static_cast<int>(values.size()); }
+  /// False when empty: a selection that classified nothing has converged nothing.
+  bool all_converged() const {
+    return !values.empty() && converged_count == static_cast<int>(values.size());
+  }
 };
 
-/// @brief The @p count positions, ascending, of an ascending @p available-long
-///        spectrum that @p which wants. For count2 >= count1 at one @p which,
-///        the count2 selection contains the count1 one.
-/// @return Empty unless 1 <= count <= available; always empty for
-///         largest_magnitude, which needs the values (the span overload).
-inline std::vector<int> ritz_select(const RitzWhich which, const int available, const int count) {
+/// @brief The @p count positions, ascending, of the ascending @p values that
+///        @p which wants. largest_magnitude reads the values (|value| ties go
+///        to the top end); every other @p which sees only their count. For
+///        count2 >= count1 at one @p which, the count2 selection contains the
+///        count1 one.
+/// @return Empty unless 1 <= count <= values.size().
+template<calaman::real_fp T>
+std::vector<int> ritz_select(const RitzWhich which, const std::span<const T> values,
+                             const int count) {
+  const int available = static_cast<int>(values.size());
   if (count < 1 || count > available) {
     return {};
   }
@@ -94,23 +100,6 @@ inline std::vector<int> ritz_select(const RitzWhich which, const int available, 
     return detail::ritz_ends(available, count, count / 2);
   case RitzWhich::largest_magnitude:
     break;
-  }
-  return {};
-}
-
-/// @brief ritz_select over the ascending @p values themselves, the only form
-///        that serves largest_magnitude: |value| ties go to the top end, so
-///        selections still nest. Every other @p which ignores the values.
-/// @return Empty unless 1 <= count <= values.size().
-template<calaman::real_fp T>
-std::vector<int> ritz_select(const RitzWhich which, const std::span<const T> values,
-                             const int count) {
-  const int available = static_cast<int>(values.size());
-  if (which != RitzWhich::largest_magnitude) {
-    return ritz_select(which, available, count);
-  }
-  if (count < 1 || count > available) {
-    return {};
   }
   // Ascending, so |value| is largest at the ends: merge inward, one per step.
   int low = 0;
@@ -129,7 +118,8 @@ std::vector<int> ritz_select(const RitzWhich which, const std::span<const T> val
 /// @brief Classify each pair: converged iff residuals[i] <= tolerance *
 ///        max(|values[i]|, @p scale), @p scale the projected matrix's 2-norm.
 ///        Host only; index is left empty.
-/// @return Empty when @p values and @p residuals differ in length.
+/// @return Empty -- so not all_converged() -- when @p values and @p residuals
+///         differ in length.
 template<calaman::real_fp T>
 RitzSelection<T> classify_ritz(const std::span<const T> values, const std::span<const T> residuals,
                                const T tolerance, const T scale) {

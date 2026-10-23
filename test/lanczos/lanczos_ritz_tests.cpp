@@ -287,7 +287,7 @@ RitzSelection<T> run_case(const Dense<T> &t, const Case c, int n, T beta_m, T to
 
   // select
   const RitzSelection<T> sel = lanczos_ritz_select(ritz, c.which, c.count, tolerance);
-  EXPECT_EQ(sel.index, ritz_select(c.which, ncv, c.count));
+  EXPECT_EQ(sel.index, ritz_select<T>(c.which, ritz.theta, c.count));
   EXPECT_EQ(sel.index.size(), static_cast<std::size_t>(c.count));
   int converged = 0;
   for (std::size_t j = 0; j < sel.index.size(); ++j) {

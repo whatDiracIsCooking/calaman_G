@@ -13,10 +13,9 @@ struct RitzSelection {
   std::vector<T> values, residuals;
   std::vector<bool> converged;
   int converged_count = 0;
-  bool all_converged() const;
+  bool all_converged() const;   // false when empty
 };
 
-std::vector<int> ritz_select(RitzWhich which, int available, int count);
 template <real_fp T>
 std::vector<int> ritz_select(RitzWhich which, std::span<const T> values,
                              int count);
@@ -33,8 +32,8 @@ Status ritz_rotate(wwrblasHandle_t blas, int n, int k, int count,
 
 | Routine | Where | Does |
 |---|---|---|
-| `ritz_select` | host | the `count` positions, ascending, of an ascending spectrum of `available` values (`both_ends`: `ceil(count/2)` top, `floor(count/2)` bottom); empty unless `1 <= count <= available`. The count-only form is always empty for `largest_magnitude`; the span form (ascending `values`, `available = values.size()`) serves it — the `count` largest `\|value\|`, merged inward from both ends, ties to the top — and matches the count-only form for every other end |
-| `classify_ritz` | host | `converged[i] = residuals[i] <= tolerance * max(\|values[i]\|, scale)`; `index` left empty |
+| `ritz_select` | host | the `count` positions, ascending, of the ascending `values` (`both_ends`: `ceil(count/2)` top, `floor(count/2)` bottom; `largest_magnitude`: the `count` largest `\|value\|`, merged inward from both ends, ties to the top; every other end sees only `values.size()`); empty unless `1 <= count <= values.size()` |
+| `classify_ritz` | host | `converged[i] = residuals[i] <= tolerance * max(\|values[i]\|, scale)`; `index` left empty. A length mismatch returns an empty selection, and an empty selection is **not** `all_converged()`, so a sizing bug cannot end a solve as converged |
 | `ritz_rotate` | device, no sync | `C = B(:, 0:k) * S(0:k, 0:count)`, one `gemm` in host pointer mode |
 
 ## The rules
@@ -65,3 +64,4 @@ Status ritz_rotate(wwrblasHandle_t blas, int n, int k, int count,
 |---|---|
 | `calaman.lanczos` | `LanczosWhich` aliases `RitzWhich`; `lanczos_ritz_select` = `ritz_select` + `classify_ritz`, as is the true-residual pass; `lanczos_ritz_vectors` = `ritz_rotate` |
 | `calaman.davidson` | `classify_ritz` at scale `\|\|H\|\|_2` (its `RitzSelection` gives `Converged`, `max_residual_norm` and the locked roots); `X = V S_k` and `A X = Sigma_V S_k` = two `ritz_rotate`s with `lds = max_subspace`. Selection stays the leading `n_roots` columns, no `ritz_select` |
+| `calaman.feast` | `X = basis Y` and `A X = W Y` = two `ritz_rotate`s in its Rayleigh-Ritz partition (`rayleigh_ritz.cppm`). Selection is its own interval test (`feast_select`) and convergence its backward error, so no `ritz_select` or `classify_ritz` |
